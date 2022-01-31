@@ -64,7 +64,7 @@ end
 # FIXME: Refactor this function such that the array of tensor does not need to be copied.
 # This will also allow the index of sites in the error message to be displayed more 
 # easily. Solution would be to transpose the indexing rather than transposing the array.
-function _check_bond_axis(sites, permute=false)
+function _check_bond_axis(sites; permute=false)
     if permute
         permutedims(sites)
     end
