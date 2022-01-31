@@ -1,0 +1,27 @@
+@testset "func: compose()" begin
+    t0 = TensorMap(randnormal, ℂ^2, ℂ^2)
+    t1 = TensorMap(randnormal, ℂ^2, ℂ^2)
+    t2 = TensorMap(randnormal, ℂ^2, ℂ^2)
+    t1_mat = t1.data
+    t2_mat = t2.data
+    t3 = TensorMap(randnormal, ℂ^2, ℂ^3)
+    t4 = TensorMap(randnormal, ℂ^3, ℂ^2)
+    t5 = TensorMap(randnormal, ℂ^2 * ℂ^2, ℂ^2 * ℂ^2)
+    t3_mat = t3.data
+    t4_mat = t4.data
+    @test PEPSKit.compose(t1, t2) ≈ TensorMap(t1_mat * t2_mat, ℂ^2, ℂ^2)
+    @test PEPSKit.compose(t2, t1) ≈ TensorMap(t2_mat * t1_mat, ℂ^2, ℂ^2)
+    @test PEPSKit.compose(t3, t4) ≈ TensorMap(t3_mat * t4_mat, ℂ^2, ℂ^2)
+    @test_throws SpaceMismatch PEPSKit.compose(t3, t1)
+    @test_throws DimensionMismatch PEPSKit.compose(t1, t5)
+    @testset "Associativity" begin
+        @test PEPSKit.compose(PEPSKit.compose(t0, t1), t2) ≈
+            PEPSKit.compose(t0, PEPSKit.compose(t1, t2))
+    end
+    @testset "Distributivity" begin
+        @test PEPSKit.compose(t0, t1 + t2) ≈
+            PEPSKit.compose(t0, t1) + PEPSKit.compose(t0, t2)
+        @test PEPSKit.compose(t0 + t1, t2) ≈
+            PEPSKit.compose(t0, t2) + PEPSKit.compose(t1, t2)
+    end
+end
