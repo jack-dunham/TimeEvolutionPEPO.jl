@@ -15,7 +15,7 @@ the codomain is ordered (1,2,out) and the domain is ordered (3,4,in).
 """
 struct PEPOTensor{S<:IndexSpace} <: AbstractTensorMap{S,3,3}
     tensor::TensorMap{S,3,3}
-    function PEPOTensor{S}(tensor::TensorMap{S,3,3}) where {S<:IndexSpace}
+    function PEPOTensor(tensor::TensorMap{S,3,3}) where {S<:IndexSpace}
         if norm(tensor) ≈ one(ComplexF64)
             return new{S}(tensor)
         else
