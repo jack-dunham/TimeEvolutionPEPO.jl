@@ -58,7 +58,7 @@ end
 
 function LinearAlgebra.vec(p::PEPOTensor)
     t = p.tensor
-    return _vec(t)
+    return VectorPEPOTensor(_vec(t)...)
 end
 
 function _vec(t::TensorMap{S,3,3}) where {S<:EuclideanSpace}
@@ -70,4 +70,13 @@ function _vec(t::TensorMap{S,3,3}) where {S<:EuclideanSpace}
     u = unitary(fuse(out ⊗ in), out ⊗ flip(in))
     @tensor ttt[1 2 ph; 3 4] := u[ph; x1 x2] * tt[1 2 x1 x2; 3 4]
     return ttt, u
+end
+
+function unvec(p::VectorPEPOTensor)
+    t = p.tensor
+    u = p.unitary
+    iu = inv(u)
+    @tensor tt[1 2 x1 x2; 3 4]:=iu[x1 x2; ph]*t[1 2 ph; 3 4]
+    ttt = permute(tt, (1,2,3),(5,6,4))
+    return PEPOTensor(ttt)
 end
