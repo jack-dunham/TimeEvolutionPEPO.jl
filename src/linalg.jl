@@ -57,7 +57,7 @@ function LinearAlgebra.ishermitian(p::PEPOTensor; phys_only=false)
 end
 
 function LinearAlgebra.vec(p::PEPOTensor)
-    t = p.tensor 
+    t = p.tensor
     return _vec(t)
 end
 
@@ -66,8 +66,7 @@ function _vec(t::TensorMap{S,3,3}) where {S<:EuclideanSpace}
     in = dom[3] # Physical index corresponding to the input
     cod = TensorKit.codomain(t)
     out = cod[3] # Physical index corresponding to the output
-    tt = permute(t, (1,2,3,6),(4,5))
+    tt = permute(t, (1, 2, 3, 6), (4, 5))
     u = unitary(fuse(out ⊗ in), out ⊗ flip(in))
-    return @tensor ttt[1 2 ph; 3 4]:=u[ph; x1 x2 ]*tt[1 2 x1 x2; 3 4] 
+    return @tensor ttt[1 2 ph; 3 4] := u[ph; x1 x2] * tt[1 2 x1 x2; 3 4]
 end
-
