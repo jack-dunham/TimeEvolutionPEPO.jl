@@ -32,5 +32,5 @@ end
     vec_Aarr = permutedims(
         reshape(permutedims(Aarr, (1, 2, 4, 5, 3, 6)), (2, 2, 2, 2, 4)), (1, 2, 5, 3, 4)
     )
-    @test convert(Array, PEPSKit._vec(A)) ≈ vec_Aarr
+    @test convert(Array, PEPSKit._vec(A)[1]) ≈ vec_Aarr
 end
