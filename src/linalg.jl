@@ -1,5 +1,13 @@
 # Linear algebra functions
 
+const σ0 = TensorMap(complex([1 0; 0 1]), ℂ^2, ℂ^2) # Identity matrix
+const σ1 = TensorMap(complex([0 1; 1 0]), ℂ^2, ℂ^2) # Pauli X matrix
+const σ2 = TensorMap(complex([0 -im; im 0]), ℂ^2, ℂ^2) # Pauli Y matrix
+const σ3 = TensorMap(complex([1 0; 0 -1]), ℂ^2, ℂ^2) # Pauli Z matrix
+
+const σp = 1 / 2 * (σ1 + im * σ2) # Pauli+ matrix
+const σm = 1 / 2 * (σ1 - im * σ2) # Pauli- matrix
+
 """
 	compose(t1,t2)
 
@@ -76,7 +84,13 @@ function unvec(p::VectorPEPOTensor)
     t = p.tensor
     u = p.unitary
     iu = inv(u)
-    @tensor tt[1 2 x1 x2; 3 4]:=iu[x1 x2; ph]*t[1 2 ph; 3 4]
-    ttt = permute(tt, (1,2,3),(5,6,4))
+    @tensor tt[1 2 x1 x2; 3 4] := iu[x1 x2; ph] * t[1 2 ph; 3 4]
+    ttt = permute(tt, (1, 2, 3), (5, 6, 4))
     return PEPOTensor(ttt)
 end
+
+function conjugate(t::AbstractTensorMap)
+    return TensorMap(conj(t.data), codomain(t), domain(t))
+end
+
+const cj = conjugate
