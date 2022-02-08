@@ -27,3 +27,17 @@ function dissipator(n::Int; l=σm)
     end
     return sum(Ds)
 end
+
+@doc raw"""
+    coherent(H::AbstractTensorMap)
+
+Construct the `two`-local and vectorised operator `H` corresponding to the coherent part of 
+the Liouvillian super-operator. That is, given ``H_{\alpha, \beta}``,  constructs
+```math
+\mathcal{H}_{\alpha,\beta} = - i (\mathbb{I}_{\alpha, \beta} \otimes H_{\alpha,\beta} 
+- H^{T}_{\alpha,\beta} \otimes \mathbb{I}_{\alpha, \beta})
+```
+where ``\alpha`` and ``\beta`` are lattice indices corresponding to any two adjacent
+lattice sites.
+"""
+coherent(H::AbstractTensorMap) = -im * (one(H) ⊗ H - cj(H)' ⊗ one(H))
