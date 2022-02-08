@@ -1,4 +1,4 @@
-using PEPSKit
+using PEPOKit
 using TensorKit
 using Test
 using TestSetExtensions

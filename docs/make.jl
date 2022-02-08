@@ -1,8 +1,8 @@
 using Documenter
-using PEPSKit
+using PEPOKit
 
-makedocs(sitename="PEPSKit.jl")
+makedocs(sitename="PEPOKit.jl")
 
 deploydocs(
-    repo = "github.com/jack-dunham/PEPSKit.git",
+    repo = "github.com/jack-dunham/PEPOKit.git",
 )

@@ -1,4 +1,4 @@
-module PEPSKit
+module PEPOKit
 
 using TensorKit
 using LinearAlgebra
