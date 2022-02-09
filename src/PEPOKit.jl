@@ -14,5 +14,6 @@ include("pepo.jl")
 include("vectorpepo.jl")
 include("linalg.jl")
 include("lindblad.jl")
+include("symmetrise.jl")
 
 end # module
