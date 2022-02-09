@@ -25,7 +25,7 @@ end
 
 Outputs the blocks corresponding to each charge sector of a symmetric Liouvillian. 
 """
-function find_blocks(chrgs, degn, L::TensorMap{ComplexSpace, 4, 4})  
+function find_blocks(chrgs, degn, L::TensorMap{ComplexSpace,4,4})
     blocks = Dict{Int64,Matrix}([])
     cols = Dict{Int64,Vector}([])
     for key in keys(degn)
@@ -34,7 +34,7 @@ function find_blocks(chrgs, degn, L::TensorMap{ComplexSpace, 4, 4})
     # For each input state, find the linear combination of output states that this state
     # maps to. Output states should have the same charge as the input state.
     for i in 1:2, j in 1:2, k in 1:2, l in 1:2 # Input state
-        chrg = chrgs[i, j, k, l] 
+        chrg = chrgs[i, j, k, l]
         col = Array{ComplexF64}([])
         for a in 1:2, b in 1:2, c in 1:2, d in 1:2 # Output state
             if chrgs[a, b, c, d] == chrg
@@ -71,7 +71,7 @@ end
 Stores the charges and degeneracies?
 TODO: docstring
 """
-struct SymmetryGroup{G<:TensorKit.Group, N<:Integer}
+struct SymmetryGroup{G<:TensorKit.Group,N<:Integer}
     charges::Array{<:AbstractIrrep{G}}
-    degeneracy::Dict{<:AbstractIrrep{G}, Integer}
+    degeneracy::Dict{<:AbstractIrrep{G},Integer}
 end
