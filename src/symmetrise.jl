@@ -1,5 +1,7 @@
+# TODO: Charges should be appropriate `TensorKit.Sector` objects.
 @doc raw"""
     find_charges(g)
+
 Given the vectorised form of a group generator, `g`, outputs a list of the charges and 
 their respective degeneracies.
 """
@@ -61,4 +63,15 @@ function find_blocks(chrgs, degn, L::TensorMap{ComplexSpace, 4, 4})
         end
     end
     return blocks
+end
+
+@doc raw"""
+    struct SymmetryGroup{G<:Group, N::Integer}
+        
+Stores the charges and degeneracies?
+TODO: docstring
+"""
+struct SymmetryGroup{G<:Group, N::Integer}
+    charges::Array{<:AbstractIrrep{G}}
+    degeneracy::Dict{<:AbstractIrrep{G}, Integer}
 end
