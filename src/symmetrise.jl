@@ -71,7 +71,7 @@ end
 Stores the charges and degeneracies?
 TODO: docstring
 """
-struct SymmetryGroup{G<:Group, N::Integer}
+struct SymmetryGroup{G<:TensorKit.Group, N<:Integer}
     charges::Array{<:AbstractIrrep{G}}
     degeneracy::Dict{<:AbstractIrrep{G}, Integer}
 end
