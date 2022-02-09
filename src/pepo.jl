@@ -5,8 +5,7 @@ Abstract supertype of all PEPO-like objects, i.e. networks of `PEPOTensor` types
 """
 abstract type AbstractPEPO{S<:IndexSpace} <: AbstractMatrix{S} end
 
-# TODO: 
-# - Change requirement on PEPOTensor to trace = 1, check for Hermiticity. 
+# TODO: Change requirement on PEPOTensor to trace = 1, check for Hermiticity. 
 """
     struct PEPOTensor{S<:IndexSpace} <: AbstractTensorMap{S,3,3} 
 
