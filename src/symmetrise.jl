@@ -24,7 +24,7 @@ end
 # TODO: probably remove, not a relavent method, as it assumes the user knows which
 # subspaces each state belongs to.
 function find_charges(g::TensorMap{S}) where {S<:GradedSpace}
-    return # TODO: Return the eigenvalues of g?
+    return nothing # TODO: Return the eigenvalues of g?
 end
 
 @doc raw"""
@@ -78,7 +78,7 @@ end
 Stores the charges and degeneracies?
 TODO: docstring
 """
-struct SymmetryGroup{G<:TensorKit.Group,N<:Integer}
+struct SymmetryGroup{G<:TensorKit.Group}
     charges::Array{<:AbstractIrrep{G}}
     degeneracy::Dict{<:AbstractIrrep{G},Integer}
 end
@@ -88,6 +88,6 @@ end
 
 Constructs a `SymmetryGroup` type given a group `G` and a group generator `g`.
 """
-function SymmetryGroup{G}(g::TensorMap{ComplexSpace}) where {G<:TensorKit.Group} 
-    return SymmetryGroup{G, Integer(log(2,numind(g)))}(find_charges(g))
+function SymmetryGroup{G}(g::TensorMap{ComplexSpace}) where {G<:TensorKit.Group}
+    return SymmetryGroup{G}(find_charges(g, G)...)
 end

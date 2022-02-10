@@ -9,6 +9,7 @@ export bloch_pepo
 export cj, conjugate
 
 export σ0,σ1,σ2,σ3,σp,σm
+export SymmetryGroup
 
 include("pepo.jl")
 include("vectorpepo.jl")
