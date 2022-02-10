@@ -82,3 +82,12 @@ struct SymmetryGroup{G<:TensorKit.Group,N<:Integer}
     charges::Array{<:AbstractIrrep{G}}
     degeneracy::Dict{<:AbstractIrrep{G},Integer}
 end
+
+@doc raw"""
+    SymmetryGroup{G}(g::TensorMap{ComplexSpace}) where {G<:TensorKit.Group}
+
+Constructs a `SymmetryGroup` type given a group `G` and a group generator `g`.
+"""
+function SymmetryGroup{G}(g::TensorMap{ComplexSpace}) where {G<:TensorKit.Group} 
+    return SymmetryGroup{G, Integer(log(2,numind(g)))}(find_charges(g))
+end
