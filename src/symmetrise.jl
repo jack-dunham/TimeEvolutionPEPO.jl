@@ -1,9 +1,10 @@
-# TODO: Charges should be appropriate `TensorKit.Sector` objects.
 @doc raw"""
-    find_charges(g)
+    find_charges(g, G)
 
 Given the vectorised form of a group generator, `g`, outputs a list of the charges and 
-their respective degeneracies.
+their respective degeneracies. Assumes `g` is diagonalised (i.e. assumes that the basis used
+is one such that `g` is diagonal), and that each diagonal element of `g` corresponds to a 
+valid irrep label of the group `G`. 
 """
 function find_charges(g, G::TensorKit.Group)
     chrgs = zeros(G, 2, 2, 2, 2)
@@ -18,6 +19,12 @@ function find_charges(g, G::TensorKit.Group)
         end
     end
     return chrgs, degn
+end
+
+# TODO: probably remove, not a relavent method, as it assumes the user knows which
+# subspaces each state belongs to.
+function find_charges(g::TensorMap{S}) where {S<:GradedSpace}
+    return # TODO: Return the eigenvalues of g?
 end
 
 @doc raw"""
