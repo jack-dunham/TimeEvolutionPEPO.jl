@@ -3,6 +3,8 @@ module PEPOKit
 using TensorKit
 using LinearAlgebra
 
+import TensorKit: Group, AbelianGroup
+
 export AbstractPEPO, PEPOTensor, FinitePEPO, InfinitePEPO
 export VectorPEPOTensor
 export bloch_pepo

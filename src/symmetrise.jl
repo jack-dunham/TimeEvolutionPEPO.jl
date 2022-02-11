@@ -6,7 +6,7 @@ their respective degeneracies. Assumes `g` is diagonalised (i.e. assumes that th
 is one such that `g` is diagonal), and that each diagonal element of `g` corresponds to a 
 valid irrep label of the group `G`. 
 """
-function find_charges(g, G::TensorKit.Group)
+function find_charges(g, G::Group)
     chrgs = zeros(G, 2, 2, 2, 2)
     degn = Dict{G,Integer}([])
     for i in 1:2, j in 1:2, k in 1:2, l in 1:2
@@ -78,16 +78,16 @@ end
 Stores the charges and degeneracies?
 TODO: docstring
 """
-struct SymmetryGroup{G<:TensorKit.Group}
+struct SymmetryGroup{G<:Group}
     charges::Array{<:AbstractIrrep{G}}
     degeneracy::Dict{<:AbstractIrrep{G},Integer}
 end
 
 @doc raw"""
-    SymmetryGroup{G}(g::TensorMap{ComplexSpace}) where {G<:TensorKit.Group}
+    SymmetryGroup{G}(g::TensorMap{ComplexSpace}) where {G<:Group}
 
 Constructs a `SymmetryGroup` type given a group `G` and a group generator `g`.
 """
-function SymmetryGroup{G}(g::TensorMap{ComplexSpace}) where {G<:TensorKit.Group}
+function SymmetryGroup{G}(g::TensorMap{ComplexSpace}) where {G<:Group}
     return SymmetryGroup{G}(find_charges(g, G)...)
 end
