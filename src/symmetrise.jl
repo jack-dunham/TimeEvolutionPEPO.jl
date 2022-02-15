@@ -31,6 +31,8 @@ end
     find_blocks(chrgs, degn, L::TensorMap{ComplexSpace, 4, 4})
 
 Outputs the blocks corresponding to each charge sector of a symmetric Liouvillian. 
+TODO: replace chrgs & degn with SymmetryGroup type
+TODO: blocks dict should have keys of type Irrep[G]
 """
 function find_blocks(chrgs, degn, L::TensorMap{ComplexSpace,4,4})
     blocks = Dict{Int64,Matrix}([])
@@ -81,6 +83,7 @@ TODO: docstring
 struct SymmetryGroup{G<:Group}
     charges::Array{<:AbstractIrrep{G}}
     degeneracy::Dict{<:AbstractIrrep{G},Integer}
+    basis::GradedSpace{<:Irrep[G]}
 end
 
 @doc raw"""
@@ -90,4 +93,6 @@ Constructs a `SymmetryGroup` type given a group `G` and a group generator `g`.
 """
 function SymmetryGroup{G}(g::TensorMap{ComplexSpace}) where {G<:Group}
     return SymmetryGroup{G}(find_charges(g, G)...)
+function SymmetryGroup{G}(g::TensorMap{ComplexSpace}, basis) where {G<:Group}
+    return SymmetryGroup{G}(find_charges(g, G)..., basis)
 end
