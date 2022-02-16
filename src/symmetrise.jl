@@ -1,5 +1,6 @@
 @doc raw"""
     struct SymmetryGroup{G<:Group, N::Integer}
+        
 Stores the charges and degeneracies?
 TODO: docstring
 """
@@ -18,6 +19,11 @@ function SymmetryGroup(
     g::TensorMap{ComplexSpace}, basis::GradedSpace{<:AbstractIrrep{G}}
 ) where {G<:Group}
     return SymmetryGroup{G}(find_charges(g, G)..., basis)
+end
+
+struct SymmetricLiouvillian{G<:Group}
+    tensor::TensorMap{<:GradedSpace}
+    mapping 
 end
 
 @doc raw"""
@@ -93,6 +99,27 @@ function find_blocks(SG::SymmetryGroup{G}, L::TensorMap{ComplexSpace,4,4}) where
     return blocks, mapping
 end
 
+function symmetrise(SG::SymmetryGroup{<:Group}, L::TensorMap{ComplexSpace,4,4})
+    blocks, _ = find_blocks(SG, L)
+    lin = TensorMap(zeros, ComplexF64, SG.basis^4, SG.basis^4)
+    for i in keys(SG.degeneracy)
+        blocks(lin)[i] = blocks[i]
+    end
+    return lin
 end
 
+function unsymmetrise(L::SymmetricLiouvillian)
+    tensor = L.tensor
+    map = L.mapping
+    blocks = blocks[tensor]
+    cL = TensorMap(zeros, ComplexF64, ℂ^4, ℂ^4)
+    for (irrep, block) in blocks
+        irrepmap = map[irrep]
+        for i in CartesianIndices(blocks)
+            row = i[1]
+            col = i[2]
+            cL[irrepmap[row], irrepmap[col]] = block[i] 
+        end
+    end
+    return cL
 end
