@@ -44,12 +44,6 @@ function find_charges(g, G::Type{<:TensorKit.Group})
     return chrgs, degn
 end
 
-# TODO: probably remove, not a relavent method, as it assumes the user knows which
-# subspaces each state belongs to.
-function find_charges(g::TensorMap{S}) where {S<:GradedSpace}
-    return nothing # TODO: Return the eigenvalues of g?
-end
-
 @doc raw"""
     find_blocks(chrgs, degn, L::TensorMap{ComplexSpace, 4, 4})
 
