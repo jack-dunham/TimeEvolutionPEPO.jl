@@ -1,4 +1,26 @@
 @doc raw"""
+    struct SymmetryGroup{G<:Group, N::Integer}
+Stores the charges and degeneracies?
+TODO: docstring
+"""
+struct SymmetryGroup{G<:Group}
+    charges::Array{<:AbstractIrrep{G}, 4}
+    degeneracy::Dict{<:AbstractIrrep{G},Integer}
+    basis::GradedSpace{<:AbstractIrrep{G}}
+end
+
+@doc raw"""
+    SymmetryGroup{G}(g::TensorMap{ComplexSpace}) where {G<:Group}
+
+Constructs a `SymmetryGroup` type given a group `G` and a group generator `g`.
+"""
+function SymmetryGroup(
+    g::TensorMap{ComplexSpace}, basis::GradedSpace{<:AbstractIrrep{G}}
+) where {G<:Group}
+    return SymmetryGroup{G}(find_charges(g, G)..., basis)
+end
+
+@doc raw"""
     find_charges(g, G)
 
 Given the vectorised form of a group generator, `g`, outputs a list of the charges and 
@@ -75,25 +97,6 @@ function find_blocks(chrgs, degn, L::TensorMap{ComplexSpace,4,4})
     return blocks
 end
 
-@doc raw"""
-    struct SymmetryGroup{G<:Group, N::Integer}
-        
-Stores the charges and degeneracies?
-TODO: docstring
-"""
-struct SymmetryGroup{G<:Group}
-    charges::Array{<:AbstractIrrep{G}}
-    degeneracy::Dict{<:AbstractIrrep{G},Integer}
-    basis::GradedSpace{<:Irrep[G]}
 end
 
-@doc raw"""
-    SymmetryGroup{G}(g::TensorMap{ComplexSpace}) where {G<:Group}
-
-Constructs a `SymmetryGroup` type given a group `G` and a group generator `g`.
-"""
-function SymmetryGroup{G}(g::TensorMap{ComplexSpace}) where {G<:Group}
-    return SymmetryGroup{G}(find_charges(g, G)...)
-function SymmetryGroup{G}(g::TensorMap{ComplexSpace}, basis) where {G<:Group}
-    return SymmetryGroup{G}(find_charges(g, G)..., basis)
 end
