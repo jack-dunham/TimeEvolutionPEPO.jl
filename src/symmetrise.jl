@@ -48,12 +48,13 @@ end
     find_blocks(chrgs, degn, L::TensorMap{ComplexSpace, 4, 4})
 
 Outputs the blocks corresponding to each charge sector of a symmetric Liouvillian. 
-TODO: replace chrgs & degn with SymmetryGroup type
-TODO: blocks dict should have keys of type Irrep[G]
 """
-function find_blocks(chrgs, degn, L::TensorMap{ComplexSpace,4,4})
-    blocks = Dict{Int64,Matrix}([])
-    cols = Dict{Int64,Vector}([])
+function find_blocks(SG::SymmetryGroup{G}, L::TensorMap{ComplexSpace,4,4}) where {G<:Group}
+    chrgs = SG.charges
+    degn = SG.degeneracy
+    blocks = Dict{Irrep[G],Matrix{ComplexF64}}([])
+    cols = Dict{Irrep[G],Vector{ComplexF64}}([])
+    mapping = Dict{Irrep[G],Vector{CartesianIndex}}([])
     for key in keys(degn)
         cols[key] = []
     end
@@ -78,6 +79,7 @@ function find_blocks(chrgs, degn, L::TensorMap{ComplexSpace,4,4})
             end
         end
         push!(cols[chrg], col)
+        push!(mapping[chrg], CartesianIndex(i, j, k, l))
     end
     for chrg in keys(degn)
         col = cols[chrg]
@@ -88,7 +90,7 @@ function find_blocks(chrgs, degn, L::TensorMap{ComplexSpace,4,4})
             blocks[chrg] = reduce(hcat, col)
         end
     end
-    return blocks
+    return blocks, mapping
 end
 
 end
