@@ -5,7 +5,7 @@ Stores the charges and degeneracies?
 TODO: docstring
 """
 struct SymmetryGroup{G<:Group}
-    charges::Array{<:AbstractIrrep{G}, 4}
+    charges::Array{<:AbstractIrrep{G},4}
     degeneracy::Dict{<:AbstractIrrep{G},Integer}
     basis::GradedSpace{<:AbstractIrrep{G}}
 end
@@ -23,7 +23,7 @@ end
 
 struct SymmetricLiouvillian{G<:Group}
     tensor::TensorMap{<:GradedSpace}
-    mapping 
+    mapping
 end
 
 @doc raw"""
@@ -59,16 +59,17 @@ function find_blocks(SG::SymmetryGroup{G}, L::TensorMap{ComplexSpace,4,4}) where
     chrgs = SG.charges
     degn = SG.degeneracy
     blocks = Dict{Irrep[G],Matrix{ComplexF64}}([])
-    cols = Dict{Irrep[G],Vector{ComplexF64}}([])
+    cols = Dict{Irrep[G],Vector{Vector{ComplexF64}}}([])
     mapping = Dict{Irrep[G],Vector{CartesianIndex}}([])
     for key in keys(degn)
         cols[key] = []
+        mapping[key] = []
     end
     # For each input state, find the linear combination of output states that this state
     # maps to. Output states should have the same charge as the input state.
     for i in 1:2, j in 1:2, k in 1:2, l in 1:2 # Input state
         chrg = chrgs[i, j, k, l]
-        col = Array{ComplexF64}([])
+        col = Vector{ComplexF64}()
         for a in 1:2, b in 1:2, c in 1:2, d in 1:2 # Output state
             if chrgs[a, b, c, d] == chrg
                 push!(col, L[a, b, c, d, i, j, k, l])
@@ -100,26 +101,27 @@ function find_blocks(SG::SymmetryGroup{G}, L::TensorMap{ComplexSpace,4,4}) where
 end
 
 function symmetrise(SG::SymmetryGroup{<:Group}, L::TensorMap{ComplexSpace,4,4})
-    blocks, _ = find_blocks(SG, L)
+    blcks, mapping = find_blocks(SG, L)
     lin = TensorMap(zeros, ComplexF64, SG.basis^4, SG.basis^4)
     for i in keys(SG.degeneracy)
-        blocks(lin)[i] = blocks[i]
+        blocks(lin)[i] = blcks[i]
     end
-    return lin
+    return lin, mapping
 end
 
 function unsymmetrise(L::SymmetricLiouvillian)
     tensor = L.tensor
     map = L.mapping
-    blocks = blocks[tensor]
-    cL = TensorMap(zeros, ComplexF64, ℂ^4, ℂ^4)
-    for (irrep, block) in blocks
+    blcks = blocks(tensor)
+    cL = zeros(ComplexF64, 2, 2, 2, 2, 2, 2, 2, 2)
+    # cL = TensorMap(zeros, ComplexF64, ℂ^4, ℂ^4)
+    for (irrep, block) in blcks
         irrepmap = map[irrep]
-        for i in CartesianIndices(blocks)
+        for i in CartesianIndices(block)
             row = i[1]
             col = i[2]
-            cL[irrepmap[row], irrepmap[col]] = block[i] 
+            cL[irrepmap[row], irrepmap[col]] = block[i]
         end
     end
-    return cL
+    return TensorMap(cL, ℂ^2 * ℂ^2 * ℂ^2 * ℂ^2, ℂ^2 * ℂ^2 * ℂ^2 * ℂ^2)
 end
