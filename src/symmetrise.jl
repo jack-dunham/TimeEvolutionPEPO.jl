@@ -6,16 +6,17 @@ their respective degeneracies. Assumes `g` is diagonalised (i.e. assumes that th
 is one such that `g` is diagonal), and that each diagonal element of `g` corresponds to a 
 valid irrep label of the group `G`. 
 """
-function find_charges(g, G::Group)
-    chrgs = zeros(G, 2, 2, 2, 2)
-    degn = Dict{G,Integer}([])
+function find_charges(g, G::Type{<:TensorKit.Group})
+    chrgs = Array{Irrep[G]}(undef, 2, 2, 2, 2)
+    degn = Dict{Irrep[G],Integer}([])
     for i in 1:2, j in 1:2, k in 1:2, l in 1:2
         chg = g[i, j, k, l, i, j, k, l]
-        chrgs[i, j, k, l] = Irrep{G}(chg) # TODO: Convert `chg` to (half)-integer 
-        if haskey(degn, chg)
-            degn[chg] = degn[chg] + 1
+        irrep = Irrep[G](Integer(chg))
+        chrgs[i, j, k, l] = irrep # TODO: Convert `chg` to (half)-integer 
+        if haskey(degn, irrep)
+            degn[irrep] = degn[irrep] + 1
         else
-            degn[chg] = 1
+            degn[irrep] = 1
         end
     end
     return chrgs, degn
