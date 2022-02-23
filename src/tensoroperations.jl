@@ -1,11 +1,11 @@
 function TensorKit.TO.contract!(
     α,
-    tA::PEPOTensor{S},
+    tA::AbstractPhysicalTensor,
     CA::Symbol,
-    tB::PEPOTensor{S},
+    tB::AbstractPhysicalTensor,
     CB::Symbol,
     β,
-    tC::PEPOTensor{S},
+    tC::AbstractPhysicalTensor,
     oindA::TensorKit.IndexTuple,
     cindA::TensorKit.IndexTuple,
     oindB::TensorKit.IndexTuple,
@@ -13,25 +13,28 @@ function TensorKit.TO.contract!(
     p1::TensorKit.IndexTuple,
     p2::TensorKit.IndexTuple,
     syms::Union{Nothing,NTuple{3,Symbol}}=nothing,
-) where {S}
+)
     return TensorKit.TO.contract!(
         α, tA.tensor, CA, tB.tensor, CB, β, tC, oindA, cindA, oindB, cindB, p1, p2, syms
     )
 end
 
-TensorKit.TO.memsize(t::PEPOTensor) = TensorKit.TO.memsize(t.tensor)
+TensorKit.TO.memsize(t::AbstractPhysicalTensor) = TensorKit.TO.memsize(t.tensor)
 
-function TensorKit.storagetype(::Type{<:PEPOTensor{T}}) where {T<:TensorMap{<:IndexSpace, 3,3}}
-    return storagetype(T)
+function TensorKit.storagetype(::Type{<:AbstractPhysicalTensor{<:IndexSpace,N₁, N₂, Trivial,A}}) where {N₁,N₂,A<:DenseMatrix}
+    return A
+end
+function TensorKit.storagetype(::Type{<:AbstractPhysicalTensor{<:IndexSpace,N₁, N₂, I,<:TensorKit.SectorDict{I,A}}}) where {N₁,N₂,I<:Sector,A<:DenseMatrix}
+    return A
 end
 
-TensorKit.domain(p::PEPOTensor) = TensorKit.domain(p.tensor)
-TensorKit.codomain(p::PEPOTensor) = TensorKit.codomain(p.tensor)
+TensorKit.domain(p::AbstractPhysicalTensor) = TensorKit.domain(p.tensor)
+TensorKit.codomain(p::AbstractPhysicalTensor) = TensorKit.codomain(p.tensor)
 
-Base.getindex(p::PEPOTensor) = Base.getindex(p.tensor)
-Base.getindex(p::PEPOTensor, f::FusionTree) = Base.getindex(p.tensor, f)
-function Base.getindex(p::PEPOTensor, f1::FusionTree, f2::FusionTree)
+Base.getindex(p::AbstractPhysicalTensor) = Base.getindex(p.tensor)
+Base.getindex(p::AbstractPhysicalTensor, f::FusionTree) = Base.getindex(p.tensor, f)
+function Base.getindex(p::AbstractPhysicalTensor, f1::FusionTree, f2::FusionTree)
     return Base.getindex(p.tensor, f1, f2)
 end
 
-TensorKit.fusiontrees(p::PEPOTensor) = TensorKit.fusiontrees(p.tensor)
+TensorKit.fusiontrees(p::AbstractPhysicalTensor) = TensorKit.fusiontrees(p.tensor)
