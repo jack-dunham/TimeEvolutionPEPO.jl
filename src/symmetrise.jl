@@ -28,7 +28,7 @@ struct SymmetricLiouvillian{S,4,4,I<:Sector,A<:TensorKit.SectorDict{I,<:DenseMat
 end
 
 @doc raw"""
-    find_charges(g, G)
+    find_charges(G, g)
 
 Given the vectorised form of a group generator, `g`, outputs a list of the charges and 
 their respective degeneracies. Assumes `g` is diagonalised (i.e. assumes that the basis used
