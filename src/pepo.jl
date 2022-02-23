@@ -12,14 +12,14 @@ abstract type AbstractPEPO{S<:IndexSpace} <: AbstractMatrix{S} end
 Concrete type containing an `AbstractTensorMap{S,3,3}` with unit norm. By convention,
 the codomain is ordered (1,2,out) and the domain is ordered (3,4,in).
 """
-struct PEPOTensor{S<:IndexSpace} <: AbstractTensorMap{S,3,3}
-    tensor::TensorMap{S,3,3}
-    function PEPOTensor(tensor::TensorMap{S,3,3}) where {S<:IndexSpace}
+struct PEPOTensor{T<:TensorMap{<:IndexSpace,3,3}} <: AbstractTensorMap{<:IndexSpace,3,3}
+    tensor::T
+    function PEPOTensor(tensor::T) #where {S<:IndexSpace,J<:Sector,A<:DenseMatrix}
         if norm(tensor) ≈ one(ComplexF64)
-            return new{S}(tensor)
+            return new{T}(tensor)
         else
             @warn "TensorMap does not have norm equal to 1"
-            return new{S}(tensor)
+            return new{T}(tensor)
         end
     end
 end
@@ -33,16 +33,16 @@ Bloch vector. Each element of the Bloch vector can be provided as a seperate arg
 or a vector of real numbers can be provided. 
 """
 function PEPOTensor(D::Int, x::Real, y::Real, z::Real)
-    return PEPOTensor{ComplexSpace}(bloch_pepo(D, x, y, z))
+    return PEPOTensor(bloch_pepo(D, x, y, z))
 end
 PEPOTensor(D::Int, a::Vector{<:Real}) = PEPOTensor(D, a...)
 
 function PEPOTensor(bond::S, phys::S, x::Real, y::Real, z::Real) where {S<:IndexSpace}
-    return PEPOTensor{S}(bloch_pepo(bond, phys, x, y, z))
+    return PEPOTensor(bloch_pepo(bond, phys, x, y, z))
 end
 
 function PEPOTensor(bond::S, phys::S, a::Vector{<:Real}) where {S<:IndexSpace}
-    return PEPOTensor{S}(bloch_pepo(bond, phys, a...))
+    return PEPOTensor(bloch_pepo(bond, phys, a...))
 end
 
 """
@@ -109,27 +109,6 @@ end
 
 function Base.size(A::AbstractPEPO)
     return Base.size(getfield(A, :sites))
-end
-
-function TensorKit.TO.contract!(
-    α,
-    tA::PEPOTensor{S},
-    CA::Symbol,
-    tB::PEPOTensor{S},
-    CB::Symbol,
-    β,
-    tC::PEPOTensor{S},
-    oindA::TensorKit.IndexTuple,
-    cindA::TensorKit.IndexTuple,
-    oindB::TensorKit.IndexTuple,
-    cindB::TensorKit.IndexTuple,
-    p1::TensorKit.IndexTuple,
-    p2::TensorKit.IndexTuple,
-    syms::Union{Nothing,NTuple{3,Symbol}}=nothing,
-) where {S}
-    return TensorKit.TO.contract!(
-        α, tA.tensor, CA, tB.tensor, CB, β, tC, oindA, cindA, oindB, cindB, p1, p2, syms
-    )
 end
 
 function bloch_pepo_data(D::Int, a1::Real, a2::Real, a3::Real)

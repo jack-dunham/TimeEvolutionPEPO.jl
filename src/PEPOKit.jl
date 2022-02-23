@@ -18,5 +18,6 @@ include("vectorpepo.jl")
 include("linalg.jl")
 include("lindblad.jl")
 include("symmetrise.jl")
+include("tensoroperations.jl")
 
 end # module
