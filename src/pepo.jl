@@ -12,14 +12,23 @@ abstract type AbstractPEPO{S<:IndexSpace} <: AbstractMatrix{S} end
 Concrete type containing an `AbstractTensorMap{S,3,3}` with unit norm. By convention,
 the codomain is ordered (1,2,out) and the domain is ordered (3,4,in).
 """
-struct PEPOTensor{S<:IndexSpace} <: AbstractTensorMap{S,3,3}
-    tensor::TensorMap{S,3,3}
-    function PEPOTensor(tensor::TensorMap{S,3,3}) where {S<:IndexSpace}
+struct PEPOTensor{
+    S<:IndexSpace,
+    # A<:Union{TensorKit.SortedVectorDict{J<:Sector,<:DenseMatrix},<:DenseMatrix},
+    J<:Sector,
+    A<:DenseMatrix,
+} <: AbstractTensorMap{S,3,3}
+    tensor::Union{TensorMap{S,3,3,J,A},TensorMap{S,3,3,J,TensorKit.SortedVectorDict{J,A}}}
+    function PEPOTensor(
+        tensor::Union{
+            TensorMap{S,3,3,J,A},TensorMap{S,3,3,J,TensorKit.SortedVectorDict{J,A}}
+        },
+    ) where {S<:IndexSpace,J<:Sector,A<:DenseMatrix}
         if norm(tensor) ≈ one(ComplexF64)
-            return new{S}(tensor)
+            return new{S,J,A}(tensor)
         else
             @warn "TensorMap does not have norm equal to 1"
-            return new{S}(tensor)
+            return new{S,J,A}(tensor)
         end
     end
 end
@@ -33,16 +42,16 @@ Bloch vector. Each element of the Bloch vector can be provided as a seperate arg
 or a vector of real numbers can be provided. 
 """
 function PEPOTensor(D::Int, x::Real, y::Real, z::Real)
-    return PEPOTensor{ComplexSpace}(bloch_pepo(D, x, y, z))
+    return PEPOTensor(bloch_pepo(D, x, y, z))
 end
 PEPOTensor(D::Int, a::Vector{<:Real}) = PEPOTensor(D, a...)
 
 function PEPOTensor(bond::S, phys::S, x::Real, y::Real, z::Real) where {S<:IndexSpace}
-    return PEPOTensor{S}(bloch_pepo(bond, phys, x, y, z))
+    return PEPOTensor(bloch_pepo(bond, phys, x, y, z))
 end
 
 function PEPOTensor(bond::S, phys::S, a::Vector{<:Real}) where {S<:IndexSpace}
-    return PEPOTensor{S}(bloch_pepo(bond, phys, a...))
+    return PEPOTensor(bloch_pepo(bond, phys, a...))
 end
 
 """
