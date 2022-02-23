@@ -18,7 +18,7 @@ Constructs a `SymmetryGroup` type given a group `G` and a group generator `g`.
 function SymmetryGroup(
     g::TensorMap{ComplexSpace}, basis::GradedSpace{<:AbstractIrrep{G}}
 ) where {G<:Group}
-    return SymmetryGroup{G}(find_charges(g, G)..., basis)
+    return SymmetryGroup{G}(find_charges(G,g)..., basis)
 end
 
 struct SymmetricLiouvillian{S,4,4,I<:Sector,A<:TensorKit.SectorDict{I,<:DenseMatrix}} <:
@@ -35,7 +35,7 @@ their respective degeneracies. Assumes `g` is diagonalised (i.e. assumes that th
 is one such that `g` is diagonal), and that each diagonal element of `g` corresponds to a 
 valid irrep label of the group `G`. 
 """
-function find_charges(g, G::Type{<:TensorKit.Group})
+function find_charges(G::Type{<:TensorKit.Group}, g)
     chrgs = Array{Irrep[G]}(undef, 2, 2, 2, 2)
     degn = Dict{Irrep[G],Integer}([])
     for i in 1:2, j in 1:2, k in 1:2, l in 1:2
