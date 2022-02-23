@@ -21,8 +21,9 @@ function SymmetryGroup(
     return SymmetryGroup{G}(find_charges(g, G)..., basis)
 end
 
-struct SymmetricLiouvillian{G<:Group}
-    tensor::TensorMap{<:GradedSpace}
+struct SymmetricLiouvillian{S,4,4,I<:Sector,A<:TensorKit.SectorDict{I,<:DenseMatrix}} <:
+       AbstractPhysicalTensor{S,4,4,I,A}
+    tensor::TensorMap{S,4,4,I,A}
     mapping
 end
 
