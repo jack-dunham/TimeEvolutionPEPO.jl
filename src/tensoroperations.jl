@@ -21,17 +21,17 @@ end
 
 TensorKit.TO.memsize(t::PEPOTensor) = TensorKit.TO.memsize(t.tensor)
 
-function TensorKit.storagetype(
-    pt::Type{<:PEPOTensor{<:IndexSpace,<:Sector,A}}
-) where {A<:DenseMatrix}
-    return A
+function TensorKit.storagetype(::Type{<:PEPOTensor{T}}) where {T<:TensorMap{<:IndexSpace, 3,3}}
+    return storagetype(T)
 end
 
 TensorKit.domain(p::PEPOTensor) = TensorKit.domain(p.tensor)
 TensorKit.codomain(p::PEPOTensor) = TensorKit.codomain(p.tensor)
 
-Base.getindex(p::PEPOTensor) = Base.getindex(p.tensor) 
-Base.getindex(p::PEPOTensor, f::FusionTree) = Base.getindex(p.tensor, f) 
-Base.getindex(p::PEPOTensor, f1::FusionTree, f2::FusionTree) = Base.getindex(p.tensor, f1, f2) 
+Base.getindex(p::PEPOTensor) = Base.getindex(p.tensor)
+Base.getindex(p::PEPOTensor, f::FusionTree) = Base.getindex(p.tensor, f)
+function Base.getindex(p::PEPOTensor, f1::FusionTree, f2::FusionTree)
+    return Base.getindex(p.tensor, f1, f2)
+end
 
 TensorKit.fusiontrees(p::PEPOTensor) = TensorKit.fusiontrees(p.tensor)

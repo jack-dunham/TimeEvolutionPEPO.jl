@@ -12,23 +12,14 @@ abstract type AbstractPEPO{S<:IndexSpace} <: AbstractMatrix{S} end
 Concrete type containing an `AbstractTensorMap{S,3,3}` with unit norm. By convention,
 the codomain is ordered (1,2,out) and the domain is ordered (3,4,in).
 """
-struct PEPOTensor{
-    S<:IndexSpace,
-    # A<:Union{TensorKit.SortedVectorDict{J<:Sector,<:DenseMatrix},<:DenseMatrix},
-    J<:Sector,
-    A<:DenseMatrix,
-} <: AbstractTensorMap{S,3,3}
-    tensor::Union{TensorMap{S,3,3,J,A},TensorMap{S,3,3,J,TensorKit.SortedVectorDict{J,A}}}
-    function PEPOTensor(
-        tensor::Union{
-            TensorMap{S,3,3,J,A},TensorMap{S,3,3,J,TensorKit.SortedVectorDict{J,A}}
-        },
-    ) where {S<:IndexSpace,J<:Sector,A<:DenseMatrix}
+struct PEPOTensor{T<:TensorMap{<:IndexSpace,3,3}} <: AbstractTensorMap{<:IndexSpace,3,3}
+    tensor::T
+    function PEPOTensor(tensor::T) #where {S<:IndexSpace,J<:Sector,A<:DenseMatrix}
         if norm(tensor) ≈ one(ComplexF64)
-            return new{S,J,A}(tensor)
+            return new{T}(tensor)
         else
             @warn "TensorMap does not have norm equal to 1"
-            return new{S,J,A}(tensor)
+            return new{T}(tensor)
         end
     end
 end
