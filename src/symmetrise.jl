@@ -18,13 +18,32 @@ Constructs a `SymmetryGroup` type given a group `G` and a group generator `g`.
 function SymmetryGroup(
     g::TensorMap{ComplexSpace}, basis::GradedSpace{<:AbstractIrrep{G}}
 ) where {G<:Group}
-    return SymmetryGroup{G}(find_charges(G,g)..., basis)
+    return SymmetryGroup{G}(find_charges(G, g)..., basis)
 end
 
-struct SymmetricLiouvillian{S,4,4,I<:Sector,A<:TensorKit.SectorDict{I,<:DenseMatrix}} <:
-       AbstractPhysicalTensor{S,4,4,I,A}
-    tensor::TensorMap{S,4,4,I,A}
+struct Liouvillian{
+    S<:IndexSpace,
+    I<:Sector,
+    A<:Union{TensorKit.SectorDict{I,<:DenseMatrix},<:DenseMatrix},
+    F₁,
+    F₂,
+} <: AbstractPhysicalTensor{S,4,4,I,A,F₁,F₂}
+    tensor::TensorMap{S,4,4,I,A,F₁,F₂}
     mapping
+end
+
+const SymmetricLiouvillian{S<:GradedSpace,I<:Sector,A<:TensorKit.SectorDict{I,<:DenseMatrix},F₁,F₂} = Liouvillian{S,I,A, F₁,F₂}
+
+function SymmetricLiouvillian(t::TensorMap{S,4,4,I, A, F₁, F₂}, mapping ) where {S<:GradedSpace, I<:Sector, A<:TensorKit.SectorDict{I,<:DenseMatrix}, F₁,F₂}
+    return SymmetricLiouvillian{S,I,A,F₁,F₂}(t, mapping)
+end
+
+const StandardLiouvillian{A<:DenseMatrix} = Liouvillian{ComplexSpace,Trivial,A,Nothing,Nothing}
+
+function StandardLiouvillian(
+    t::TensorMap{ComplexSpace,4,4,Trivial,A,Nothing,Nothing}, nothing
+) where {A<:DenseMatrix}
+    return StandardLiouvillian{A}(t, nothing)
 end
 
 @doc raw"""
@@ -56,7 +75,8 @@ end
 
 Outputs the blocks corresponding to each charge sector of a symmetric Liouvillian. 
 """
-function find_blocks(SG::SymmetryGroup{G}, L::TensorMap{ComplexSpace,4,4}) where {G<:Group}
+function find_blocks(SG::SymmetryGroup{G}, L::StandardLiouvillian) where {G<:Group}
+    L = L
     chrgs = SG.charges
     degn = SG.degeneracy
     blocks = Dict{Irrep[G],Matrix{ComplexF64}}([])
@@ -101,13 +121,13 @@ function find_blocks(SG::SymmetryGroup{G}, L::TensorMap{ComplexSpace,4,4}) where
     return blocks, mapping
 end
 
-function symmetrise(SG::SymmetryGroup{<:Group}, L::TensorMap{ComplexSpace,4,4})
+function symmetrise(SG::SymmetryGroup{<:Group}, L::StandardLiouvillian)
     blcks, mapping = find_blocks(SG, L)
     lin = TensorMap(zeros, ComplexF64, SG.basis^4, SG.basis^4)
     for i in keys(SG.degeneracy)
         blocks(lin)[i] = blcks[i]
     end
-    return lin, mapping
+    return SymmetricLiouvillian(lin, mapping)
 end
 
 function unsymmetrise(L::SymmetricLiouvillian)
@@ -124,5 +144,9 @@ function unsymmetrise(L::SymmetricLiouvillian)
             cL[irrepmap[row], irrepmap[col]] = block[i]
         end
     end
-    return TensorMap(cL, ℂ^2 * ℂ^2 * ℂ^2 * ℂ^2, ℂ^2 * ℂ^2 * ℂ^2 * ℂ^2)
+    return StandardLiouvillian(
+        TensorMap(cL, ℂ^2 * ℂ^2 * ℂ^2 * ℂ^2, ℂ^2 * ℂ^2 * ℂ^2 * ℂ^2), nothing
+    )
 end
+
+#TODO: nothing -> identity mapping

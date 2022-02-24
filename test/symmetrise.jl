@@ -4,10 +4,8 @@
     basis = U1Space(-1=>1, 1=>1)
     SG = PEPOKit.SymmetryGroup(vg, basis)
     H = σ1 ⊗ σ1 - σ2 ⊗ σ2
-    L = PEPOKit.coherent(H) + PEPOKit.dissipator(2) 
-    LL, mapping = PEPOKit.symmetrise(SG,L)
-    
-    symL = PEPOKit.SymmetricLiouvillian{U₁}(LL, mapping)
+    L = PEPOKit.StandardLiouvillian(PEPOKit.coherent(H) + PEPOKit.dissipator(2), nothing)
+    symL = PEPOKit.symmetrise(SG,L)
 
     @test PEPOKit.unsymmetrise(symL) ≈ L 
 end
