@@ -28,13 +28,4 @@ function TensorKit.storagetype(::Type{<:AbstractPhysicalTensor{<:IndexSpace,N₁
     return A
 end
 
-TensorKit.domain(p::AbstractPhysicalTensor) = TensorKit.domain(p.tensor)
-TensorKit.codomain(p::AbstractPhysicalTensor) = TensorKit.codomain(p.tensor)
-
-Base.getindex(p::AbstractPhysicalTensor) = Base.getindex(p.tensor)
-Base.getindex(p::AbstractPhysicalTensor, f::FusionTree) = Base.getindex(p.tensor, f)
-function Base.getindex(p::AbstractPhysicalTensor, f1::FusionTree, f2::FusionTree)
-    return Base.getindex(p.tensor, f1, f2)
-end
-
-TensorKit.fusiontrees(p::AbstractPhysicalTensor) = TensorKit.fusiontrees(p.tensor)
+@forward AbstractPhysicalTensor.tensor getindex, domain, codomain, fusiontrees, memsize

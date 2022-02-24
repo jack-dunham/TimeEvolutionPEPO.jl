@@ -2,6 +2,7 @@ module PEPOKit
 
 using TensorKit
 using LinearAlgebra
+using MacroTools: @forward
 
 import TensorKit: Group, AbelianGroup
 
