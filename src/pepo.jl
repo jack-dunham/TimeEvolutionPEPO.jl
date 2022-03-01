@@ -168,9 +168,9 @@ end
 bloch_pepo(D::Int, a::Vector{<:Real}) = bloch_pepo(D, a...)
 
 function bloch_pepo(
-    bond::S, phys::S, a1::Float64, a2::Float64, a3::Float64
-) where {S<:IndexSpace}
-    A = bloch_pepo_data(dim(sec), a1, a2, a3)
+    bond::S, phys::S, a1::Real, a2::Real, a3::Real
+) where {S<:GradedSpace}
+    A = bloch_pepo_data(dim(bond), a1, a2, a3)
     return TensorMap(A, bond * bond * phys, bond * bond * phys)
 end
 
