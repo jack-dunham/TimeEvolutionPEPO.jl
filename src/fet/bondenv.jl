@@ -4,23 +4,55 @@
 Returns the Hilbert-Schmidt bond evironment of a tensor
 """
 function hsbondenv(vp::VectorPEPOTensor{S}, bond::S) where {S<:IndexSpace}
-    hs = hilbertschmidt(vp)
+    hs, wu, eu = hilbertschmidt(vp)
     guess = InfiniteMPS([codomain(hs)[2]], [bond])
-    ts,envs,_ = leading_boundary(guess, InfiniteMPO(hs), Vumps(; maxiter=400, verbose=true))
-    FL =  permute(leftenv(envs,1,1,convert(MPSMultiline,ts)), Tuple(1), (2,3))
-    FR =  rightenv(envs,1,1,convert(MPSMultiline,ts))
+    ts, envs, _ = leading_boundary(
+        guess, InfiniteMPO(hs), Vumps(; maxiter=100, verbose=true)
+    )
+    FL = permute(leftenv(envs, 1, 1, convert(MPSMultiline, ts)), Tuple(1), (2, 3))
+    FR = rightenv(envs, 1, 1, convert(MPSMultiline, ts))
     AL = ts.AL[1]
     AR = ts.AR[1]
     C = ts.CR[1]
-    @tensor γ[w2 ; e1] := 
-        FL[8 ;w1 1]*AL[1 n1 ; 2]*C[2 ; 3] * AR[3 n2; 4] * FR[4 e2; 5] *
-        (AR')[5 ; 6 s2 ]*(C')[6 ; 7]*(AL')[7 ; 8 s1]*hs[w1 s1 ; n1 e1]*hs[w2 s2 ; n2 e2] 
+    # original γ[w2 ; e1]
+    # without flipping after split: 
+    # 3. e1u |-<-  -<-| w2u 1.
+    # 2. e1d |->-  ->-| w2d 4.
+    γ = _construct_hsbondenv(hs, wu, eu, ts, envs)
     return γ
 end
 
+function _construct_hsbondenv(hs, wu, eu, ts, envs)
+    wui = inv(wu)
+    eui = inv(eu)
+    γ = TensorMap(undef, ComplexF64, codomain(wui)[1]*domain(eui)[2]', domain(eui)[1]*codomain(wui)[2]')
+    FL = permute(leftenv(envs, 1, 1, convert(MPSMultiline, ts)), Tuple(1), (2, 3))
+    FR = rightenv(envs, 1, 1, convert(MPSMultiline, ts))
+    AL = ts.AL[1]
+    AR = ts.AR[1]
+    C = ts.CR[1]
+    @time begin
+    # use @tensoropt macro, otherwise uses GiB of memory
+    @tensoropt γ[w2u e1d; e1u w2d] =
+        FL[8; w1 1] *
+        AL[1 n1; 2] *
+        C[2; 3] *
+        AR[3 n2; 4] *
+        FR[4 e2; 5] *
+        (AR')[5; 6 s2] *
+        (C')[6; 7] *
+        (AL')[7; 8 s1] *
+        hs[w1 s1; n1 e1] *
+        eui[e1; e1u e1d] *
+        hs[w2 s2; n2 e2] *
+        wui[w2u w2d; w2]
+    end
+    return γ
+end
 
 function hilbertschmidt(vp1::TensorMap{S,3,2}, vp2::TensorMap{S,3,2}) where {S<:IndexSpace}
-    @tensor vphs[wu wd su sd; nu nd eu ed] := vp1[wu su ph; nu eu] * (vp2')[wd sd; nd ed ph]
+    # @tensor vphs[wu wd su sd; nu nd eu ed] := vp1[wu su ph; nu eu] * (vp2')[wd sd; nd ed ph] old
+    @tensor vphs[wu wd su sd; nu nd eu ed] := vp1[wu su ph; nu eu] * (vp2')[nd ed; wd sd ph]
     cod = codomain(vphs)
     dom = domain(vphs)
     # codomain 
@@ -35,7 +67,7 @@ function hilbertschmidt(vp1::TensorMap{S,3,2}, vp2::TensorMap{S,3,2}) where {S<:
         vphs[wu wd su sd; nu nd eu ed] *
         nu[nu nd; n] *
         eu[eu ed; e]
-    return rv
+    return rv, wu, eu
 end
 
 function hilbertschmidt(
@@ -44,8 +76,8 @@ function hilbertschmidt(
     return hilbertschmidt(vp1.tensor, vp2.tensor)
 end
 
-hilbertschmidt(vp::TensorMap{<:IndexSpace,3,2}) = hilbertschmidt(vp,vp)
-hilbertschmidt(vp::VectorPEPOTensor) = hilbertschmidt(vp.tensor,vp.tensor)
+hilbertschmidt(vp::TensorMap{<:IndexSpace,3,2}) = hilbertschmidt(vp, vp)
+hilbertschmidt(vp::VectorPEPOTensor) = hilbertschmidt(vp.tensor, vp.tensor)
 
 @doc raw"""
     merge(tensor) 
