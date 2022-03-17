@@ -50,9 +50,15 @@ function _construct_hsbondenv(hs, wu, eu, ts, envs)
     return γ
 end
 
+# PERF: this uses loads of memory. Probably need to come up with a better way of reshaping
+# that avoids tensor contractions.
 function hilbertschmidt(vp1::TensorMap{S,3,2}, vp2::TensorMap{S,3,2}) where {S<:IndexSpace}
     # @tensor vphs[wu wd su sd; nu nd eu ed] := vp1[wu su ph; nu eu] * (vp2')[wd sd; nd ed ph] old
-    @tensor vphs[wu wd su sd; nu nd eu ed] := vp1[wu su ph; nu eu] * (vp2')[nd ed; wd sd ph]
+    @info "Constructing HS tensor..."
+    @time begin
+    @tensoropt vphs[wu wd su sd; nu nd eu ed] := vp1[wu su ph; nu eu] * (vp2')[nd ed; wd sd ph]
+    @info "Size of vphs: $(Base.summarysize(vphs)/1024/1024) MiB"
+    end
     cod = codomain(vphs)
     dom = domain(vphs)
     # codomain 
@@ -61,12 +67,20 @@ function hilbertschmidt(vp1::TensorMap{S,3,2}, vp2::TensorMap{S,3,2}) where {S<:
     # domain
     nu = unitary(dom[1] ⊗ dom[2], fuse(dom[1] ⊗ dom[2]))
     eu = unitary(dom[3] ⊗ dom[4], fuse(dom[3] ⊗ dom[4]))
-    @tensor rv[w s; n e] :=
+    @info "fusing indices..."
+    @time begin
+    @tensoropt rv[w s; n e] :=
         wu[w; wu wd] *
         su[s; su sd] *
         vphs[wu wd su sd; nu nd eu ed] *
         nu[nu nd; n] *
         eu[eu ed; e]
+    end
+
+    # @time @tensoropt rv1[w su sd; nu nd eu ed]:=vphs[wu wd su sd; nu nd eu ed]*wu[w; wu wd]
+    # @time @tensoropt rv2[w s; nu nd eu ed]:=rv1[w su sd; nu nd eu ed]*su[s; su sd]
+    # @time @tensoropt rv3[w s; n eu ed]:=rv2[w s; nu nd eu ed]*nu[nu nd ; n]
+    # @time @tensoropt rv[w s; n e]:=rv3[w s; n eu ed]*eu[eu ed; e]
     return rv, wu, eu
 end
 
