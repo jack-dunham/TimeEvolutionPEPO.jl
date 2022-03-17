@@ -58,11 +58,11 @@ const cj = conjugate
     trace(t::PEPOTensor{S}, bond::S) where {S<:IndexSpace}
 
 """
-function trace(t::PEPOTensor{S}, bond::S) where {S<:IndexSpace} 
+function trace(t::PEPOTensor{S}, bond::S) where {S<:IndexSpace}
     @tensor pt[w s; n e] := t[w s x; n e x]
     guess = InfiniteMPS([codomain(pt)[2]], [bond])
-    ts,_,_ = leading_boundary(guess, InfiniteMPO(pt), Vumps(; maxiter=400, verbose=true))
-    return expectation_value(ts,pt,1), ts
+    ts, _, _ = leading_boundary(guess, InfiniteMPO(pt), Vumps(; maxiter=400, verbose=true))
+    return expectation_value(ts, pt, 1), ts
 end
 
 trace(t::PEPOTensor{ComplexSpace}, χ::Integer) = trace(t, ℂ^χ)
