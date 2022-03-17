@@ -30,5 +30,6 @@ include("lindblad.jl")
 include("symmetrise.jl")
 include("tensoroperations.jl")
 include("fet/bondenv.jl")
+include("fet/isometries.jl")
 
 end # module
