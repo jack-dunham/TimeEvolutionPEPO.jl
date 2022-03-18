@@ -2,6 +2,7 @@ module PEPOKit
 
 using TensorKit
 using LinearAlgebra
+using KrylovKit
 using MacroTools: @forward
 using MPSKit
 
@@ -29,6 +30,7 @@ include("linalg.jl")
 include("lindblad.jl")
 include("symmetrise.jl")
 include("tensoroperations.jl")
+include("fet/vumps.jl")
 include("fet/bondenv.jl")
 include("fet/isometries.jl")
 
