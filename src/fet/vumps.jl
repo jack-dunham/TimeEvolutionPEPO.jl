@@ -78,14 +78,6 @@ function leftgauge(A, Li, tol = 1e-12, maxiter = 100)
         λs, Cs, info = eigsolve(R, 1, :LM; ishermitian = false, tol = tol, eager=true, maxiter = 1) do X
             @tensor X[d ; u]:=A[1 2 ; 3 u]*(AL')[d 3 ; b 2]*X[b ; a]
         end
-        # _, C = leftorth(Cs[1])
-
-        # @tensor CA[1 2 ; 3 4]:= C[1;a]*A[a 2; 3 4]
-        # Q, R = leftorth(CA, (1,2,3), (4,))
-        # AL = permute(Q, (1,2), (3,4))
-
-        # R = R/norm(R)
-
         AL, C, R = _leftgaugefactor(Cs[1], A)
         numiter += 1
     end
@@ -113,13 +105,6 @@ function _leftgaugeinitial(A, Li=TensorMap(randn, ComplexF64, codomain(A)[1], co
     l = sqrt(Σ)*Vt
 
     AL, l, R = _leftgaugefactor(l, A)
-
-    # _, l = leftorth(l)
-
-    # @tensor lA[1 2 ; 3 4]:= l[1;a]*A[a 2; 3 4]
-    # Q, R = leftorth(lA, (1,2,3), (4,))
-    # AL = permute(Q, (1,2), (3,4))
-
     return AL, l, R
 end
 
