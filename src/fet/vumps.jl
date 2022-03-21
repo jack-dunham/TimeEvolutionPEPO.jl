@@ -63,3 +63,84 @@ function rightenv(
     end
     return FRs[1], λs[1], info
 end
+
+"""
+    leftgauge(A::TensorMap, [C]; kwargs...)
+
+Given a MPS tensor `A`, return a left-canonical MPS tensor `AL`, a gauge transform `C` and
+a scalar factor `λ` such that ``λ AL^s C = C A^s``, where an initial guess for `C` can be
+provided.
+"""
+function leftgauge(A, Li, tol = 1e-12, maxiter = 100)
+    AL, C, R = _leftgaugeinitial(A, Li)
+    numiter = 1
+    while norm(C-R) > tol && numiter < maxiter
+        λs, Cs, info = eigsolve(R, 1, :LM; ishermitian = false, tol = tol, eager=true, maxiter = 1) do X
+            @tensor X[d ; u]:=A[1 2 ; 3 u]*(AL')[d 3 ; b 2]*X[b ; a]
+        end
+        # _, C = leftorth(Cs[1])
+
+        # @tensor CA[1 2 ; 3 4]:= C[1;a]*A[a 2; 3 4]
+        # Q, R = leftorth(CA, (1,2,3), (4,))
+        # AL = permute(Q, (1,2), (3,4))
+
+        # R = R/norm(R)
+
+        AL, C, R = _leftgaugefactor(Cs[1], A)
+        numiter += 1
+    end
+    C = R
+    return AL, C, λ
+end
+
+function _leftgaugefactor(C, A)
+    _, C = leftorth(C)
+    @tensor CA[1 2 ; 3 4]:= C[1;a]*A[a 2; 3 4]
+    Q, R = leftorth(CA, (1,2,3), (4,))
+    AL = permute(Q, (1,2), (3,4))
+
+    R = R/norm(R)
+    return AL, C, R 
+end
+
+function _leftgaugeinitial(A, Li=TensorMap(randn, ComplexF64, codomain(A)[1], codomain(A)[1]))
+    λs, Ls, info = eigsolve(Li'*Li, 1, :LM; ishermitian = false, tol = tol, maxiter = 1, eager=true) do L
+        @tensor L[d ; u]:=A[1 2 ; 3 u]*(A')[d 3 ; b 2]*L[b ; a]
+    end
+
+    L = Ls[1]
+    U, Σ, Vt = tsvd(L)
+    l = sqrt(Σ)*Vt
+
+    AL, l, R = _leftgaugefactor(l, A)
+
+    # _, l = leftorth(l)
+
+    # @tensor lA[1 2 ; 3 4]:= l[1;a]*A[a 2; 3 4]
+    # Q, R = leftorth(lA, (1,2,3), (4,))
+    # AL = permute(Q, (1,2), (3,4))
+
+    return AL, l, R
+end
+
+function _vumpsstep(AL, C, AR, M, FL, FR; kwargs...)
+    @tensor AC[-1 -2 ; -3 -4]:=AL[-1 -2 ; -3 4]*C[4, -4]
+    μ1s, ACs, info1 = eigsolve(x->applyH1(x, FL, FR, M), AC, 1, :LM; ishermitian = false, eager=true, maxiter = 1, kwargs...)
+    μ0s, Cs, info0 = eigsolve(x->applyH0(x, FL, FR), C, 1; ishermitian = false, eager=true, maxiter = 1, kwargs...)
+
+    λ = real(μ1s[1]/μ0s[1])
+    AC = ACs[1]
+    C = Cs[1]
+    
+    QAC, RAC = leftorth(AC, (1,2,3), (4,))
+    QC, RC = leftorth(C)
+    AL = permute(QAC*QC', (1,2),(3,4))
+    errL = norm(RAC-RC)
+
+    LAC, QAC = rightorth(AC, (1,), (2,3,4))
+    LC, QC = rightorth(C)
+    AL = permute(QC'*QAC, (1,2),(3,4))
+    errR = norm(LAC-LC)
+
+    return λ, AL, C, AR, errL, errR
+end
