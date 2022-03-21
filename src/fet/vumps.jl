@@ -71,14 +71,14 @@ Given a MPS tensor `A`, return a left-canonical MPS tensor `AL`, a gauge transfo
 a scalar factor `λ` such that ``λ AL^s C = C A^s``, where an initial guess for `C` can be
 provided.
 """
-function leftgauge(A, Li, tol = 1e-12, maxiter = 100)
-    AL, C, R = _leftgaugeinitial(A, Li)
+function leftgauge(A, Li=TensorMap(randn, ComplexF64, codomain(A)[1], codomain(A)[1]); tol = 1e-12, maxiter = 100)
+    AL, C, R, λ = _leftgaugeinitial(A, Li; tol = tol)
     numiter = 1
     while norm(C-R) > tol && numiter < maxiter
         λs, Cs, info = eigsolve(R, 1, :LM; ishermitian = false, tol = tol, eager=true, maxiter = 1) do X
-            @tensor X[d ; u]:=A[1 2 ; 3 u]*(AL')[d 3 ; b 2]*X[b ; a]
+            @tensor X[d ; u]:=A[a 2 ; 3 u]*(AL')[3 d; b 2]*X[b ; a]
         end
-        AL, C, R = _leftgaugefactor(Cs[1], A)
+        AL, C, R, λ = _leftgaugefactor(Cs[1], A)
         numiter += 1
     end
     C = R
@@ -90,22 +90,29 @@ function _leftgaugefactor(C, A)
     @tensor CA[1 2 ; 3 4]:= C[1;a]*A[a 2; 3 4]
     Q, R = leftorth(CA, (1,2,3), (4,))
     AL = permute(Q, (1,2), (3,4))
-
-    R = R/norm(R)
-    return AL, C, R 
+    
+    λ = norm(R)
+    R = R*1/λ
+    return AL, C, R, λ
 end
 
-function _leftgaugeinitial(A, Li=TensorMap(randn, ComplexF64, codomain(A)[1], codomain(A)[1]))
+function _leftgaugeinitial(A, Li; tol = 1e-12)
     λs, Ls, info = eigsolve(Li'*Li, 1, :LM; ishermitian = false, tol = tol, maxiter = 1, eager=true) do L
-        @tensor L[d ; u]:=A[1 2 ; 3 u]*(A')[d 3 ; b 2]*L[b ; a]
+        @tensor L[d ; u]:=A[a 2 ; 3 u]*(A')[3 d ; b 2]*L[b ; a]
     end
-
     L = Ls[1]
-    U, Σ, Vt = tsvd(L)
+    L = Ls[1] + Ls[1]'
+    L = L/tr(L)
+    _, Σ, Vt = tsvd(L)
     l = sqrt(Σ)*Vt
 
-    AL, l, R = _leftgaugefactor(l, A)
-    return AL, l, R
+    AL, l, R, λ = _leftgaugefactor(l, A)
+    return AL, l, R, λ
+end
+
+function rightgauge(A, Ri=TensorMap(randn, ComplexF64, codomain(A)[1], codomain(A)[1]), tol = 1e-12, maxiter = 100)
+    AR, C, λ = leftgauge(permute(A, (4,2),(3,1)), permute(Ri, (2,),(1,)))
+    return permute(AR, (4,2),(3,1)), permute(C, (2,),(1,)), λ
 end
 
 function _vumpsstep(AL, C, AR, M, FL, FR; kwargs...)
