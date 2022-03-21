@@ -48,7 +48,7 @@ function leftenv(
             M[1 2 3 -2 -3 6; 7 8 9 -4 -5 12] *
             (AL')[-1 9; d 3]
     end
-    return FLs[1], real(λs[1]), info
+    return FLs[1], λs[1], info
 end
 
 function rightenv(
@@ -61,5 +61,5 @@ function rightenv(
             FR[11 10 u; 5 4 d] *
             (AR')[d 9; -6 3]
     end
-    return FRs[1], real(λs[1]), info
+    return FRs[1], λs[1], info
 end
