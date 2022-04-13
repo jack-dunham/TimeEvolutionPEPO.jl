@@ -17,6 +17,10 @@ west-northerly (west first) positon, then domain in same order.
      4 1 
      v ^ 
 3 ->[ a']-> 2
+
+      3
+      v  
+2 ->[ a']->1
 =#
 function applyH1(
     AC::TensorMap{S,2,2}, FL::TensorMap{S,3,3}, FR::TensorMap{S,3,3}, M::TensorMap{S,6,6}

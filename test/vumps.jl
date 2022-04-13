@@ -113,9 +113,9 @@ function leftenv(
 ) where {T}
     λs, FLs, info = eigsolve(FL, 1, :LM; eager=true, ishermitian=false) do FL
         @tensor FL[α, a, β] :=
-            FL[α', a', β'] * A[β', s', β] * M[a', s, a, s'] * conj(A[α', s, α])
+        FL[α', a', β'] * A[β', s', β] * M[a', s, a, s'] * conj(A)[α', s, α] # try a a'
     end
-    return FLs[1], real(λs[1]), info
+    return FLs[1], λs[1], info
 end
 
 function rightenv(
@@ -276,7 +276,18 @@ function _getsize(a, order)
 end
 
 function _merge(a, order)
+    shape, _, perm = _getsize(a, order)
+    aa = permutedims(a, perm)
+    return reshape(aa, shape)
 end
+
+# broken
+function _unmerge(a, order)
+    _, shapeinv, perm = _getsize(a, order)
+    aa = reshape(a, shapeinv)
+    return permutedims(aa, invperm(perm))
+end
+
 #----------
 
 function _leftenvapply(FL, AL, M)
@@ -309,6 +320,41 @@ end
     end
 end
 
+@testset "trace vumps" begin
+    S = ℂ 
+    tA = TensorMap(randn, ComplexF64, S^4 * S^4, S^4)
+    tM = TensorMap(randn, ComplexF64, S^4 * S^4, S^4 * S^4)
+
+    aA = convert(Array, tA)
+    aM = convert(Array, tM)
+
+    tAL, tC, tλ = PEPOKit.leftgauge(tA)
+    aAL, aC, aλ = leftgauge(aA)
+
+    tAR, tC, tλ = PEPOKit.rightgauge(tAL)
+    aAR, aC, aλ = rightgauge(aAL)
+
+    @testset "gauging" begin
+        @testset "left" begin
+            @test aAL ≈ convert(Array, tAL) # Test AL correct
+            @test aC ≈ convert(Array, tC) # Test C is correct
+            @test aλ ≈ tλ # Test λ is correct
+        end
+        @testset "right" begin
+            @test aAR ≈ convert(Array, tAR) # Test AL correct
+            @test aC ≈ convert(Array, tC) # Test C is correct
+            @test aλ ≈ tλ # Test λ is correct
+        end
+    end
+    tFL, tλ, _ = PEPOKit.leftenv(tAL, tM) 
+    aFL, aλ, _ = leftenv(aAL, aM)
+    @testset "environments" begin
+        @test aFL ≈ convert(Array, tFL) 
+        @info "tλ = $(tλ) \n aλ = $(aλ)"
+        @test tλ ≈ aλ
+    end
+end
+
 @testset "vumps" begin
     S = ℂ
     tA = TensorMap(randn, ComplexF64, S^4 * S^2, S^2 * S^4)
@@ -338,5 +384,14 @@ end
             @test aλ ≈ tλ # Test λ is correct
         end
     end
-    @testset "environments" begin end
+    order_A = ((1,),(2,3),(4,))
+    order_FL = ((1,), (2,3,4,5), (6,))
+    order_M = ((1,2,7,8),(3,9),(4,5,10,11), (6,12)) 
+    tFL, tλ, _ = PEPOKit.leftenv(tAL, tM) # this is (2,2) (6,6)
+    aFL, aλ, _ = leftenv(_merge(aAL,order_A), _merge(aM, order_M)) # this is rank 3, rank 4
+    @testset "environments" begin 
+        tFL_arr = _merge(convert(Array, tFL), order_FL)
+        @test real(tλ) ≈ aλ
+        # @test aFL ≈ tFL_arr
+    end
 end
