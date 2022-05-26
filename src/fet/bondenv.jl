@@ -21,31 +21,67 @@ function hsbondenv(vp::VectorPEPOTensor{S}, bond::S) where {S<:IndexSpace}
     γ = _construct_hsbondenv(hs, wu, eu, ts, envs)
     return γ
 end
+function hsbondenv(vhs::TensorMap{ComplexSpace,6,6}, D::Integer)
+    sp = hcat(codomain(vhs)..., domain(vhs)...)
+    A = TensorMap(randn, ComplexF64, ℂ^D * sp[6], sp[12] * ℂ^D)
+    λ, AL, C, AR, FL, FR = vumps(A, vhs; maxiter=400,verbose=true)
+    return _construct_hsbondenv(vhs, AL, C, AR, FL, FR)
+end
+
 
 function _construct_hsbondenv(hs, wu, eu, ts, envs)
     wui = inv(wu)
     eui = inv(eu)
-    γ = TensorMap(undef, ComplexF64, codomain(wui)[1]*domain(eui)[2]', domain(eui)[1]*codomain(wui)[2]')
+    γ = TensorMap(
+        undef,
+        ComplexF64,
+        codomain(wui)[1] * domain(eui)[2]',
+        domain(eui)[1] * codomain(wui)[2]',
+    )
     FL = permute(leftenv(envs, 1, 1, convert(MPSMultiline, ts)), Tuple(1), (2, 3))
     FR = rightenv(envs, 1, 1, convert(MPSMultiline, ts))
     AL = ts.AL[1]
     AR = ts.AR[1]
     C = ts.CR[1]
     @time begin
-    # use @tensoropt macro, otherwise uses GiB of memory
-    @tensoropt γ[w2u e1d; e1u w2d] =
-        FL[8; w1 1] *
-        AL[1 n1; 2] *
-        C[2; 3] *
-        AR[3 n2; 4] *
-        FR[4 e2; 5] *
-        (AR')[5; 6 s2] *
-        (C')[6; 7] *
-        (AL')[7; 8 s1] *
-        hs[w1 s1; n1 e1] *
-        eui[e1; e1u e1d] *
-        hs[w2 s2; n2 e2] *
-        wui[w2u w2d; w2]
+        # use @tensoropt macro, otherwise uses GiB of memory
+        @tensoropt γ[w2u e1d; e1u w2d] =
+            FL[8; w1 1] *
+            AL[1 n1; 2] *
+            C[2; 3] *
+            AR[3 n2; 4] *
+            FR[4 e2; 5] *
+            (AR')[5; 6 s2] *
+            (C')[6; 7] *
+            (AL')[7; 8 s1] *
+            hs[w1 s1; n1 e1] *
+            eui[e1; e1u e1d] *
+            hs[w2 s2; n2 e2] *
+            wui[w2u w2d; w2]
+    end
+    return γ
+end
+function _construct_hsbondenv(
+    M::TensorMap{S,6,6},
+    AL::TensorMap{S,2,2},
+    C::TensorMap{S,1,1},
+    AR::TensorMap{S,2,2},
+    FL::TensorMap{S,3,3},
+    FR::TensorMap{S,3,3},
+) where {S<:IndexSpace}
+    @info "Constructing bond environment..."
+    @time begin
+    @tensoropt γ[-1 -2 -3 -4; -5 -6 -7 -8] :=
+        M[l1 l2 l3 -2 -1 l6; l7 l8 l9 -6 -5 l12] *
+        M[-4 -3 r3 r4 r5 r6; -8 -7 r9 r10 r11 r12] *
+        FL[sw l8 l7; l2 l1 nw] *
+        FR[r11 r10 ne; r5 r4 se] *
+        AL[nw l12; l6 au] *
+        C[au; bu] *
+        AR[bu r12; r6 ne] *
+        (AL')[l9 ad; sw l3] *
+        (C')[bd; ad] *
+        (AR')[r9 se; bd r3]
     end
     return γ
 end
@@ -56,8 +92,9 @@ function hilbertschmidt(vp1::TensorMap{S,3,2}, vp2::TensorMap{S,3,2}) where {S<:
     # @tensor vphs[wu wd su sd; nu nd eu ed] := vp1[wu su ph; nu eu] * (vp2')[wd sd; nd ed ph] old
     @info "Constructing HS tensor..."
     @time begin
-    @tensoropt vphs[wu wd su sd; nu nd eu ed] := vp1[wu su ph; nu eu] * (vp2')[nd ed; wd sd ph]
-    @info "Size of vphs: $(Base.summarysize(vphs)/1024/1024) MiB"
+        @tensoropt vphs[wu wd su sd; nu nd eu ed] :=
+            vp1[wu su ph; nu eu] * (vp2')[nd ed; wd sd ph]
+        @info "Size of vphs: $(Base.summarysize(vphs)/1024/1024) MiB"
     end
     cod = codomain(vphs)
     dom = domain(vphs)
@@ -69,12 +106,12 @@ function hilbertschmidt(vp1::TensorMap{S,3,2}, vp2::TensorMap{S,3,2}) where {S<:
     eu = unitary(dom[3] ⊗ dom[4], fuse(dom[3] ⊗ dom[4]))
     @info "fusing indices..."
     @time begin
-    @tensoropt rv[w s; n e] :=
-        wu[w; wu wd] *
-        su[s; su sd] *
-        vphs[wu wd su sd; nu nd eu ed] *
-        nu[nu nd; n] *
-        eu[eu ed; e]
+        @tensoropt rv[w s; n e] :=
+            wu[w; wu wd] *
+            su[s; su sd] *
+            vphs[wu wd su sd; nu nd eu ed] *
+            nu[nu nd; n] *
+            eu[eu ed; e]
     end
 
     # @time @tensoropt rv1[w su sd; nu nd eu ed]:=vphs[wu wd su sd; nu nd eu ed]*wu[w; wu wd]
@@ -84,6 +121,13 @@ function hilbertschmidt(vp1::TensorMap{S,3,2}, vp2::TensorMap{S,3,2}) where {S<:
     return rv, wu, eu
 end
 
+function hilbertschmidt(vp1::TensorMap{S,4,3}, vp2::TensorMap{S,4,3}) where {S<:IndexSpace}
+    @tensoropt vhs[1 2 3 4 5 6; 7 8 9 10 11 12] :=
+        vp1[1 2 3 s; 10 11 12] * (vp2')[4 5 6; 7 8 9 s]
+    return vhs
+end
+
+
 function hilbertschmidt(
     vp1::VectorPEPOTensor{S}, vp2::VectorPEPOTensor{S}
 ) where {S<:EuclideanSpace}
@@ -92,24 +136,3 @@ end
 
 hilbertschmidt(vp::TensorMap{<:IndexSpace,3,2}) = hilbertschmidt(vp, vp)
 hilbertschmidt(vp::VectorPEPOTensor) = hilbertschmidt(vp.tensor, vp.tensor)
-
-@doc raw"""
-    merge(tensor) 
-
-TODO: docstring
-"""
-function merge(tensor, i1, i2)
-    # merge two indices of a tensor 
-    cod = codomain(tensor)
-    dom = domain(tensor)
-    codD = length(cod)
-    domD = length(dom)
-    if ((i1 <= codD) && (i2 <= codD)) # fuse two indices in codomain
-    # do stuff
-    elseif ((i1 > codD) && (i2 > codD)) # fuse two indices in domain
-    #  TODO: WIP needs to use TO.jl API :(
-    # do stuff
-    else
-        throw(ArgumentError("Not valid tensor indices for merging"))
-    end
-end

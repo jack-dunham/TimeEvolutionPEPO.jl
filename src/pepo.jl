@@ -174,4 +174,22 @@ function bloch_pepo(
     return TensorMap(A, bond * bond * phys, bond * bond * phys)
 end
 
+function vector_bloch_pepo(D, a1,a2,a3)
+    I = Matrix{ComplexF64}([1 0; 0 1])
+    X = Matrix{ComplexF64}([0 1; 1 0])
+    Y = Matrix{ComplexF64}([1 -im; im 0])
+    Z = Matrix{ComplexF64}([1 0; 0 -1])
+    
+    blochmat = (Matrix{ComplexF64}(1/2*(I + a1 * X + a2 * Y + a3 * Z)))^4
+    blochvec = reshape(blochmat, 4)
+    data = zeros(ComplexF64, (D,D,4,D,D))
+    data[1,1,:,1,1] = blochvec
+    ρ = TensorMap(data, ℂ^D*ℂ^D * ℂ^4, ℂ^D *ℂ^D )
+    @assert convert(Array, ρ) == data
+    return ρ
+end
+
+
+
+
 # TODO: structure source file.
