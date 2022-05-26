@@ -1,5 +1,7 @@
 using PEPOKit
 using TensorKit
+using KrylovKit
+using LinearAlgebra
 using Test
 using TestSetExtensions
 
