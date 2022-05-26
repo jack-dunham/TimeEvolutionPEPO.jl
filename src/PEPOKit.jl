@@ -4,7 +4,6 @@ using TensorKit
 using LinearAlgebra
 using KrylovKit
 using MacroTools: @forward
-using MPSKit
 
 import TensorKit: Group, AbelianGroup
 
