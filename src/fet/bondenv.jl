@@ -120,12 +120,36 @@ function hilbertschmidt(vp1::TensorMap{S,3,2}, vp2::TensorMap{S,3,2}) where {S<:
     # @time @tensoropt rv[w s; n e]:=rv3[w s; n eu ed]*eu[eu ed; e]
     return rv, wu, eu
 end
+ 
+# old convention
+# function hilbertschmidt(vp1::TensorMap{S,4,3}, vp2::TensorMap{S,4,3}) where {S<:IndexSpace}
+#     @tensoropt vhs[1 2 3 4 5 6; 7 8 9 10 11 12] :=
+#         vp1[1 2 3 s; 10 11 12] * (vp2')[4 5 6; 7 8 9 s]
+#     return vhs
+# end
 
-function hilbertschmidt(vp1::TensorMap{S,4,3}, vp2::TensorMap{S,4,3}) where {S<:IndexSpace}
-    @tensoropt vhs[1 2 3 4 5 6; 7 8 9 10 11 12] :=
-        vp1[1 2 3 s; 10 11 12] * (vp2')[4 5 6; 7 8 9 s]
+#=
+              9  6
+              │  ▲
+              ▼  │
+            ┌────┴──┐
+      1◄────┤       │◄────7
+      2◄────┤       │◄────8
+            │   M   │
+     10────►│       ├────►4
+     11────►│       ├────►5
+            └─┬─────┘
+              │  ▲
+              ▼  │
+              3  12
+=#
+function hilbertschmidt(vp1, vp2)
+    @tensoropt begin
+        vhs[1 2 3 4 5 6; 7 8 9 10 11 12]:= vp1[b k 1 2 3; 7 8 9]*vp2[4 5 6; b k 10 11 12]
+    end
     return vhs
 end
+
 
 
 function hilbertschmidt(
@@ -136,3 +160,8 @@ end
 
 hilbertschmidt(vp::TensorMap{<:IndexSpace,3,2}) = hilbertschmidt(vp, vp)
 hilbertschmidt(vp::VectorPEPOTensor) = hilbertschmidt(vp.tensor, vp.tensor)
+
+
+
+
+

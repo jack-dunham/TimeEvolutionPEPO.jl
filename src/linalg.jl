@@ -23,22 +23,6 @@ function LinearAlgebra.ishermitian(p::PEPOTensor; phys_only=false)
     return true
 end
 
-function LinearAlgebra.vec(p::PEPOTensor)
-    t = p.tensor
-    return VectorPEPOTensor(_vec(t)...)
-end
-
-function _vec(t::TensorMap{S,3,3}) where {S<:EuclideanSpace}
-    dom = TensorKit.domain(t)
-    in = dom[3] # Physical index corresponding to the input
-    cod = TensorKit.codomain(t)
-    out = cod[3] # Physical index corresponding to the output
-    tt = permute(t, (1, 2, 3, 6), (4, 5))
-    u = unitary(fuse(out ⊗ in), out ⊗ flip(in))
-    @tensor ttt[1 2 ph; 3 4] := u[ph; x1 x2] * tt[1 2 x1 x2; 3 4]
-    return ttt, u
-end
-
 function unvec(p::VectorPEPOTensor)
     t = p.tensor
     u = p.unitary

@@ -24,6 +24,7 @@ export SymmetryGroup
 
 include("physicaltensor.jl")
 include("pepo.jl")
+include("vector.jl")
 include("vectorpepo.jl")
 include("linalg.jl")
 include("lindblad.jl")

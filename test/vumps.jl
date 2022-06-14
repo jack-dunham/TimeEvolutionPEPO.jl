@@ -14,8 +14,9 @@ function leftgauge(
 ) where {T}
     D = size(A)[1]
     d = size(A)[2]
+    A = permutedims(A, (2, 1, 3, 4))
     AL, C, λ = leftgauge(reshape(A, (D, d * d, D)), C; tol=tol, maxiter=maxiter, kwargs...)
-    return reshape(AL, (D, d, d, D)), C, λ
+    return permutedims(reshape(AL, (D, d, d, D)), (2, 1, 3, 4)), C, λ
 end
 function leftgauge(
     A::Array{T,3},
@@ -308,7 +309,23 @@ function statmechmpo(β, h, D)
         Xsq[d2', d2] *
         Xsq[c', c]
 
-    return M1, M2
+    Z0 = [1.0 0.0; 0.0 -1.0]
+    Z = zeros(D, D)
+    for j in 1:D, i in 1:D
+        Z[i, j] = Z0[i, j] * exp(-β * h(i, j))
+    end
+    @tensor M3[a, b1, b2, c, d2, d1] :=
+        M[a', b1', c1, d1'] *
+        Xsq[a, a'] *
+        Xsq[b1, b1'] *
+        Xsq[d1', d1] *
+        Z[c1, c2] *
+        M[c2, b2', c', d2'] *
+        Xsq[b2, b2'] *
+        Xsq[d2', d2] *
+        Xsq[c', c]
+
+    return M1, M2, M3
 end
 
 function classicalisingmpo(β; J=1.0, h=0.0)
@@ -317,13 +334,31 @@ end
 
 #----------
 
-function _leftenvapply(FL, AL, M)
-    @tensor FLnew[-1 -2 -3; -4 -5 -6] :=
-        AL[u 12; 6 -6] *
-        FL[d 8 7; 2 1 u] *
-        M[1 2 3 -2 -3 6; 7 8 9 -4 -5 12] *
-        (AL')[9 -1; d 3]
-    return FLnew
+function _leftenvapply(fl, al, m)
+    @tensoropt begin
+        flu[4 5 b2; 7 8 a2] :=
+            al[9 a1; 6 a2] *
+            fl[10 11 b1; 1 2 a1] *
+            m[1 2 3 4 5 6; 7 8 9 10 11 12] *
+            (al')[12 b2; 3 b1]
+    end
+    return flu
+    # @tensor FLnew[-1 -2 -3; -4 -5 -6] :=
+    #     AL[u 12; 6 -6] *
+    #     FL[d 8 7; 2 1 u] *
+    #     M[1 2 3 -2 -3 6; 7 8 9 -4 -5 12] *
+    #     (AL')[9 -1; d 3]
+    # return FLnew
+end
+function _rightenvapply(fr, ar, m)
+    @tensoropt begin
+        fru[1 2 a1; 10 11 b1] :=
+            ar[9 a1; 6 a2] *
+            m[1 2 3 4 5 6; 7 8 9 10 11 12] *
+            fr[7 8 a2; 4 5 b2] *
+            (ar')[12 b2; 3 b1]
+    end
+    return fru
 end
 
 @testset "func: leftenv()" begin
@@ -347,10 +382,117 @@ end
     end
 end
 
+@testset "func: rightenv()" begin
+    @testset "test ComplexSpace" begin
+        S = ℂ^2
+        AR, M = _randtensors(S)
+        FR, λ, info = PEPOKit.rightenv(AR, M)
+        @test λ * FR ≈ _rightenvapply(FR, AR, M)
+        λs = []
+        for i in 1:3
+            _, λ, _ = PEPOKit.rightenv(AR, M)
+            push!(λs, λ)
+        end
+        @test all(x -> x ≈ λs[1], λs)
+    end
+    @testset "test GradedSpace" begin
+        S = Z2Space(0 => 1, 1 => 1)
+        AR, M = _randtensors(S)
+        FR, λ, info = PEPOKit.rightenv(AR, M)
+        @test λ * FR ≈ _rightenvapply(FR, AR, M)
+    end
+end
+
+function test_gauging(A::AbstractTensorMap)
+    AL, L, λL = PEPOKit.leftgauge(A)
+    @testset "func: leftgauge()" begin
+        @test codomain(A) == codomain(AL)
+        @test domain(A) == domain(AL)
+        @test λL * PEPOKit._AC(AL, L) ≈ PEPOKit._CA(L, A)
+        @tensor idL[d; u] := AL[s1 t; s2 u] * (AL)'[s2 d; s1 t]
+        @test idL ≈ one(idL)
+    end
+    AR, R, λR = PEPOKit.rightgauge(A; C=L)
+    @testset "func: rightgauge()" begin
+        @test codomain(A) == codomain(AR)
+        @test domain(A) == domain(AR)
+        @test λR * PEPOKit._CA(R, AR) ≈ PEPOKit._AC(A, R)
+        @tensor idR[d; u] := AR[s1 u; s2 t] * (AR)'[s2 t; s1 d]
+        @test idR ≈ one(idR)
+    end
+    @test λL ≈ λR
+    C = R
+    @test_broken PEPOKit._AC(AL, C) ≈ PEPOKit._CA(C, AR)
+    return nothing
+end
+@testset "gauging" begin
+    @testset "ComplexSpace" begin
+        A1 = TensorMap(randn, ComplexF64, ℂ^3 * ℂ^6, ℂ^3 * ℂ^6)
+        test_gauging(A1)
+    end
+    @testset "GradedSpace" begin
+        s = U1Space(-1 => 1, 1 => 1)
+        S = U1Space(-2 => 1, -1 => 2, 0 => 4, 1 => 2, 2 => 1)
+        A2 = TensorMap(randn, ComplexF64, s * S, s * S)
+        test_gauging(A2)
+    end
+end
+
+function aac(AL, C, AR)
+    return @tensoropt AAC[s1 s2 a; b] := AL[s1 a; x] * C[x; y] * AR[s2 y; b]
+end
+function aac(AL::AbstractArray, C, AR)
+    @tensor AAC[α, s1, s2, β] := AL[α, s1, α'] * C[α', β'] * AR[β', s2, β]
+end
+
+function partition_function(M, AAC, FL, FR)
+    @tensoropt Z2 = scalar(
+        FL[b1; 1 a1] *
+        AAC[s1 s2 a1; a2] *
+        M[1 t1; 4 s1] *
+        M[4 t2; 3 s2] *
+        (AAC')[b2; t1 t2 b1] *
+        FR[3 a2; b2],
+    )
+    return Z2
+end
+function partition_function(M::AbstractArray, AAC, FL, FR)
+    @tensoropt Z2 = scalar(
+        FL[α, c, β] *
+        AAC[β, s1, s2, β'] *
+        M[c, t1, d, s1] *
+        M[d, t2, c', s2] *
+        FR[β', c', α'] *
+        conj(AAC[α, t1, t2, α']),
+    )
+    return Z2
+end
+
+function observable(M, AAC, FL, FR, Z2)
+    @tensoropt obs = scalar(
+        FL[b1; 1 a1] *
+        AAC[s1 s2 a1; a2] *
+        M[1 t1 t2; 3 s2 s1] *
+        (AAC')[b2; t1 t2 b1] *
+        FR[3 a2; b2] / Z2,
+    )
+    return obs
+end
+function observable(M::AbstractArray, AAC, FL, FR, Z2)
+    @tensoropt obs = scalar(
+        FL[α, c, β] *
+        AAC[β, s1, s2, β'] *
+        M[c, t1, t2, c', s2, s1] *
+        FR[β', c', α'] *
+        conj(AAC[α, t1, t2, α']) / Z2,
+    )
+    return obs
+end
+
 @testset "trace vumps" begin
-    tol=1e-8
+    tol = 1e-8
     S = ℂ
-    tA = TensorMap(randn, ComplexF64, S^10 * S^2, S^10)
+    tA = TensorMap(randn, ComplexF64, S^2 * S^10, S^10)
     #tM = TensorMap(randn, ComplexF64, S^4 * S^4, S^4 * S^4)
 
     βc = log(1 + sqrt(2)) / 2
@@ -358,78 +500,59 @@ end
 
     aA = convert(Array, tA)
     #aM = convert(Array, tM)
-    aM, _ = classicalisingmpo(β)
-    tM = TensorMap(aM, ℂ^2 * ℂ^2, ℂ^2 * ℂ^2)
+    aM, aM2, aM3 = classicalisingmpo(β)
+    tM = TensorMap(aM, ℂ^2 * ℂ^2, ℂ^2 * ℂ^2) #mpo
+    tM2 = TensorMap(aM2, ℂ^2 * ℂ^2 * ℂ^2, ℂ^2 * ℂ^2 * ℂ^2) #mpo
+    tM3 = TensorMap(aM3, ℂ^2 * ℂ^2 * ℂ^2, ℂ^2 * ℂ^2 * ℂ^2) #mpo
 
-    tAL, tCL, tλL = PEPOKit.leftgauge(tA)
-    aAL, aCL, aλL = leftgauge(aA)
+    @testset "ising model" begin
+        λ, AL, C, AR, FL, FR = PEPOKit.vumps(tA, tM; verbose=true)
+        aλ, aAL, aC, aAR, aFL, aFR = vumps(permutedims(aA, (2, 1, 3)), aM; verbose=true)
 
-    tAR, tCR, tλR = PEPOKit.rightgauge(tAL)
-    aAR, aCR, aλR = rightgauge(aAL)
-
-    @testset "gauging" begin
-        @testset "left" begin
-            @test aAL ≈ convert(Array, tAL) # Test AL correct
-            @test aCL ≈ convert(Array, tCL) # Test C is correct
-            @test aλL ≈ tλL # Test λ is correct
+        @testset "boundary mps" begin
+            @test isapprox(aλ, λ; rtol=1.e-4)
+            @test isapprox(PEPOKit._CA(C, AR), PEPOKit._AC(AL, C); rtol=1.e-4)
         end
-        @testset "right" begin
-            @test aAR ≈ convert(Array, tAR) # Test AL correct
-            @test aCR ≈ convert(Array, tCR) # Test C is correct
-            @test aλR ≈ tλR # Test λ is correct
-        end
-    end
 
-    tC = tCR
-    aC = aCR 
-    
-    tFL, tλL, _ = PEPOKit.leftenv(tAL, tM)
-    aFL, aλL, _ = leftenv(aAL, aM)
+        AAC = aac(AL, C, AR)
+        aAAC = aac(aAL, aC, aAR)
 
-    tFR, tλR, _ = PEPOKit.rightenv(tAR, tM)
-    aFR, aλR, _ = rightenv(aAR, aM)
+        Z2 = partition_function(tM, AAC, FL, FR)
+        energy = observable(tM2, AAC, FL, FR, Z2)
+        magn = observable(tM3, AAC, FL, FR, Z2)
 
-    @testset "environments" begin
-        @testset "left" begin
-            @test PEPOKit._flsolve(tAL, tM, tFL) ≈ tλL * tFL
-            @test tλL ≈ aλL
-            @test aFL / aFL[1, 1, 1] ≈ convert(Array, tFL) / tFL[1, 1, 1]
-            @info "tλL = $(tλL) \n aλL = $(aλL)"
-        end
-        @testset "right" begin
-            @test PEPOKit._frsolve(tAR, tM, tFR) ≈ tλR * tFR
-            @test tλR ≈ aλR
-            @test aFR / aFR[1, 1, 1] ≈ permutedims(convert(Array, tFR) / tFR[1, 1, 1], (2, 1, 3))
-            @info "tλR = $(tλR) \n aλR = $(aλR)"
-        end
-        @testset "invariance" begin
-            @test aλR ≈ aλL
-            @test tλR ≈ tλL
+        aZ2 = partition_function(aM, aAAC, aFL, aFR)
+        aenergy = observable(aM2, aAAC, aFL, aFR, aZ2)
+        amagn = observable(aM3, aAAC, aFL, aFR, aZ2)
+
+        dβ = 1.e-5
+        β′ = β + dβ
+        tM′ = TensorMap(classicalisingmpo(β′)[1], ℂ^2 * ℂ^2, ℂ^2 * ℂ^2)
+        aM′ = convert(Array, tM′)
+        λ′, = PEPOKit.vumps(AL, tM′; tol=1e-10)
+        aλ′, = vumps(aAL, aM′; tol=1e-10)
+        energy2 = -(log(λ′) - log(λ)) / (β′ - β)
+        aenergy2 = -(log(aλ′) - log(λ)) / (β′ - β)
+        @testset "energy" begin
+            @test isapprox(energy2, 2 * energy; rtol=10 * dβ)
+            @test isapprox(aenergy2, energy2; rtol=10 * dβ)
+            @test isapprox(aenergy, energy; rtol=10 * dβ)
         end
     end
+end
 
-    tλs, tmps, tenv, tinfo = PEPOKit._vumpsupdate(tAL, tC, tAR, tM, tFL, tFR)
-
-    tλ = tλs[1]
-    tλL = real(tλs[2])
-    tλR = real(tλs[3])
-
-    aλ, aAL, aC, aAR, = vumpsstep(aAL, aC, aAR, aM, aFL, aFR; tol=tol / 10)
-
-    aAL, aC, = leftgauge(aAR, aC; tol=tol / 10) # regauge MPS: not really necessary
-    aFL, aλL = leftenv(aAL, aM, aFL; tol=tol / 10)
-    aFR, aλR = rightenv(aAR, aM, aFR; tol=tol / 10)
-
-    @testset "initial interation" begin
-        @test tλ ≈ aλ
-        @test tλL ≈ aλL
-        @test tλR ≈ aλR
-    end
+@testset "_AC & _CA" begin
+    C = TensorMap(randn, ComplexF64, ℂ^5, ℂ^5)
+    A = TensorMap(randn, ComplexF64, ℂ^2 * ℂ^5, ℂ^5)
+    @tensor CA[s a; b] := C[a; x] * A[s x; b]
+    @tensor AC[s a; b] := A[s a; x] * C[x; b]
+    @test CA ≈ PEPOKit._CA(C, A)
+    @test AC ≈ PEPOKit._AC(A, C)
 end
 
 @testset "vumps" begin
     S = ℂ
-    tA = TensorMap(randn, ComplexF64, S^4 * S^2, S^2 * S^4)
+    tA = TensorMap(randn, ComplexF64, S^2 * S^4, S^2 * S^4)
     tM = TensorMap(
         randn,
         ComplexF64,
@@ -467,11 +590,4 @@ end
         @info "tλL = $(tλL) \n aλL = $(aλL)"
         # @test aFL ≈ tFL_arr
     end
-end
-
-@testset "thermal ising model" begin
-    βc = log(1 + sqrt(2)) / 2
-    β = 0.95 * βc
-
-    
 end
