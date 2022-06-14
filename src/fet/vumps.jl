@@ -92,6 +92,15 @@ west-northerly (west first) positon, then domain in same order.
 #     return HAC
 # end
 
+# yet unused
+struct Vumps
+    verbose::Bool
+    tol::Float64
+    maxiter::Int64
+end
+
+Vumps() = Vumps(false, 1e-10, 100)
+
 function applyhac(
     ac::AbstractTensorMap{S,2,2},
     fl::AbstractTensorMap{S,3,3},
@@ -102,7 +111,7 @@ function applyhac(
         hac[-1 -2; -3 -4] :=
             ac[9 a; 6 b] *
             fl[10 11 -2; 1 2 a] *
-            m[1 2 -1 4 5 6 7 8; 9 10 11 -3 13 14 15 16] *
+            m[1 2 -1 4 5 6 ; 7 8 9 10 11 -3] *
             fr[7 8 b; 4 5 -4]
     end
     return hac
@@ -120,7 +129,7 @@ function applyhac(
 end
 
 function applyhc(
-    c::AbstractTensorMap{S,2,2}, fl::AbstractTensorMap{S,3,3}, fr::AbstractTensorMap{S,3,3}
+    c::AbstractTensorMap{S,1,1}, fl::AbstractTensorMap{S,3,3}, fr::AbstractTensorMap{S,3,3}
 ) where {S<:IndexSpace}
     @tensoropt begin
         hc[a; b] := c[x; y] * fl[1 2 a; 4 5 x] * fr[4 5 y; 1 2 b]
