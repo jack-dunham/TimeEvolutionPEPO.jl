@@ -431,7 +431,7 @@ function vumpsstep(AL, C, AR, M, FL, FR)
         x -> applyhac(x, FL, FR, M), AC, 1, :LM; ishermitian=false, eager=true, maxiter=1
     )
     μ0s, Cs, info0 = eigsolve(
-        x -> applyhc(x, FL, FR), C, 1; ishermitian=false, eager=true, maxiter=1
+        x -> applyhc(x, FL, FR), C, 1, :LM; ishermitian=false, eager=true, maxiter=1
     )
 
     λ = real(μ1s[1] / μ0s[1])
@@ -505,7 +505,7 @@ function vumps(
         numiter += 1
         verbose && @info "Step $numiter: λ ≈ $(λ) ≈ $(λL) ≈ $(λR), err ≈ $(err)"
     end
-    (AL, C, AR) = mps
-    (FL, FR) = env
+    AL, C, AR = mps
+    FL, FR = env
     return λ, AL, C, AR, FL, FR
 end
