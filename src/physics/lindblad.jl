@@ -1,9 +1,9 @@
-"""
+@doc raw"""
     dissipator(n::Int, l)
 
-Construct the `n`-site vectorised dissipator corresponding to a single Lindblad 
-operator `l` acting on a two-dimensional one-local Hilbert space represented by ℂ^2. The 
-Lindblad operator argument `l` defaults to the Pauli-lowering operator (σ^{-}).
+Construct the `n`-site vectorised dissipator corresponding to a single 1-local Lindblad 
+operator `l` acting on a 2-dimensional Hilbert space represented by $ℂ^2$. The Lindblad 
+operator argument `l` defaults to the Pauli-lowering operator $σ^{-}$.
 """
 function dissipator(n::Int; l=σm)
     L = Dict([])
@@ -31,13 +31,14 @@ end
 @doc raw"""
     coherent(H::AbstractTensorMap)
 
-Construct the `two`-local and vectorised operator `H` corresponding to the coherent part of 
-the Liouvillian super-operator. That is, given ``H_{\alpha, \beta}``,  constructs
+Construct the super-operator $\mathcal{H}$ corresponding to the coherent part of 
+the Liouvillian super-operator. That is, given a 2-local $H_{\alpha, \beta}$ provided by 
+`H`, constructs the `TensorMap`
 ```math
 \mathcal{H}_{\alpha,\beta} = - i (\mathbb{I}_{\alpha, \beta} \otimes H_{\alpha,\beta} 
 - H^{T}_{\alpha,\beta} \otimes \mathbb{I}_{\alpha, \beta})
 ```
-where ``\alpha`` and ``\beta`` are lattice indices corresponding to any two adjacent
+where $\alpha$ and $\beta$ are lattice indices corresponding to any two adjacent
 lattice sites.
 """
 coherent(H::AbstractTensorMap) = -im * (one(H) ⊗ H - cj(H)' ⊗ one(H))

@@ -8,22 +8,36 @@ end
 #     λ, AL, C, AR, FL, FR = vumps(A, vhs; maxiter=100, verbose=true)
 #     return _construct_hsbondenv(vhs, AL, C, AR, FL, FR)
 # end
-function hsbondenv(vhs::TensorMap{S,6,6}, χ::Integer) where {S<:IndexSpace}
-    unitsp = oneunit(S)
-    bondsp = ⊕(fill(unitsp,χ)...)
 
-    sp = hcat(codomain(vhs)..., domain(vhs)...)
-    A = TensorMap(randn, ComplexF64, sp[9] * bondsp, sp[6] * bondsp)
+# function randhsmps(vhs::TensorMap{S,6,6}, χ::Int) where {S<:IndexSpace}
+#     unitsp = oneunit(S)
+#     bondsp = ⊕(fill(unitsp,χ)...)
+
+#     sp = hcat(codomain(vhs)..., domain(vhs)...)
+#     A = TensorMap(randn, ComplexF64, sp[9] * bondsp, sp[6] * bondsp)
+#     return A
+# end
+
+function hsbondenv(
+    vhs::TensorMap{S,6,6}, A::TensorMap{S,2,2}; alg::VUMPS=VUMPS()
+) where {S<:IndexSpace}
+    # unitsp = oneunit(S)
+    # bondsp = ⊕(fill(unitsp,χ)...)
+
+    # sp = hcat(codomain(vhs)..., domain(vhs)...)
+    # A = TensorMap(randn, ComplexF64, sp[9] * bondsp, sp[6] * bondsp)
+    maxiter = alg.maxiter
+    verbose = alg.verbose
 
     @time begin
-    λ, AL, C, AR, FL, FR = vumps(A, vhs; maxiter=100, verbose=true)
+        λ, AL, C, AR, FL, FR = vumps(A, vhs; maxiter=maxiter, verbose=verbose)
     end
 
-    return _construct_hsbondenv(vhs, AL, C, AR, FL, FR)
+    return construct_hsbondenv(vhs, AL, C, AR, FL, FR), _AC(AL, C)
 end
 
 # correct as of new convention
-function _construct_hsbondenv(
+function construct_hsbondenv(
     M::AbstractTensorMap{S,6,6}, # a hilbertschmidt tensor
     AL::AbstractTensorMap{S,2,2},
     C::AbstractTensorMap{S,1,1},
@@ -138,7 +152,7 @@ end
               ▼  │
               3  12
 =#
-function _hilbertschmidt(
+function hilbertschmidt(
     vp1::TensorMap{S,5,3}, vp2::TensorKit.AdjointTensorMap{S,3,5}
 ) where {S<:IndexSpace}
     @tensoropt begin
@@ -146,7 +160,15 @@ function _hilbertschmidt(
     end
     return vhs
 end
-function _hilbertschmidt(
+function hilbertschmidt(
+    p1::TensorMap{S,4,4}, p2::TensorKit.AdjointTensorMap{S,4,4}
+) where {S<:IndexSpace}
+    @tensoropt begin
+        hs[1 2 3 4 5 6; 7 8 9 10 11 12] := p1[ k 1 2 3;b 7 8 9] * p2[b 4 5 6;k 10 11 12]
+    end
+    return hs
+end
+function hilbertschmidt(
     vp1::TensorMap{S,4,2}, vp2::TensorKit.AdjointTensorMap{S,2,4}
 ) where {S<:IndexSpace}
     @tensoropt begin
@@ -154,8 +176,7 @@ function _hilbertschmidt(
     end
     return vhs
 end
-_hilbertschmidt(vp::TensorMap) = _hilbertschmidt(vp, vp')
-
+hilbertschmidt(vp::TensorMap) = hilbertschmidt(vp, vp')
 # function hilbertschmidt(
 #     vp1::VectorSitePEPO{<:TensorMap{S}}, vp2::AdjointVectorSitePEPO{<:TensorMap{S}}
 # ) where {S<:IndexSpace}

@@ -38,6 +38,19 @@ function isometry_update!(
     return vpn
 end
 
+function isometry_update!(
+    pn::AbstractTensorMap{S,3,3},
+    pe::AbstractTensorMap{S,4,4},
+    u::AbstractTensorMap{S,2,1},
+    s::AbstractTensorMap{S,1,1},
+    v::AbstractTensorMap{S,1,2},
+) where {S<:IndexSpace}
+    u = u * sqrt(s)
+    v = sqrt(s) * v
+    @tensoropt pn[k -3 -4; b -5 -6] = pe[ k 3 4 -4;b 6 7 -6] * v[-3; 3 4] * u[6 7; -5]
+    return pn
+end
+
 function fidelity(
     γ::AbstractTensorMap{S,4,4},
     u::AbstractTensorMap{S,2,1},

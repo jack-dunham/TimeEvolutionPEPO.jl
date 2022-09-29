@@ -1,3 +1,6 @@
+#### REDUNDENT
+
+
 @doc raw"""
     struct SymmetryGroup{G<:Group, N::Integer}
         

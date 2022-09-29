@@ -438,8 +438,8 @@ end
     end
 end
 
-function aac(AL, C, AR)
-    return @tensoropt AAC[s1 s2 a; b] := AL[s1 a; x] * C[x; y] * AR[s2 y; b]
+function aac(al, c, ar)
+    return @tensoropt aac[s1 s2 a; b] := al[s1 a; x] * c[x; y] * ar[s2 y; b]
 end
 function aac(AL::AbstractArray, C, AR)
     @tensor AAC[α, s1, s2, β] := AL[α, s1, α'] * C[α', β'] * AR[β', s2, β]

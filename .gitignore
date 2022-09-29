@@ -1,2 +1,4 @@
 *Manifest.toml
 test/log/
+src/models/
+*.DS_store
