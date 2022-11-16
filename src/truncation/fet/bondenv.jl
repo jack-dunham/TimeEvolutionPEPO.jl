@@ -1,5 +1,25 @@
-struct HilbertSchmidtMPO{T<:TensorMap}
+# const Post_HS_MPOTensor{S,T} = MPOTensor{
+#     S,:POST_HS_SIG,6,6,T,MPOSignature{:POST_HS_SIG,2,2,1,1,2,2,1,1}
+# }
+
+# const Post_HS_InfMPO{Nx,Ny,S,P<:Post_HS_MPOTensor{S}} = InfMPO{Nx,Ny,S,:POST_HS_SIG,P}
+
+abstract type AbstractMetricTensor{S,N₁,N₂,T} <: AbstractPhysicalTensor{S,N₁,N₁,T} end
+# For truncating a bond
+abstract type AbstractTruncationMetricTensor{S,T} <: AbstractMetricTensor{S,4,4,T} end
+# For calculating traces
+abstract type AbstractTraceMetricTensor{S,T} <: AbstractMetricTensor{S,2,2,T} end
+
+abstract type AbstractTruncationMetric{L,P<:AbstractMetricTensor} <:
+              AbstractTensorLattice{L,P} end
+
+struct TruncationMetricTensor{S,T} <: AbstractTruncationMetricTensor{S,T}
     tensor::T
+end
+
+struct TruncationMetric{L,P<:AbstractTruncationMetricTensor} <:
+       AbstractTruncationMetric{L,P}
+    data::Matrix{P}
 end
 
 # function hsbondenv(vhs::TensorMap{ComplexSpace,6,6}, D::Integer)
@@ -18,6 +38,27 @@ end
 #     return A
 # end
 
+# alg could be ::VUMPS, ::CTMRG, ::FPCM, ::RG 
+
+@doc raw"""
+    truncmetric(state::Union{AbstractBoundaryState, AbstractNeighbourhoodState})
+    truncmetric(mpo::InfMPO, tensors::Union{AbstractBoundary, AbstractNeighbourhood})
+
+Calculate the truncation metric from the state of a boundary algorithm. Alternatively, given 
+an MPO and some boundary tensors, calculate the truncation metric. 
+"""
+function truncmetric(Dη, state::AbstractBoundaryState)
+    tensors = state.data
+    mpo = state.mpo
+    return truncmetric(Dη, mpo, tensors)
+end
+# MPO is a hilbertschmidt mpo
+function truncmetric(Dη, mpo::InfMPO, tensors::VUMPS)
+    Y = vumps_fetmetric(Dη, mpo, tensors.A, tensors.FL, tensors.FR)
+    return Y
+end
+
+# TODO: Multisite
 function hsbondenv(
     vhs::TensorMap{S,6,6}, A::TensorMap{S,2,2}; alg::VUMPS=VUMPS()
 ) where {S<:IndexSpace}
@@ -63,6 +104,110 @@ function construct_hsbondenv(
     end
     return γ
 end
+# Multisite
+function vumps_fetmetric(
+    M1::AbstractTensorMap{S,6,6}, # (x, y)     a hilbertschmidt mpo tensor
+    M2::AbstractTensorMap{S,6,6}, # (x + 1, y) a hilbertschmidt mpo tensor
+    ALu::AbstractTensorMap{S,2,2},# (x, y)
+    ALd::AbstractTensorMap{S,2,2},# (x, y + 1)
+    Cu::AbstractTensorMap{S,1,1}, # (x, y)
+    Cd::AbstractTensorMap{S,1,1}, # (x, y + 1)
+    ARu::AbstractTensorMap{S,2,2},# (x + 1, y)
+    ARd::AbstractTensorMap{S,2,2},# (x + 1, y + 1)
+    FL::AbstractTensorMap{S,3,3}, # (x, y)
+    FR::AbstractTensorMap{S,3,3}, # (x + 1, y)
+) where {S<:IndexSpace}
+    @info "Constructing bond environment..."
+    @time begin
+        @tensoropt begin
+            γ[-1 -2 4 5; 7 8 -10 -11] :=
+                FL[10 11 b1; 1 2 a1] *
+                ALu[9 a1; 6 a2] *
+                (ALd')[12 b2; 3 b1] *
+                M1[1 2 3 4 5 6; 7 8 9 10 11 12] *
+                Cu[a2; a3] *
+                (Cd')[b3; b2] *
+                M2[-1 -2 -3 -4 -5 -6; -7 -8 -9 -10 -11 -12] *
+                (ARd')[-12 b4; -3 b3] *
+                ARu[-9 a3; -6 a4] *
+                FR[-7 -8 a4; -4 -5 b4]
+        end
+    end
+    return γ
+end
+#PERF:
+function vumps_fetmetric(
+    M1::AbstractTensorMap{S,2,2}, # (x, y)     a hilbertschmidt mpo tensor
+    M2::AbstractTensorMap{S,2,2}, # (x + 1, y) a hilbertschmidt mpo tensor
+    ALu::AbstractTensorMap{S,2,1},# (x, y)
+    ALd::AbstractTensorMap{S,2,1},# (x, y + 1)
+    Cu::AbstractTensorMap{S,1,1}, # (x, y)
+    Cd::AbstractTensorMap{S,1,1}, # (x, y + 1)
+    ARu::AbstractTensorMap{S,2,1},# (x + 1, y)
+    ARd::AbstractTensorMap{S,2,1},# (x + 1, y + 1)
+    FL::AbstractTensorMap{S,1,2}, # (x, y)
+    FR::AbstractTensorMap{S,2,1}, # (x + 1, y)
+    U::AbstractTensorMap{S,1,2},    # for splitting the indices
+) where {S<:IndexSpace}
+    @info "Constructing bond environment..."
+    @time begin
+        @tensoropt begin
+            y[11 10; 9 12] :=
+                FL[3; 1 2] *
+                ALu[1 4; 6] *
+                (ALd')[8; 3 5] *
+                M1[2 5; 7 4] *
+                U[7; 9 10] *
+                Cu[6; 13] *
+                (Cd')[15; 8] *
+                (U')[11 12; 14] *
+                M2[14 17; 19 16] *
+                ARu[13; 16 18] *
+                (ARd')[20; 15 17] *
+                FR[18 19; 20]
+        end
+    end
+    return y
+end
+
+function vumps_fetmetric(Dη, M::InfMPO, A::InfMPS, FL::LeftEnv, FR::RightEnv)
+    nx, ny = size(M)
+
+    # Useful for obtaining the type of the matrix elements.
+    # this is very janky way of doing this
+    s = space(M[1, 1], :w)[1]
+    p0 = TruncationMetricTensor(similar(M[1, 1].tensor, s * s, s * s)) #this is discarded!
+
+    Ym = Matrix{typeof(p0)}(undef, nx, ny)
+
+    # Get the tensor matrices of the MPS
+    AL = lefttensor(A)
+    AR = righttensor(A)
+    C = bondtensor(A)
+
+    U = [unitary(codomain[x, y][1], Dη[x, y] * Dη[x, y]) for x in 1:nx, y in 1:ny]
+
+    ## Calculate the HS bond environment for each site in unit cell
+    for x in 1:nx, y in 1:ny
+        Ym[x, y] = TruncationMetricTensor(
+            vumps_fetmetric(
+                M[x, y],
+                M[x + 1, y],
+                AL[x, y],
+                AL[x, y + 1],
+                C[x, y],
+                C[x, y + 1],
+                AR[x + 1, y],
+                AR[x + 1, y + 1],
+                FL[x, y],
+                FR[x + 1, y],
+                U[x, y],
+            ),
+        )
+    end
+    return TruncationMetric(Y)
+end
+
 function hsnorm(vp, D)
     hs = _hilbertschmidt(vp)
     sp = hcat(codomain(hs)..., domain(hs)...)
@@ -81,62 +226,6 @@ function hsnorm(vp, D)
     return abs(n)#? why abs?...
 end
 
-function hsnormalt(vp, D)
-    d = 2
-    η = 1
-    hsd = convert(Array, _hilbertschmidt(vp)) # (d, η, d, d, η, d, d, η, d, d, η,d)  
-
-    hsp = permutedims(hsd, (1, 2, 10, 11, 3, 12, 7, 8, 4, 5, 9, 6))
-    hs = TensorMap(
-        reshape(hsp, d * η * d * η, d * d, d * η * d * η, d * d),
-        ℂ^(d * η * d * η) * ℂ^(d * d),
-        ℂ^(d * η * d * η) * ℂ^(d * d),
-    )
-
-    sp = hcat(codomain(hs)..., domain(hs)...)
-    A = TensorMap(randn, ComplexF64, sp[4] * ℂ^D, ℂ^D)
-    λ, AL, C, AR, FL, FR = vumps(A, hs; maxiter=100, verbose=true)
-    AC = _AC(AL, C)
-    @tensoropt begin
-        n = scalar(
-            FL[b1; 1 a1] * AC[4 a1; a2] * hs[1 2; 3 4] * (AC')[b2; 2 b1] * FR[3 a2; b2]
-        )
-    end
-    return n
-end
-
-function tracevumps_test(D)
-    p = blochpepo([0.33, 0.33, 0.33], 2)
-    vp = permute(p, (4, 1, 2, 3), (5, 6))
-    @tensor vtr[2 3; 5 6] := vp[s s 2 3; 5 6]
-    sp = hcat(codomain(vtr)..., domain(vtr)...)
-    A = TensorMap(randn, ComplexF64, sp[4] * ℂ^D, ℂ^D)
-
-    λ, AL, C, AR, FL, FR = vumps(A, vtr; maxiter=20, verbose=true, tol=1e-20)
-    @assert isapprox(_AC(AL, C), _CA(C, AR), rtol=1e-4)
-    AC = _AC(AL, C)
-    @tensoropt begin
-        ptr[o; i] :=
-            FL[b1; 1 a1] * AC[4 a1; a2] * p[o 1 2; i 3 4] * (AC')[b2; 2 b1] * FR[3 a2; b2]
-    end
-
-    ptr = ptr / tr(ptr)
-
-    return ptr
-end
-
-# function _construct_hsbondenv(hs::HilbertSchmidtMPO,
-#     mps::BoundaryInfMPS, env::BoundaryEnvironment)
-#     return _construct_hsbondenv(M.tensor, mps.AL, mps.C, mps.AR, env.FL, env.FR)
-# end
-
-# old convention
-# function hilbertschmidt(vp1::TensorMap{S,4,3}, vp2::TensorMap{S,4,3}) where {S<:IndexSpace}
-#     @tensoropt vhs[1 2 3 4 5 6; 7 8 9 10 11 12] :=
-#         vp1[1 2 3 s; 10 11 12] * (vp2')[4 5 6; 7 8 9 s]
-#     return vhs
-# end
-
 #=
               9  6
               │  ▲
@@ -152,6 +241,7 @@ end
               ▼  │
               3  12
 =#
+#vectorised 
 function hilbertschmidt(
     vp1::TensorMap{S,5,3}, vp2::TensorKit.AdjointTensorMap{S,3,5}
 ) where {S<:IndexSpace}
@@ -160,11 +250,12 @@ function hilbertschmidt(
     end
     return vhs
 end
+#not vectorised
 function hilbertschmidt(
     p1::TensorMap{S,4,4}, p2::TensorKit.AdjointTensorMap{S,4,4}
 ) where {S<:IndexSpace}
     @tensoropt begin
-        hs[1 2 3 4 5 6; 7 8 9 10 11 12] := p1[ k 1 2 3;b 7 8 9] * p2[b 4 5 6;k 10 11 12]
+        hs[1 2 3 4 5 6; 7 8 9 10 11 12] := p1[k 1 2 3; b 7 8 9] * p2[b 4 5 6; k 10 11 12]
     end
     return hs
 end
@@ -176,24 +267,20 @@ function hilbertschmidt(
     end
     return vhs
 end
+
+#PERF: 
+function hilbertschmidt(
+    p1::TensorMap{S,3,3}, p2::TensorKit.AdjointTensorMap{S,3,3}
+) where {S<:IndexSpace}
+    @tensoropt begin
+        vhs[1 -4 2 -5; 4 -1 5 -2] := p1[1 2 k; 4 5 b] * p2[-1 -2 b; -4 -5 k]
+    end
+    return vhs
+end
 hilbertschmidt(vp::TensorMap) = hilbertschmidt(vp, vp')
-# function hilbertschmidt(
-#     vp1::VectorSitePEPO{<:TensorMap{S}}, vp2::AdjointVectorSitePEPO{<:TensorMap{S}}
-# ) where {S<:IndexSpace}
-#     return _hilbertschmidt(vp1.tensor, vp2.tensor)
-# end
-# function hilbertschmidt(
-#     vp1::VectorSitePEPO{<:TensorMap{S}}, vp2::VectorSitePEPO{<:TensorMap{S}}
-# ) where {S<:IndexSpace}
-#     return _hilbertschmidt(vp1.tensor, (vp2.tensor)')
-# end
-# hilbertschmidt(vp::VectorSitePEPO) = _hilbertschmidt(vp.tensor)
 
-##### api for this not yet implemented 
-# function sqhsnorm(vp::VectorSitePEPO, D::Int, alg::AbstractAlg)
-#     hstensor = hilbertschmidt(vp)
-
-#     sp = hcat(codomain(vp)..., domain(vp)...)
-#     A = TensorMap(randn, ComplexF64, sp[9] * ℂ^D, sp[6] * ℂ^D)
-#     out = boundary(A, hstensor, alg=alg)
-# end
+function hilbertschmidt(P::Lattice{L}) where {L}
+    nx,ny = size(P)
+    mat = hilbertschmidt.(P)
+    return InfMPO{L}(mat)
+end

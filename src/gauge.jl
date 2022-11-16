@@ -227,7 +227,7 @@ function mixedgauge(
 end
 
 function mps_transfer(a::TensorMap{S,2,1}, al::TensorMap{S,2,1}) where {S<:IndexSpace}
-    @tensoropt T[lu rd; ru ld] := a[a lu; ru] * (al')[rd; a ld]
+    @tensoropt T[lu rd; ru ld] := a[lu a; ru] * (al')[rd; ld a]
     return T
 end
 
@@ -260,7 +260,7 @@ end
 function isgauged(A::InfMPS{Nx}) where {Nx}
     r = 1:Nx
     for x in r
-        if (A.AL[x] * A.C[x] ≈ A.C[mod(x - 1, r)] * A.AR[x] ≈ A.AC[x]) == false
+        if (A.AL[x] × A.C[x] ≈ A.C[mod(x - 1, r)] × A.AR[x] ≈ A.AC[x]) == false
             return false
         else
             return true

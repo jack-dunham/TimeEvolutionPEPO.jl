@@ -1,7 +1,8 @@
 module PEPOKit
 
+using Random
 using TensorKit
-import TensorKit.IndexTuple
+import TensorKit.IndexTuple, TensorKit.AdjointTensorMap
 using LinearAlgebra
 using KrylovKit
 using StaticArrays
@@ -42,5 +43,7 @@ include("gauge.jl")
 #physics api
 include("physics/physics.jl")
 
+#models
+include("models/models.jl")
 
 end # module

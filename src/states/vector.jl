@@ -1,32 +1,25 @@
-const PEPO_ORDER = (:ket, :xout, :yout, :sx, :bra, :xin, :yin, :sy)
+# const PEPO_ORDER = (:ket, :xout, :yout, :sx, :bra, :xin, :yin, :sy)
 # const VPEPO_ORDER = (:bra, :ket, :xout, :yout, :sx, :xin, :yin, :sy)
-
-abstract type AbstractSitePEPO end
-
-mutable struct SitePEPO{T<:TensorMap{<:IndexSpace,4,4}} <:AbstractSitePEPO
+struct PEPOTensor{S,T<:AbstractTensorMap{S,3,3}} <: AbstractPhysicalTensor{S,3,3,T}
     tensor::T
-    perm::NTuple{8,Int}
 end
 
-function Base.permutedims!(p::AbstractSitePEPO, perm::NTuple{8,Int})
+# A PEPO is exactly a lattice filled with PEPOTensor
+const AbstractPEPO{L, P<:PEPOTensor} = AbstractLattice{L,P}
+const AbstractInfPEPO{L<:Infinite} = AbstractPEPO{L}
+const PEPO{L, P<:PEPOTensor} = TensorLattice{L,P}
+const InfPEPO{L<:Infinite} = PEPO{L}
+
+function Base.permutedims!(p::PEPOTensor, perm::NTuple{6,Int})
     p.tensor = _permute(p.tensor, perm)
-    ptmp = Base.permute!(collect(p.perm), collect(perm))
-    p.perm = Tuple(ptmp)
-    return nothing
+    return p
 end
 
-SitePEPO(T::TensorMap{<:IndexSpace,4,4}) = VectorSitePEPO(T, Tuple(1:8))
-
-Base.getindex(P::SitePEPO, ind::Int) = PEPO_ORDER[P.perm[ind]]
-function Base.getindex(P::SitePEPO, ind::Symbol)
-    ind_num = findfirst(x -> x === ind, PEPO_ORDER)
-    return findfirst(x -> x == ind_num, P.perm)
-end
-
-struct AdjointSitePEPO{T<:TensorKit.AdjointTensorMap}
-    tensor::T
-    perm::NTuple{8,Int}
-end
+# Base.getindex(P::SitePEPO, ind::Int) = PEPO_ORDER[P.perm[ind]]
+# function Base.getindex(P::SitePEPO, ind::Symbol)
+#     ind_num = findfirst(x -> x === ind, PEPO_ORDER)
+#     return findfirst(x -> x == ind_num, P.perm)
+# end
 
 # function LinearAlgebra.vec(p::SitePEPO)
 #     t = p.tensor
@@ -36,7 +29,6 @@ end
 #     return VectorSitePEPO(permute(t, perm...),perm, 1, p.ket )
 # end
 
-
 function _vec(t::TensorMap{<:IndexSpace,N,M}) where {N,M}
     return permute(t, (Tuple((N + 1):(N + M))..., Tuple(1:N)...)),
     (Tuple((M + 1):(N + M)), Tuple(1:M))
@@ -44,14 +36,14 @@ end
 
 function bloch(a::Vector)
     σ = pauli
-    mat = σ[4].data
+    mat = σ[4]
     for j in 1:3
-        mat = mat + a[j] * σ[j].data
+        mat = mat + a[j] * σ[j]
     end
     return 1 / 2 * mat
 end
 
-function blochpepo(a, D)
+function blochpepo(a::Vector, D::Int)
     m = bloch(a)
     to = zeros(ComplexF64, 2, D, 2)
     to[:, 1, :] = m
@@ -61,8 +53,10 @@ function blochpepo(a, D)
     p3 = TensorMap(to, ℂ^2 * ℂ^D, ℂ^2)
     p5 = TensorMap(ti, ℂ^2, ℂ^2 * ℂ^D)
     p6 = TensorMap(ti, ℂ^2, ℂ^2 * ℂ^D)
-    return @tensor p[1 2 3; 4 5 6] :=
-        p2[s1 2; 4] * p3[s2 3; s1] * p5[s3; s2 5] * p6[1; s3 6]
+
+    @tensor p[2 3 1; 5 6 4] := p2[s1 2; 4] * p3[s2 3; s1] * p5[s3; s2 5] * p6[1; s3 6]
+
+    return PEPOTensor(p)
 end
 
 function test_evolve(p, η)
@@ -73,12 +67,6 @@ function test_evolve(p, η)
     return @tensor pe[1 2 3 4; 5 6 7 8] := p[s 2 4; 5 6 8] * m[1 3; s 7]
 end
 
-function evolve(vp::TensorMap{S,4,2}, m::TensorMap{S,3,3}) where {S<:IndexSpace}
-    return @tensor pe[b k 3 4 5; 6 7 8] := vp[mb mk 3 5; 6 8] * m[b k 4; mb mk 7]
-end
-function evolve(p::TensorMap{S,3,3}, m::TensorMap{S,3,3}) where {S<:IndexSpace}
-    return @tensor pe[k 3 4 5;b 6 7 8] := p[mk 3 5; mb 6 8] * m[b k 4; mb mk 7]
-end
 
 function test_thermal(τ, D=4, J=1.0)
     βc = log(1 + sqrt(2)) / 2

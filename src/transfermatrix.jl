@@ -13,7 +13,7 @@ function Base.:*(FL::LeftEnvTensor, T::TransferMatrix)
 
     flu = similar(FL)
 
-    @tensoropt flu[b2; 3 a2] := fl[b1; 1 a1] * at[4 a1; a2] * m[1 2; 3 4] * (ab')[b2; 2 b1]
+    @tensoropt flu[b2; a2 3] := fl[b1; a1 1] * at[a1 4; a2] * m[1 2; 3 4] * (ab')[b2; b1 2]
 
     return LeftEnvTensor(flu)
 end
@@ -25,7 +25,7 @@ function Base.:*(T::TransferMatrix, FR::RightEnvTensor)
 
     fru = similar(FR)
 
-    @tensoropt fru[1 a1; b1] := at[4 a1; a2] * m[1 2; 3 4] * (ab')[b2; 2 b1] * fr[3 a2; b2]
+    @tensoropt fru[a1 1; b1] := at[a1 4; a2] * m[1 2; 3 4] * (ab')[b2; b1 2] * fr[a2 3; b2]
 
     return RightEnvTensor(fru)
 end

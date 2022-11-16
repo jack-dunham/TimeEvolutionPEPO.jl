@@ -1,5 +1,4 @@
-#### REDUNDENT
-
+#### TODO: REDUNDENT
 
 @doc raw"""
     struct SymmetryGroup{G<:Group, N::Integer}
@@ -35,13 +34,19 @@ struct Liouvillian{
     mapping
 end
 
-const SymmetricLiouvillian{S<:GradedSpace,I<:Sector,A<:TensorKit.SectorDict{I,<:DenseMatrix},F₁,F₂} = Liouvillian{S,I,A, F₁,F₂}
+const SymmetricLiouvillian{S<:GradedSpace,I<:Sector,A<:TensorKit.SectorDict{I,<:DenseMatrix},F₁,F₂} = Liouvillian{
+    S,I,A,F₁,F₂
+}
 
-function SymmetricLiouvillian(t::TensorMap{S,4,4,I, A, F₁, F₂}, mapping ) where {S<:GradedSpace, I<:Sector, A<:TensorKit.SectorDict{I,<:DenseMatrix}, F₁,F₂}
+function SymmetricLiouvillian(
+    t::TensorMap{S,4,4,I,A,F₁,F₂}, mapping
+) where {S<:GradedSpace,I<:Sector,A<:TensorKit.SectorDict{I,<:DenseMatrix},F₁,F₂}
     return SymmetricLiouvillian{S,I,A,F₁,F₂}(t, mapping)
 end
 
-const StandardLiouvillian{A<:DenseMatrix} = Liouvillian{ComplexSpace,Trivial,A,Nothing,Nothing}
+const StandardLiouvillian{A<:DenseMatrix} = Liouvillian{
+    ComplexSpace,Trivial,A,Nothing,Nothing
+}
 
 function StandardLiouvillian(
     t::TensorMap{ComplexSpace,4,4,Trivial,A,Nothing,Nothing}, nothing

@@ -1,11 +1,11 @@
 const TO = TensorKit.TensorOperations
 
-TO.memsize(t::AbstractPhysicalTensor) = TO.memsize(totensor(t))
+TO.memsize(t::AbstractPhysicalTensor) = TO.memsize(convert(AbstractTensorMap,t))
 
 function TO.similarstructure_from_indices(
     T::Type, p1::IndexTuple, p2::IndexTuple, A::AbstractPhysicalTensor, CA::Symbol=:N
 )
-    return TO.similarstructure_from_indices(T, p1, p2, totensor(A), CA)
+    return TO.similarstructure_from_indices(T, p1, p2, convert(AbstractTensorMap,A), CA)
 end
 
 function TO.similarstructure_from_indices(
@@ -14,54 +14,54 @@ function TO.similarstructure_from_indices(
     poB::IndexTuple,
     p1::IndexTuple,
     p2::IndexTuple,
-    A::AbstractPhysicalTensor,
-    B::AbstractPhysicalTensor,
+    A,
+    B,
     CA::Symbol=:N,
     CB::Symbol=:N,
 )
     return TO.similarstructure_from_indices(
-        T, poA, poB, p1, p2, totensor(A), totensor(B), CA, CB
+        T, poA, poB, p1, p2, convert(AbstractTensorMap,A), convert(AbstractTensorMap,B), CA, CB
     )
 end
 
-TO.scalar(t::AbstractPhysicalTensor) = scalar(totensor(t))
+TO.scalar(t::AbstractPhysicalTensor) = scalar(convert(AbstractTensorMap,t))
 
 function TO.add!(
     α,
-    tsrc::AbstractPhysicalTensor{S},
+    tsrc,
     CA::Symbol,
     β,
-    tdst::AbstractPhysicalTensor{S,T},
+    tdst,
     p1::IndexTuple,
     p2::IndexTuple,
-) where {S,N₁,N₂,T<:TensorMap{S,N₁,N₂}}
-    TO.add!(α, totensor(tsrc), CA, β, totensor(tdst), p1, p2)
+) 
+    TO.add!(α, convert(AbstractTensorMap,tsrc), CA, β, convert(AbstractTensorMap,tdst), p1, p2)
     return tdst
 end
 
 function TO.trace!(
     α,
-    tsrc::AbstractPhysicalTensor{S},
+    tsrc,
     CA::Symbol,
     β,
-    tdst::AbstractPhysicalTensor{S,T},
+    tdst,
     p1::IndexTuple,
     p2::IndexTuple,
     q1::IndexTuple,
     q2::IndexTuple,
-) where {S,N₁,N₂,T<:AbstractTensorMap{S,N₁,N₂}}
-    TO.trace!(α, totensor(tsrc), CA, β, totensor(tdst), p1, p2, q1, q2)
+) 
+    TO.trace!(α, convert(AbstractTensorMap,tsrc), CA, β, convert(AbstractTensorMap,tdst), p1, p2, q1, q2)
     return tdst
 end
 
 function TO.contract!(
     α,
-    tA::AbstractPhysicalTensor{S},
+    tA,
     CA::Symbol,
-    tB::AbstractPhysicalTensor{S},
+    tB,
     CB::Symbol,
     β,
-    tC::AbstractPhysicalTensor{S,T},
+    tC,
     oindA::IndexTuple,
     cindA::IndexTuple,
     oindB::IndexTuple,
@@ -69,15 +69,15 @@ function TO.contract!(
     p1::IndexTuple,
     p2::IndexTuple,
     syms::Union{Nothing,NTuple{3,Symbol}}=nothing,
-) where {S,N₁,N₂,T<:AbstractTensorMap{S,N₁,N₂}}
+) 
     TO.contract!(
         α,
-        totensor(tA),
+        convert(AbstractTensorMap,tA),
         CA,
-        totensor(tB),
+        convert(AbstractTensorMap,tB),
         CB,
         β,
-        totensor(tC),
+        convert(AbstractTensorMap,tC),
         oindA,
         cindA,
         oindB,

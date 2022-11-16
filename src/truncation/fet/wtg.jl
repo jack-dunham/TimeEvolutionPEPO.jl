@@ -11,6 +11,7 @@
               ├─────►4       8─────►│
               └─────────────────────┘
 
+All of this still obeys newly defined convention convention 
                 ┌───────────────┐          ┌─────┐
                 │               │     j◄───┤1   3│◄───i
                 │◄───3 i j 1◄───┤          │     │
@@ -22,19 +23,32 @@
 s is the bond matrix (i think)
 
 =#
+
+function wtg!(U, S, V, Y::TruncationMetric; ξ=Inf, test=false)
+    nx, ny = size(Y)
+    rx = 1:nx
+    ry = 1:ny
+    for x in nx, y in ny
+        U[x, y], S[x, y], V[mod(x + 1, rx), y] = wtg(
+            U[x, y], S[x, y], V[mod(x + 1, rx), y], Y[x, y]; ξ=ξ, test=test
+        )
+    end
+    return U, S, V
+end
+
 function wtg(
-    γ::TensorMap{S,4,4},
-    u::TensorMap{S,2,1},
-    s::TensorMap{S,1,1},
-    v::TensorMap{S,1,2},
-    ξ=Inf;
+    u::TensorMap{S,1,1}, # u[x] 
+    s::TensorMap{S,1,1}, # s[x]
+    v::TensorMap{S,1,1}, # v[x+1]
+    γ::TensorMap{S,2,2}; # γ[x]
+    ξ=Inf,
     test=true,
-    ) where {S<:IndexSpace}
+) where {S<:IndexSpace}
     # who knows if this works
     if test == true
-        skip = wtg_test(γ, u, s, v)
+        skip = wtg_test(u, s, v, γ)
         if skip[1] && skip[2]
-            @info "Already in WTG"
+            @info "Already in weighted trace gauge"
             return u, s, v
         end
     end
@@ -42,20 +56,22 @@ function wtg(
     u = u * sqrt(s)
     v = sqrt(s) * v
 
-    @tensoropt γi[-1 -2; -3 -4] :=
-        γ[1 2 3 4; 5 6 7 8] * u[5 6; -3] * v[-1; 1 2] * (u')[-2; 3 4] * (v')[7 8; -4]
+    # @tensoropt γi[-1 -2; -3 -4] :=
+    #     γ[1 2 3 4; 5 6 7 8] * u[5 6; -3] * v[-1; 1 2] * (u')[-2; 3 4] * (v')[7 8; -4]
 
-    γm = permute(γi, (1, 4), (3, 2)) #matricised 
+    @tensoropt γi[-1 -2; -3 -4] :=
+        γ[1 2; 3 4] * u[3; -3] * v[-1; 1 ] * (u')[-2; 2] * (v')[4; -4]
+
+    γm = permute(γi, (1, 4), (3, 2)) # Transform to matrix
     @tensor γN = γm[a b; a b]
     γm = γm / γN
-    γm = 1 / 2 * (γm' + γm) # γm is now hermitian, so SVD gived eigen
-    
-
+    γm = 1 / 2 * (γm' + γm) # γm is now hermitian, so SVD gives eigen-decomposition
 
     # γmr = γm * (s ⊗ permute(s', (2,), (1,)))
-    rλs, rs, rinfo = eigsolve(
+    ri = Tensor(rand, ComplexF64, domain(γm))
+    _, rs, _ = eigsolve(
         x -> γm * x,
-        Tensor(randn, ComplexF64, domain(γm)),
+        ri,
         1,
         :LM;
         eager=true,
@@ -64,7 +80,7 @@ function wtg(
 
     li = TensorMap(randn, ComplexF64, one(codomain(γm)), codomain(γm))
     # γml = (s ⊗ permute(s', (2,), (1,))) * γm
-    lλs, ls, linfo = eigsolve(x -> x * γm, li, 1, :LM; eager=true, ishermitian=true)
+    _, ls, _ = eigsolve(x -> x * γm, li, 1, :LM; eager=true, ishermitian=true)
 
     l0 = permute(ls[1], (2,), (1,))
     r0 = permute(rs[1], (1,), (2,))
@@ -76,6 +92,7 @@ function wtg(
     sp = sqrt(dl) * ul' * ur * sqrt(dr)
     vl, st, vrt = tsvd!(sp)
 
+    # Rescale the singular values.
     if ξ != Inf
         sclm = diagm([exp(-(i - 1) / ξ) for i in 1:dim(codomain(st))])
         sclt = TensorMap(sclm, codomain(st), domain(st))
@@ -91,9 +108,9 @@ function wtg(
     un = u * x
     vn = y * v
 
-    #### testing 
+    # Test if the metric is gauged correctly.
     if test == true
-        left, right = wtg_test(γ, un, st, vn)
+        left, right = wtg_test(un, st, vn, γ)
         if !left
             @warn "Left gauge condition was not met"
         end
@@ -116,11 +133,17 @@ function wtg(
     # @tensoropt Lm[-1 2; 3 -4] := γi[1 2; 3 4] * s[-1; 1] * (s')[4; -4]
 end
 
+#TODO: Tidy this once I am sure it is working.
 function wtg_test(
-    γ::TensorMap{S,4,4}, u::TensorMap{S,2,1}, s::TensorMap{S,1,1}, v::TensorMap{S,1,2}
-    ) where {S<:IndexSpace}
+    u::TensorMap{S,1,1}, s::TensorMap{S,1,1}, v::TensorMap{S,1,1}, γ::TensorMap{S,2,2} 
+) where {S<:IndexSpace}
+
     @tensoropt γin[-1 -2; -3 -4] :=
-        γ[1 2 3 4; 5 6 7 8] * u[5 6; -3] * v[-1; 1 2] * (u')[-2; 3 4] * (v')[7 8; -4]
+        γ[1 2; 3 4] * u[3; -3] * v[-1; 1 ] * (u')[-2; 2] * (v')[4; -4]
+
+    # @tensoropt γin[-1 -2; -3 -4] :=
+    #     γ[1 2 3 4; 5 6 7 8] * u[5 6; -3] * v[-1; 1 2] * (u')[-2; 3 4] * (v')[7 8; -4]
+
     # γmp = permute(γm, (1,4),(3,2))
     # @tensoropt γin[-1 -2; -3 -4] :=
     # γmp[1 2; 3 4] * x[3; -3] * y[-1; 1 ] * (x')[-2; 2] * (y')[4; -4]

@@ -1,3 +1,4 @@
+#FIX: sort out this useless crap 
 struct MPOSignature{Kind,Nw,Mw,Ns,Ms,Ne,Me,Nn,Mn}
     codind::NamedTuple{
         (:w, :s, :e, :n),
@@ -38,8 +39,7 @@ eastind(s::MPOSignature) = codind(s)[:e], domind(s)[:e]
 northind(s::MPOSignature) = codind(s)[:n], domind(s)[:n]
 ind(s::MPOSignature, d::Symbol) = codind(s)[d], domind(s)[d]
 
-struct MPOTensor{S<:IndexSpace,Kind,T<:TensorMap{S},M<:MPOSignature{Kind}} <:
-       AbstractPhysicalTensor{S,T}
+struct MPOTensor{Kind,S,N₁,N₂,T,M<:MPOSignature{Kind}} <: AbstractPhysicalTensor{S,N₁,N₂,T}
     tensor::T
     sig::M
 end
@@ -63,31 +63,22 @@ end
 MPOTensor(t::TensorMap{<:IndexSpace,2,2}) = MPOTensor(t, TR_SIG)
 MPOTensor(t::TensorMap{<:IndexSpace,6,6}) = MPOTensor(t, POST_HS_SIG)
 
-struct InfMPO{Nx,Ny,S<:IndexSpace,N₁,N₂,M<:MPOTensor{S,N₁,N₂}} <:
-       AbstractTensorMatrix{Nx,Ny,M}
-    matrix::Matrix{M}
-    cell::UnitCell{Nx,Ny,S}
-    # function InfMPO(
-    #     matrix::Matrix{M},
-    #     cell::UnitCell{Nx,Ny,S}
-    # ) where {Nx,Ny,S<:IndexSpace, N₁, N₂, M<:MPOTensor{S, N₁, N₂}}
-    #     return new{Nx,Ny,S, N₁, N₂, M}(matrix,cell)
-    # end
+abstract type AbstractMatrixProductOperator{L,M<:MPOTensor} <: AbstractLattice{L,M} end
+const AbstractMPO = AbstractMatrixProductOperator
+
+struct MatrixProductOperator{L,M} <: AbstractMatrixProductOperator{L,M}
+    data::Matrix{M}
 end
 
-signature(m::InfMPO) = signature(tomatrix(m))
+const MPO = MatrixProductOperator
+const InfMPO{L<:Infinite} = MatrixProductOperator{L}
 
-function InfMPO(m::MPOTensor{S}, u::UnitCell{Nx,Ny,S}) where {Nx,Ny,S<:IndexSpace}
-    return InfMPO(fill(m, Nx, Ny), u)
+function MatrixProductOperator{L}(m::MPOTensor) where {L}
+    return MatrixProductOperator{L}(fill(m, size(L)...))
+end
+function MatrixProductOperator(::L, m::MPOTensor) where {L<:LatticeSize}
+    return MatrixProductOperator{L}(m)
 end
 
-function InfMPO{Nx,Ny}(m::MPOTensor{S}) where {Nx,Ny,S<:IndexSpace}
-    u = UnitCell{Nx,Ny,S}()
-    return InfMPO(m, u)
-end
 
-function InfMPO{Nx,Ny}(m::Matrix{<:MPOTensor{S}}) where {Nx,Ny,S<:IndexSpace}
-    SizedMatrix{Nx,Ny}(m)
-    u = UnitCell{Nx,Ny,S}()
-    return InfMPO(m, u)
-end
+signature(m::InfMPO) = signature(to_matrix(m))

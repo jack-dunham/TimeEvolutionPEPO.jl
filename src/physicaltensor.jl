@@ -1,90 +1,112 @@
 ### AbstractPhysicalTensor
 
-abstract type AbstractPhysicalTensor{S<:IndexSpace,T<:TensorMap{S}} end
+@doc raw"""
+    AbstractPhysicalTensor{S<:IndexSpace, N₁, N₂, ...} <: AbstractTensorMap{S,N₁, N₂}
 
-struct PhysicalTensor{S<:IndexSpace,T<:TensorMap{S}} <: AbstractPhysicalTensor{S,T}
+Abstract supertype of all physical tensor maps over vectors spaces of type `S<:IndexSpace`.
+"""
+abstract type AbstractPhysicalTensor{S<:IndexSpace,N₁,N₂,T<:AbstractTensorMap{S,N₁,N₂}} <:
+              AbstractTensorMap{S,N₁,N₂} end
+
+@doc raw"""
+    PhysicalTensor{S<:IndexSpace, N₁, N₂, ...} <: AbstractPhysicalTensor{S, N₁, N₂}
+
+Wrapper of `<:AbstractTensorMap` types as a concrete subtype of 
+[`AbstractPhysicalTensor`](@ref). 
+
+# Fields
+- `tensor::AbstractTensorMap{S, N₁, N₂}`: the wrapped tensor
+"""
+struct PhysicalTensor{S,N₁,N₂,T<:AbstractTensorMap{S,N₁,N₂}} <:
+       AbstractPhysicalTensor{S,N₁,N₂,T}
     tensor::T
 end
 
-Base.convert(::Type{T}, a::AbstractTensorMap) where {T<:AbstractPhysicalTensor} = T(a)
-Base.convert(::Type{TensorMap}, m::AbstractPhysicalTensor) = m.tensor
-totensor(m::AbstractPhysicalTensor) = convert(TensorMap, m)
+function (P)(t::AbstractTensorMap{S,N₁,N₂}) where {S,N₁,N₂}
+    return P{S,N₁,N₂,typeof(t)}(t)
+end
 
+Base.convert(::Type{T}, a::AbstractTensorMap) where {T<:AbstractPhysicalTensor} = T(a)
+Base.convert(::Type{AbstractTensorMap}, m::AbstractPhysicalTensor) = m.tensor
+Base.convert(T::Type{<:TensorMap}, m::AbstractPhysicalTensor) = convert(T, m.tensor)
+
+totensor(m::AbstractPhysicalTensor) = convert(AbstractTensorMap, m)
+
+# approx comparison of two pysical tensors
 function Base.isapprox(x::P, y::P; kwargs...) where {P<:AbstractPhysicalTensor}
     return isapprox(totensor(x), totensor(y); kwargs...)
 end
 
-tensortype(::Type{<:AbstractPhysicalTensor{<:IndexSpace,T}}) where {T<:TensorMap} = T
-tensortype(m::AbstractPhysicalTensor) = tensortype(typeof(m))
+@doc raw"""
+    tensortype(T::Type{<:AbstractPhysicalTensor})
+    tensortype(p::AbstractPhysicalTensor)
 
+Returns the type of the tensor associated with a [`AbstractPhysicalTensor`](@ref) object or 
+data type.
+"""
+tensortype(::Type{<:AbstractPhysicalTensor{<:IndexSpace,N₁,N₂,T}}) where {N₁,N₂,T} = T
+tensortype(p::AbstractPhysicalTensor) = tensortype(typeof(p))
+
+@doc raw"""
+    spacetype(T::Type{<:AbstractPhysicalTensor})
+    spacetype(p::AbstractPhysicalTensor)
+
+Returns the type of the vector space `S<:IndexSpace` associated with a
+[`AbstractPhysicalTensor{S}`](@ref) object or type. 
+"""
 TensorKit.spacetype(::Type{<:AbstractPhysicalTensor{S}}) where {S<:IndexSpace} = S
-TensorKit.spacetype(m::AbstractPhysicalTensor) = spacetype(typeof(m))
+TensorKit.spacetype(p::AbstractPhysicalTensor) = spacetype(typeof(p))
 
-function Base.eltype(::Type{<:AbstractPhysicalTensor{<:IndexSpace,T}}) where {T<:TensorMap}
+function Base.eltype(::Type{<:AbstractPhysicalTensor{<:IndexSpace,N₁,N₂,T}}) where {N₁,N₂,T}
     return eltype(T)
 end
-Base.eltype(m::AbstractPhysicalTensor) = eltype(typeof(m))
+Base.eltype(p::AbstractPhysicalTensor) = eltype(typeof(p))
 
-Base.similar(m::AbstractPhysicalTensor) = typeof(m)(similar(totensor(m)))
-function Base.similar(m::AbstractPhysicalTensor, T::Type{<:Number})
-    return typeof(m)(similar(m.tensor, T))
+Base.similar(p::AbstractPhysicalTensor) = typeof(p)(similar(totensor(p)))
+
+function Base.similar(p::AbstractPhysicalTensor, T::Type{<:Number})
+    return (Base.typename(typeof(p)).wrapper)(similar(totensor(p), T))
 end
 
 function Base.similar(
-    m::AbstractPhysicalTensor,
+    p::AbstractPhysicalTensor,
     ::Type{T},
-    P::TensorKit.TensorMapSpace{S}=(domain(m) → codomain(m)),
+    P::TensorKit.TensorMapSpace{S}=(domain(p) → codomain(p)),
 ) where {T,S}
-    t = similar(totensor(m), T, P)
+    t = similar(totensor(p), T, P)
     return PhysicalTensor(t)
 end
 
-TensorKit.codomain(m::AbstractPhysicalTensor) = codomain(totensor(m))
-TensorKit.domain(m::AbstractPhysicalTensor) = domain(totensor(m))
+TensorKit.blocksectors(p::AbstractPhysicalTensor) = blocksectors(p.tensor)
+TensorKit.block(p::AbstractPhysicalTensor, t) = block(p.tensor, t)
 
-TensorKit.numout(m::AbstractPhysicalTensor) = numout(totensor(m))
-TensorKit.numin(m::AbstractPhysicalTensor) = numin(totensor(m))
-TensorKit.numind(m::AbstractPhysicalTensor) = numind(totensor(m))
+TensorKit.codomain(p::AbstractPhysicalTensor) = codomain(totensor(p))
+TensorKit.domain(p::AbstractPhysicalTensor) = domain(totensor(p))
 
-function TensorKit.permute(m::AbstractPhysicalTensor, p1::NTuple, p2::NTuple)
-    mt = permute(totensor(m), p1, p2)
-    return typeof(m)(mt)
+TensorKit.numout(p::AbstractPhysicalTensor) = numout(totensor(p))
+TensorKit.numin(p::AbstractPhysicalTensor) = numin(totensor(p))
+TensorKit.numind(p::AbstractPhysicalTensor) = numind(totensor(p))
+
+function TensorKit.permute(pt::AbstractPhysicalTensor, p1::NTuple, p2::NTuple)
+    ptp = permute(totensor(pt), p1, p2)
+    return typeof(pt)(ptp)
 end
 
-LinearAlgebra.norm(m::AbstractPhysicalTensor, p::Real=2) = norm(m.tensor, p)
-LinearAlgebra.normalize!(m::AbstractPhysicalTensor, p::Real=2) = rmul!(m, inv(norm(m, p)))
-function LinearAlgebra.normalize(m::AbstractPhysicalTensor, p::Real=2)
-    return mul!(similar(m), m, inv(norm(m, p)))
+TensorKit.exp!(p::AbstractPhysicalTensor) = exp!(p.tensor)
+
+LinearAlgebra.norm(pt::AbstractPhysicalTensor, p::Real=2) = norm(pt.tensor, p)
+function LinearAlgebra.normalize!(pt::AbstractPhysicalTensor, p::Real=2)
+    return rmul!(pt, inv(norm(pt, p)))
+end
+function LinearAlgebra.normalize(pt::AbstractPhysicalTensor, p::Real=2)
+    return mul!(similar(pt), pt, inv(norm(pt, p)))
 end
 
-function Base.:*(α::Number, m::AbstractPhysicalTensor)
-    return mul!(similar(m, promote_type(eltype(m), typeof(α))), α, m)
+function Base.:*(α::Number, pt::AbstractPhysicalTensor)
+    return mul!(similar(pt, promote_type(eltype(pt), typeof(α))), α, pt)
 end
 
-###TODO: move these somewhere else 
-###Multiplcation of tensors
-function _lmul(
-    C::AbstractTensorMap{S,1,1}, A::AbstractTensorMap{S,2,1}
-) where {S<:IndexSpace}
-    return @tensor B[1 2; 3] := C[2; a] * A[1 a; 3]
-end
-function _lmul(
-    C::AbstractTensorMap{S,1,1}, A::AbstractTensorMap{S,2,2}
-) where {S<:IndexSpace}
-    return @tensor B[1 2; 3 4] := C[2; a] * A[1 a; 3 4]
-end
-
-function _rmul(
-    A::AbstractTensorMap{S,2,1}, C::AbstractTensorMap{S,1,1}
-) where {S<:IndexSpace}
-    return @tensor B[1 2; 3] := A[1 2; a] * C[a; 3]
-end
-function _rmul(
-    A::AbstractTensorMap{S,2,2}, C::AbstractTensorMap{S,1,1}
-) where {S<:IndexSpace}
-    return @tensor B[1 2; 3 4] := A[1 2; 3 a] * C[a; 4]
-end
-
+#TODO: Move to linalg.jl
 LinearAlgebra.rmul!(m::AbstractPhysicalTensor, α::Number) = mul!(m, m, α)
 LinearAlgebra.lmul!(α::Number, m::AbstractPhysicalTensor) = mul!(m, α, m)
 
@@ -118,81 +140,144 @@ function LinearAlgebra.dot(m1::AbstractPhysicalTensor, m2::AbstractPhysicalTenso
     return dot(m1.tensor, m2.tensor)
 end
 
-### AbstractTensorMatrix 
-
-abstract type AbstractTensorMatrix{Nx,Ny,P<:AbstractPhysicalTensor} end
-
-struct TensorMatrix{
-    Nx,Ny,S<:IndexSpace,N₁,N₂,P<:AbstractPhysicalTensor{S,<:TensorMap{S,N₁,N₂}}
-} <: AbstractTensorMatrix{Nx,Ny,P}
-    matrix::SizedMatrix{Nx,Ny,P}
-    cell::UnitCell{Nx,Ny,S}
+###TODO: move these somewhere else 
+###Multiplcation of tensors
+function _lmul(
+    C::AbstractTensorMap{S,1,1}, A::AbstractTensorMap{S,2,1}
+) where {S<:IndexSpace}
+    return @tensor B[1 2; 3] := C[2; a] * A[1 a; 3]
+end
+function _lmul(
+    C::AbstractTensorMap{S,1,1}, A::AbstractTensorMap{S,2,2}
+) where {S<:IndexSpace}
+    return @tensor B[1 2; 3 4] := C[2; a] * A[1 a; 3 4]
 end
 
-function Base.convert(::Type{Matrix}, M::AbstractTensorMatrix{Nx,Ny,P}) where {Nx,Ny,P}
-    return convert(Matrix, M.matrix)::Matrix{P}
+function _rmul(
+    A::AbstractTensorMap{S,2,1}, C::AbstractTensorMap{S,1,1}
+) where {S<:IndexSpace}
+    return @tensor B[1 2; 3] := A[1 2; a] * C[a; 3]
 end
-tomatrix(M::AbstractTensorMatrix) = convert(Matrix, M)
-tomatrixt(M::AbstractTensorMatrix) = totensor.(tomatrix(M))
-
-Base.size(M::AbstractTensorMatrix) = size(tomatrix(M))
-
-function TensorMatrix(m::AbstractMatrix, cell::UnitCell{Nx,Ny}) where {Nx,Ny}
-    return TensorMatrix(SizedMatrix{Nx,Ny}(m), cell)
-end
-
-uclabels(M::AbstractTensorMatrix) = (M.cell).label
-
-ptensortype(::AbstractTensorMatrix{Nx,Ny,P}) where {Nx,Ny,P} = P
-TensorKit.spacetype(::AbstractTensorMatrix{Nx,Ny,P}) where {Nx,Ny,P} = spacetype(P)
-
-function Base.eltype(
-    ::AbstractTensorMatrix{Nx,Ny,P}
-) where {Nx,Ny,P<:AbstractPhysicalTensor}
-    return eltype(P)
+function _rmul(
+    A::AbstractTensorMap{S,2,2}, C::AbstractTensorMap{S,1,1}
+) where {S<:IndexSpace}
+    return @tensor B[1 2; 3 4] := A[1 2; 3 a] * C[a; 4]
 end
 
-Base.ndims(M::AbstractTensorMatrix) = ndims(M.matrix)
+### AbstractTensorLattice
 
-Base.getindex(M::AbstractTensorMatrix, i::Int) = getindex(M.matrix, i)
-function Base.getindex(M::AbstractTensorMatrix{Nx,Ny}, i1::Int, i2::Int) where {Nx,Ny}
-    return getindex(tomatrix(M), mod(i1, 1:Nx), mod(i2, 1:Ny))
-end
-function Base.getindex(M::AbstractTensorMatrix{Nx,Ny}, i::CartesianIndex{2}) where {Nx,Ny}
-    return getindex(tomatrix(M), Tuple(i)...)
-end
+abstract type LatticeBoundaryStyle end
+struct Periodic <: LatticeBoundaryStyle end
+struct Open <: LatticeBoundaryStyle end
 
-function Base.getindex(M::AbstractTensorMatrix, s::String)
-    inds = findall(x -> x == s, uclabels(M))
-    if length(inds) == 0
-        throw(IndexError("No tensor associated with label: $s"))
+isperiodic(::Periodic) = true
+isperiodic(::Open) = false
+isperiodic(a) = LatticeBoundaryStyle(a)
+
+abstract type LatticeSize{Nx,Ny} end
+const RowLatticeSize{Nx} = LatticeSize{Nx,1}
+const ColLatticeSize{Ny} = LatticeSize{1,Ny}
+struct Finite{Nx,Ny,Boundary<:LatticeBoundaryStyle} <: LatticeSize{Nx,Ny} end
+struct Infinite{Nx,Ny} <: LatticeSize{Nx,Ny} end
+
+LatticeBoundaryStyle(::Type{<:Finite{Nx,Ny,B}}) where {Nx,Ny,B} = B()
+LatticeBoundaryStyle(::Type{<:Infinite}) = Periodic()
+
+Base.size(::Type{<:LatticeSize{Nx,Ny}}) where {Nx,Ny} = (Nx, Ny)
+Base.size(::L) where {L<:LatticeSize} = size(typeof(L))
+
+Base.permutedims(::Type{<:Finite{Nx,Ny,L}}) where {Nx,Ny,L} = Finite{Ny,Nx,L}
+Base.permutedims(::Type{<:Infinite{Nx,Ny}}) where {Nx,Ny} = Infinite{Ny,Nx}
+
+Base.permutedims(L::LatticeSize) = permutedims(typeof(L))()
+
+@doc raw"""
+    AbstractTensorMatrix{Nx,Ny,P<:AbstractPhysicalTensor}    
+
+Abstract supertype denoting a `Nx` by `Ny` lattice of physical tensors of type P.
+"""
+abstract type AbstractLattice{Size<:LatticeSize,P} <: AbstractMatrix{P} end
+const AbstractTensorLattice{Size,P<:AbstractPhysicalTensor} = AbstractLattice{Size,P}
+const AbstractCompositeLattice{Size,P<:AbstractLattice} = AbstractLattice{Size,P}
+
+@doc raw"""
+
+    TensorLattice{L<:LatticeSize, P<:AbstractPhysicalTensor} <: AbstractTensorLattice
+
+Concrete type denoting a lattice with size `LatticeSize` of physical tensors of type `P`. 
+
+# Fields
+- `matrix::Matrix{P}`: the static-sized matrix of physical tensors
+"""
+struct Lattice{L<:LatticeSize,P} <: AbstractLattice{L,P}
+    data::Matrix{P}
+    function Lattice{L}(data::Matrix{P}) where {L,P}
+        if size(L) != size(data)
+            throw(DimensionMismatch(""))
+        else
+            new{L,P}(data)
+        end
     end
-    rv = Dict{CartesianIndex{2},tensortype(M)}()
-    for i in inds
-        rv[i] = getindex(M, i)
-    end
-    return rv
 end
 
-function Base.getindex(M::AbstractTensorMatrix, i1::Int, ::Colon)
-    Nx, _ = size(M)
-    return tomatrix(M)[mod(i1, 1:Nx), :]
-end
-function Base.getindex(M::AbstractTensorMatrix, ::Colon, i2::Int)
-    Nx, _ = size(M)
-    return tomatrix(M)[:, mod(i2, 1:Nx)]
-end
+Base.similar(l::Lattice{L}) where {L<:LatticeSize} = Lattice{L}(similar(l.data))
 
-function Base.setindex!(
-    M::AbstractTensorMatrix{Nx,Ny,P}, v::P, x::Int, y::Int
-) where {Nx,Ny,P<:AbstractPhysicalTensor}
-    return M.matrix[x, y] = v
+const TensorLattice{L,P<:AbstractPhysicalTensor} = Lattice{L,P}
+const CompositeLattice{L,P<:AbstractLattice} = Lattice{L,P}
+
+function Base.permutedims(l::AbstractLattice{L}) where {L<:LatticeSize}
+    return Lattice{permutedims(L)}(permutedims(l.data))
 end
 
-unitcell(M::AbstractTensorMatrix) = M.cell
+Base.size(::Type{<:AbstractLattice{L}}) where {L} = size(L)
+Base.size(m::AbstractLattice) = size(typeof(m))
 
-function tensorise(p::AbstractTensorMatrix)
-    pm = tomatrixt(p)
+Base.getindex(m::AbstractLattice, inds...) = getindex(m.data, inds...)
+
+LatticeSize(::Type{<:AbstractLattice{L}}) where {L} = L()
+LatticeSize(m::AbstractLattice) = LatticeSize(typeof(m))
+function LatticeBoundaryStyle(::AbstractLattice{L}) where {L}
+    return LatticeBoundaryStyle(LatticeSize(L))
+end
+
+to_matrix(M::AbstractLattice) = M.data
+to_matrixt(M::AbstractLattice) = totensor.(to_matrix(M))
+
+ptensortype(::AbstractTensorLattice{L,P}) where {L,P} = P
+ptensortype(::AbstractCompositeLattice{L,P}) where {L,P} = ptensortype(P)
+TensorKit.spacetype(::AbstractLattice{L,P}) where {L,P} = spacetype(P)
+
+Base.eltype(::AbstractLattice{L,P}) where {L,P} = eltype(P)
+
+Base.ndims(M::AbstractLattice) = ndims(to_matrix(M))
+
+#TODO: move to utils
+to_periodicindex(c::Colon, ::UnitRange) = c
+to_periodicindex(i::Int, r::UnitRange) = mod(i, r)
+# 
+function Base.getindex(M::AbstractLattice{Nx,Ny}, i1, i2) where {Nx,Ny}
+    return _getindex(LatticeBoundaryStyle(M), M, i1, i2)
+end
+
+function _getindex(::Periodic, M::AbstractLattice{Nx,Ny}, i1, i2) where {Nx,Ny}
+    return getindex(to_matrix(M), to_periodicindex(i1, 1:Nx), to_periodicindex(i2, 1:Ny))
+end
+function _getindex(::Open, M::AbstractLattice{Nx,Ny}, i1, i2) where {Nx,Ny}
+    return getindex(to_matrix(M), i1, i2)
+end
+
+Base.getindex(M::AbstractLattice, i::Int) = getindex(to_matrix(M), i)
+
+function Base.getindex(M::AbstractLattice, i::CartesianIndex{2})
+    return getindex(M, Tuple(i)...)
+end
+
+function Base.setindex!(M::AbstractLattice{L,P}, v::P, x::Int, y::Int) where {L,P}
+    return M.data[x, y] = v
+end
+
+function tensorise(p::AbstractLattice)
+    pm = to_matrixt(p)
     pt = _tensorize(pm)
     return pt
 end
