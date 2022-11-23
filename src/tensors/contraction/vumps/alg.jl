@@ -94,11 +94,6 @@ west-northerly (west first) positon, then domain in same order.
 
 # yet unused
 
-function applyhac(ac::MPSTensor, fl::LeftEnvTensor, fr::RightEnvTensor, m::MPOTensor)
-    act = applyhac(totensor(ac), totensor(fl), totensor(fr), totensor(m))
-    return MPSTensor(act)
-end
-
 ## For HS
 function applyhac(
     ac::AbstractTensorMap{S,2,2},
@@ -128,11 +123,6 @@ function applyhac(
         hac[-2 -1; -3] := ac[a 4; b] * fl[-2; a 1] * m[1 -1; 3 4] * fr[b 3; -3]
     end
     return hac
-end
-
-function applyhc(c::BondTensor, fl::LeftEnvTensor, fr::RightEnvTensor)
-    ct = applyhc(totensor(c), totensor(fl), totensor(fr))
-    return BondTensor(ct)
 end
 
 #for HS
@@ -224,19 +214,14 @@ Apply a matrix `C` to the left bond of a MPS tensor `A`
             1                     ▼ │
                                   1 3
 """
-function _CA(C::AbstractTensorMap{S,1,1}, A::AbstractTensorMap{S,2,2}) where {S<:IndexSpace}
-    return @tensor CA[1 2; 3 4] := C[2; a] * A[1 a; 3 4]
-end
 function _CA(C::AbstractTensorMap{S,1,1}, A::AbstractTensorMap{S,2,1}) where {S<:IndexSpace}
-    return @tensor CA[1 2; 3] := C[2; a] * A[1 a; 3]
+    return @tensor CA[1 2; 3] := C[1; a] * A[a 2; 3]
 end
 
 # Apply a matrix C to the right bond of a MPS Tensor
 # assumes left bond is last cod index, and right bond is last dom index
 function _AC(A::AbstractTensorMap{S}, C::AbstractTensorMap{S,1,1}) where {S<:IndexSpace}
-    N = numout(A)
-    M = numind(A)
-    p = swap(N, M, M) # e.g. (1,4,3,2) or (1 4; 3 2)
+    p = (3,2,1)
     CA = _CA(_permute(C, (2, 1)), _permute(A, p))
     return _permute(CA, invperm(p))
 end
@@ -249,107 +234,45 @@ function rightgauge_check(ar::TensorMap{<:IndexSpace,2,1})
     return arr * arr'
 end
 
-## here v
-function permuteleft(t::AbstractTensorMap)
-    N = numind(t)
-    return permute(t, Tuple(1:(N - 1)), (N,))
-end
-
-function invpermuteleft!(tdst::AbstractTensorMap, tsrc::AbstractTensorMap)
-    N₁ = numout(tdst)
-    N = numind(tdst)
-    permute!(tdst, tsrc, Tuple(1:N₁), Tuple((1 + N₁):N))
-    return tdst
-end
-
 function updateleft!(al::AbstractTensorMap, ac::AbstractTensorMap, c::AbstractTensorMap)
-    qac, rac = leftorth(permuteleft(ac))
+    qac, rac = leftorth(ac)
     qc, rc = leftorth(c)
 
-    invpermuteleft!(al, qac * qc') # QAC * QC' -> AL
+    mul!(al, qac, qc') # QAC * QC' -> AL
     errL = norm(rac - rc)
 
-    return al, errL
-end
-function updateleft!(AL::MPSTensor, AC::MPSTensor, C::BondTensor)
-    _, errL = updateleft!(totensor(AL), totensor(AC), totensor(C))
-    return AL, errL
+    return errL
 end
 
-function updateleft!(A::InfMPS)
-    nx = length(A)
-    errL = Vector{Float64}(undef, nx)
-
-    for x in 1:nx
-        _, errL[x] = updateleft!(A.AL[x], A.AC[x], A.C[x])
-    end
-
-    return A, errL
+function updateleft!(A::InfiniteMPS)
+    AL, C, _, AC = unpack(A)
+    errL = updateleft!.(AL, AC, C)
+    return errL
 end
-function updateleft!(A::MultilineInfMPS)
-    nx, ny = size(A)
-    errL = zeros(Float64, nx, ny)
-    for y in 1:ny
-        _, errL[:, y] = updateleft!(A[y])
-    end
-    return A, errL
-end
-
-# function vumps_leftupdate(AC::TensorMap{<:IndexSpace,2,1},C)
-#     U,S,V =  tsvd(_AC(AC,C'))
-#     print(S)
-#     AL = _AC(U,V)
-#     ϵL = norm(AC - _AC(AL, C))
-#     return AL, ϵL
-# end
-
-function permuteright(t::AbstractTensorMap)
-    N = numind(t)
-    tp = permute(t, (1,), Tuple(2:N)) # reshape so only one index in codomain
-    return tp
-end
-
-function invpermuteright!(tdst::AbstractTensorMap, tsrc::AbstractTensorMap)
-    N₁ = numout(tdst)
-    N = numind(tdst)
-    permute!(tdst, tsrc, Tuple(1:N₁), Tuple((N₁ + 1):N)) # move remaining indices back to cod
-    return tdst
+function updateleft!(A::MultilineInfiniteMPS)
+    errL = updateleft!.(A)
+    return A, hcat(errL...)
 end
 
 function updateright!(ar::AbstractTensorMap, ac::AbstractTensorMap, c::AbstractTensorMap)
-    lac, qac = rightorth(permuteright(ac))
+    lac, qac = rightorth(ac, (1,), (2, 3))
     lc, qc = rightorth(c)
 
-    invpermuteright!(ar, qc' * qac)
+    permute!(ar, qc' * qac, (1, 2), (3,))
     errR = norm(lac - lc)
 
-    return ar, errR
+    return errR
 end
 
-function updateright!(AR::MPSTensor, AC::MPSTensor, C::BondTensor)
-    _, errR = updateright!(totensor(AR), totensor(AC), totensor(C))
-    return AR, errR
+function updateright!(A::InfiniteMPS)
+    _, C, AR, AC = unpack(A)
+    errR = updateright!.(AR, AC, circshift(C, 1))
+    return errR
 end
 
-function updateright!(A::InfMPS)
-    nx = length(A)
-    errR = Vector{Float64}(undef, nx)
-
-    rx = 1:nx
-    for x in rx
-        _, errR[x] = updateright!(A.AR[x], A.AC[x], A.C[mod(x - 1, rx)])
-    end
-
-    return A, errR
-end
-
-function updateright!(A::MultilineInfMPS)
-    nx, ny = size(A)
-    errR = zeros(Float64, nx, ny)
-    for y in 1:ny
-        _, errR[:, y] = updateright!(A[y])
-    end
-    return A, errR
+function updateright!(A::MultilineInfiniteMPS)
+    errR = updateright!.(A)
+    return A, hcat(errR...)
 end
 # function vumps_rightupdate(AC,C)
 #     U,S,V = tsvd(_CA(C', AC), (2,),(1,3))
@@ -357,7 +280,7 @@ end
 #     ϵR = norm(AC - _CA(C,AR))
 #     return AR, ϵR
 # end
-function updateboth!(A::MultilineInfMPS)
+function updateboth!(A::MultilineInfiniteMPS)
     _, errL = updateleft!(A)
     _, errR = updateright!(A)
     return A, errL, errR
@@ -385,7 +308,9 @@ function applyhc(z::RecursiveVec, FL::AbstractVector, FR::AbstractVector)
     return RecursiveVec(rv...)
 end
 
-function vumpsupdate!(A::MultilineInfMPS, FL::LeftEnv, FR::RightEnv, M::InfMPO)
+function vumpsupdate!(
+    A::MultilineInfiniteMPS, FL::LeftEnvironment, FR::RightEnvironment, M::InfiniteMPO
+)
     nx, ny = size(A)
     rx = 1:nx
     ry = 1:ny
@@ -396,12 +321,11 @@ function vumpsupdate!(A::MultilineInfMPS, FL::LeftEnv, FR::RightEnv, M::InfMPO)
     C = bondtensor(A)
 
     for x in rx
-        xp = mod(x + 1, rx)
 
         # take mps[y], get mps[y].AC, send in mps[y].AC[x]
         Threads.@sync begin
             Threads.@spawn begin
-                μ1s, ACs, _ = eigsolve(
+                _, ACs, _ = eigsolve(
                     z -> applyhac(z, ($FL[x, :]), ($FR[x, :]), ($M[x, :])),
                     RecursiveVec(($AC[x, :])...),
                     1,
@@ -417,8 +341,8 @@ function vumpsupdate!(A::MultilineInfMPS, FL::LeftEnv, FR::RightEnv, M::InfMPO)
 
             # A[mod(y - 1, ry)].AC[x] = ACs[1]
             Threads.@spawn begin
-                μ0s, Cs, _ = eigsolve(
-                    z -> applyhc(z, ($FL[xp, :]), ($FR[x, :])),
+                _, Cs, _ = eigsolve(
+                    z -> applyhc(z, ($FL[x + 1, :]), ($FR[x, :])),
                     RecursiveVec(($C[x, :])...),
                     1,
                     :LM,
@@ -444,44 +368,32 @@ function vumpsupdate!(A::MultilineInfMPS, FL::LeftEnv, FR::RightEnv, M::InfMPO)
     return A, errL, errR
 end
 
-function vumpsstep!(A::MultilineInfMPS, FL::LeftEnv, FR::RightEnv, M::InfMPO)
+function vumpsstep!(
+    A::MultilineInfiniteMPS, FL::LeftEnvironment, FR::RightEnvironment, M::InfiniteMPO
+)
     A, errL, errR = vumpsupdate!(A, FL, FR, M) # array form
 
-    _, _ = environments!(A, M, FL, FR)
-
-    nx, ny = size(A)
-    ry = 1:ny
-    rx = 1:nx
-
-    err = zeros(Float64, nx, ny)
+    _, _ = simple_environments!(FL, FR, A, M)
 
     AC = centraltensor(A)
 
-    #find error 
-    # TODO: put this in a function
-    for x in rx, y in ry
-        yp = mod(y + 1, ry)
+    # Error calculation
+    vl = leftnull.(circshift(AC, -1))
+    ac = applyhac.(AC, FL, FR, M)
+    err = norm.(vl' .* ac)
 
-        vl = leftnull(totensor(AC[x, yp]))
-
-        ac = totensor(applyhac(AC[x, y], FL[x, y], FR[x, y], M[x, y]))
-        err[x, y] = norm(vl' * ac)
-    end
-
-    # println("err: ", err)
+    println("err: ", err)
     erri = maximum(err)
-
-    println(erri)
 
     return A, FL, FR, erri
 end
 
-function vumpsstep!(T::VUMPS, M::InfMPO)
-    return vumpsstep!(T.A,T.FL, T.FR, M)
+function vumpsstep!(T::VUMPS, M::InfiniteMPO)
+    return vumpsstep!(T.A, T.FL, T.FR, M)
 end
 
 function vumps!(v::VUMPSState)
-    return vumps!(v, Val(v.finished))
+    return vumps!(v, Val(v.info.finished))
 end
 
 #mutates the vumps tensors
@@ -502,45 +414,57 @@ function vumps!(v::VUMPSState, ::Val{false})
     iterations = info.iterations
 
     while error > tol && iterations < maxiter
-        _, _, _, info.error = vumpsstep!(st, mpo)
+        _, _, _, error = vumpsstep!(st, mpo)
         verbosity > 0 && @info "Step $(iterations): error ≈ $(error)"
 
         iterations += 1
     end
-    errror > tol ? converged = false : converged = true
-    v.finished = true
+    error > tol ? converged = false : converged = true
+    info.finished = true
     return v
 end
 
-function vumps!(v::VUMPSState, finished::Val{true})
+function vumps!(v::VUMPSState, ::Val{true})
     @info "This algorithm has already finished according to the parameters set"
     return v
 end
 
-function vumps_test(A::MultilineInfMPS)
+function vumps_test()
     βc = log(1 + sqrt(2)) / 2
-    β = 1.5 * βc
+    β = 1.0 * βc
 
     println("β = \t", β)
 
     aM, aM2 = classicalisingmpo_alt(β)
-    tM = TensorMap(aM, ℂ^2 * ℂ^2, ℂ^2 * ℂ^2) #mpo
+    tM = TensorMap(ComplexF64.(aM),  ℂ^2 * ℂ^2, ℂ^2 * ℂ^2) #mpo
     tM2 = TensorMap(aM2, ℂ^2 * ℂ^2, ℂ^2 * ℂ^2) #mpo
 
-    M = InfMPO{2,2}(MPOTensor(tM))
+    M = Lattice(MPO(), Infinite{1,1}(), tM)
 
-    _, FL, FR = vumps!(A, M)
+    alg = initialise_state(VUMPS, M, BoundaryParameters(2,ℂ^4,100, 1e-10))
+  
+    st = alg.data
 
-    al = lefttensor(A)
-    ar = righttensor(A)
-    c = bondtensor(A)
-    ac = centraltensor(A)
+    @assert isgauged(st.A[1])
 
-    z2 = expval(tM, tomatrixt(ac), tomatrixt(FL), tomatrixt(FR))
-    magn = expval(tM2, tomatrixt(ac), tomatrixt(FL), tomatrixt(FR))
+    envtest(st.FL, st.FR, st.A, M)
 
-    return magn ./ z2
+    calculate!(alg)
+
+    # _, FL, FR = vumps!(A, M)
+
+    # al = lefttensor(A)
+    # ar = righttensor(A)
+    # c = bondtensor(A)
+    # ac = centraltensor(A)
+
+    # z2 = expval(tM, tomatrixt(ac), tomatrixt(FL), tomatrixt(FR))
+    # magn = expval(tM2, tomatrixt(ac), tomatrixt(FL), tomatrixt(FR))
+
+    # return magn ./ z2
 end
+
+
 function vumps_test_dimer(x, A=MultilineInfMPS{2,2}(rand, ComplexF64, ℂ^4, ℂ^10))
     Tc = 0.65
 
@@ -815,3 +739,4 @@ function dimer_d(m)
     end
     return mo
 end
+

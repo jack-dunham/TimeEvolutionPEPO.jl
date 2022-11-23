@@ -1,63 +1,34 @@
-abstract type AbstractEnvTensor{S,N₁,N₂,T} <: AbstractPhysicalTensor{S,N₁,N₂,T} end
-abstract type AbstractEnv{L,P<:AbstractEnvTensor} <: AbstractLattice{L,P} end
+const AbstractEnvironment{E<:Env} = UnitCell{E}
 
-struct LeftEnvTensor{S,T<:AbstractPhysicalTensor{S,1,2}} <: AbstractEnvTensor{S,1,2,T}
-    tensor::T
-end
-struct RightEnvTensor{S,T<:AbstractPhysicalTensor{S,2,1}} <: AbstractEnvTensor{S,2,1,T}
-    tensor::T
-end
-# LeftEnvTensor{S,Nc,Nd,T}(t) where {S<:IndexSpace,Nc,Nd,T} = LeftEnvTensor(t)
-# RightEnvTensor{S,Nc,Nd,T}(t) where {S<:IndexSpace,Nc,Nd,T} = RightEnvTensor(t)
+const LeftEnvironment{Nx,Ny,D<:AbsTen{1,2}} = UnitCell{LeftEnv,Nx,Ny,D}
+const RightEnvironment{Nx,Ny,D<:AbsTen{2,1}} = UnitCell{RightEnv,Nx,Ny,D}
 
-function LeftEnvTensor(f, a::MPSTensor, m::MPOTensor)
-    sp_m = codomain(m)[1]
-    sp_a = codomain(a)[1]
-    return LeftEnvTensor(TensorMap(f, ComplexF64, sp_a, sp_a * sp_m))
-end
-function RightEnvTensor(f, a::MPSTensor, m::MPOTensor)
-    sp_m = domain(m)[1]
-    sp_a = domain(a)[1]
-    return RightEnvTensor(TensorMap(f, ComplexF64, sp_a * sp_m, sp_a))
-end
-
-function westenvspace(m::MPOTensor)
-    N = numout(m)
-    codi, domi = westind(m)
-    cod = slice(codi, codomain(m))
-    dom = slice(domi .- N, domain(m))
-    return cod, dom
-end
-function eastenvspace(m::MPOTensor)
-    N = numout(m)
-    codi, domi = eastind(m)
-    cod = slice(codi, codomain(m))
-    dom = slice(domi .- N, domain(m))
-    return cod, dom
-end
-
-struct LeftEnv{La,L<:LeftEnvTensor} <: AbstractEnv{La,L}
-    data::Matrix{L}
-end
-struct RightEnv{La,R<:RightEnvTensor} <: AbstractEnv{La,R}
-    data::Matrix{R}
-end
-
-function LeftEnv(f, A::MultilineInfMPS, M::InfMPO{L}) where {L}
+function LeftEnvironment(f, A::MultilineInfiniteMPS, M::InfiniteMPO)
     nx, ny = size(M)
-    mat = [LeftEnvTensor(f,A[x,y],M[x,y]) for x in 1:nx, y in 1:ny]
-    return LeftEnv{L}(mat)
+    Ds = westbond.(M)
+    println(westbond.(A))
+    χs = hcat(westbond.(A)...)
+    data = [
+        TensorMap(
+            f, promote_type(numbertype(A), numbertype(M)), χs[x, y + 1], χs[x, y] * Ds[x, y]
+        ) for x in 1:nx, y in 1:ny
+    ]
+    return Lattice(LeftEnv(), latticestyle(M), data)
 end
-function RightEnv(f, A::MultilineInfMPS, M::InfMPO{L}) where {L}
+function RightEnvironment(f, A::MultilineInfiniteMPS, M::InfiniteMPO)
     nx, ny = size(M)
-    mat = [RightEnvTensor(f,A[x,y],M[x,y]) for x in 1:nx, y in 1:ny]
-    return RightEnv{L}(mat)
+    Ds = eastbond.(M)
+    χs = hcat(eastbond.(A)...)
+    data = [
+        TensorMap(
+            f, promote_type(numbertype(A), numbertype(M)), χs[x, y] * Ds[x, y], χs[x, y + 1]
+        ) for x in 1:nx, y in 1:ny
+    ]
+    return Lattice(RightEnv(), latticestyle(M), data)
 end
 
 function renorm(cb, ca, fl, fr)
-    cbt = totensor(cb)
-    cat = totensor(ca)
-    return dot(cbt, hcapply(cat, totensor(fl), totensor(fr)))
+    return dot(cb, hcapply(ca, fl, fr))
 end
 
 function hcapply(
@@ -67,77 +38,103 @@ function hcapply(
     return hc
 end
 
-function environments(A::MultilineInfMPS, M::InfMPO)
-    FL = LeftEnv(rand, A, M)
-    FR = RightEnv(rand, A, M)
-    return environments!(A, M, FL, FR)
+function environments(A::MultilineInfiniteMPS, M::InfiniteMPO)
+    FL = LeftEnvironment(rand, A, M)
+    FR = RightEnvironment(rand, A, M)
+    return environments!(FL, FR, A, M)
 end
 
 #this is now the correct env func
-function environments!(FL::LeftEnv, FR::RightEnv, A::MultilineInfMPS, M::InfMPO)
+function environments!(
+    FL::LeftEnvironment, FR::RightEnvironment, A::MultilineInfiniteMPS, M::InfiniteMPO
+)
     Nx, Ny = size(M)
-    rx = 1:Nx
-    ry = 1:Ny
 
-    λ = Matrix{eltype(M)}(undef, Nx, Ny)
+    # λ = Matrix{numbertype(M)}(undef, Nx, Ny)
 
-    info = 0
+    AL, C, AR, _ = unpack(A)
 
-    AL = lefttensor(A)
-    AR = righttensor(A)
-    C = bondtensor(A)
-
-    for y in ry
-        xi = 1
-
-        yp = mod(y + 1, ry)
-
-        ls, Ls, infol = eigsolve(z -> envsolve(z, AL, M, 1, y), FL[1, y], 1, :LM)
-        rs, Rs, infor = eigsolve(z -> envsolve(z, AR, M, Nx, y), FR[Nx, y], 1, :LM)
+    for y in 1:Ny
+        
+        _, Ls, _ = eigsolve(z -> envsolve(z, AL, M, 1, y), FL[1, y], 1, :LM)
+        _, Rs, _ = eigsolve(z -> envsolve(z, AR, M, Nx, y), FR[Nx, y], 1, :LM)
 
         FL[1, y] = Ls[1]
 
         for x in 2:Nx
-            xm = mod(x - 1, rx)
-            yp = mod(y + 1, ry)
-
-            FL[x, y] = FL[xm, y] * TransferMatrix(AL[xm, y], M[xm, y], AL[xm, yp])#works
+            FL[x, y] =
+                FL[x - 1, y] * TransferMatrix(AL[x - 1, y], M[x - 1, y], AL[x - 1, y + 1])#works
         end
 
-        NN = renorm(C[Nx, yp], C[Nx, y], Ls[1], Rs[1])
+        NN = renorm(C[Nx, y + 1], C[Nx, y], Ls[1], Rs[1])
 
         # the eigenvalue problem eqn gives us FL[1,y] and FR[end,y], so normalise them
         FL[1, y] = rmul!(FL[1, y], 1 / sqrt(NN)) #correct NN 
         FR[Nx, y] = rmul!(Rs[1], 1 / sqrt(NN)) #correct NN
 
         for x in (Nx - 1):-1:1
-            xp = mod(x + 1, rx)
-            yp = mod(y + 1, ry)
+            FR[x, y] =
+                TransferMatrix(AR[x + 1, y], M[x + 1, y], AR[x + 1, y + 1]) * FR[x + 1, y]#works
 
-            FR[x, y] = TransferMatrix(AR[xp, y], M[xp, y], AR[xp, yp]) * FR[xp, y]#works
+            NN = renorm(C[x, y + 1], C[x, y], FL[x + 1, y], FR[x, y])
 
-            NN = renorm(C[x, yp], C[x, y], FL[xp, y], FR[x, y])
-
-            rmul!(FL[xp, y], 1 / sqrt(NN))
+            rmul!(FL[x + 1, y], 1 / sqrt(NN))
             rmul!(FR[x, y], 1 / sqrt(NN))
         end
     end
     return FL, FR #mutated 
 end
 
-function envsolve(
-    FL::LeftEnvTensor, A::AbstractLattice{L,<:MPSTensor}, M::InfMPO{L}, x::Int, y::Int
-) where {Nx,L<:LatticeSize{Nx}}
-    fl = flsolve(totensor(FL), to_matrixt(A), to_matrixt(M), x, y, Val(Nx))
-    return LeftEnvTensor(fl)
-end
-function envsolve(
-    FR::RightEnvTensor, A::AbstractLattice{L,<:MPSTensor}, M::InfMPO{L}, x::Int, y::Int
-) where {Nx,L<:LatticeSize{Nx}}
-    fr = frsolve(totensor(FR), to_matrixt(A), to_matrixt(M), x, y, Val(Nx))
-    return RightEnvTensor(fr)
+function simple_environments!(FL,FR,A,M)
+    Nx, Ny = size(M)
+
+    # λ = Matrix{numbertype(M)}(undef, Nx, Ny)
+
+    AL, C, AR, _ = unpack(A)
+
+    for x in 1:Nx, y in 1:Ny
+        
+        _, Ls, _ = eigsolve(z -> envsolve(z, AL, M, x, y), FL[x, y], 1, :LM)
+        _, Rs, _ = eigsolve(z -> envsolve(z, AR, M, x, y), FR[x, y], 1, :LM)
+
+        FL[x, y] = Ls[x]
+        FR[x, y] = Rs[x]
+    end
+    return FL, FR
 end
 
+function envsolve(
+    fl::AbsTen{1,2}, A::AbstractUnitCell{MPS,Nx,Ny}, M::InfiniteMPO{Nx,Ny}, x::Int, y::Int
+) where {Nx,Ny}
+    fl_n = flsolve(fl, A, M, x, y, Val(Nx))
+    return fl_n
+end
+function envsolve(
+    fr::AbsTen{2,1}, A::AbstractUnitCell{MPS,Nx,Ny}, M::InfiniteMPO{Nx,Ny}, x::Int, y::Int
+) where {Nx,Ny}
+    fr_n = frsolve(fr, A, M, x, y, Val(Nx))
+    return fr_n
+end
+
+# Right-environment
+function flsolve(
+    fl::AbstractTensorMap{S,1,2},
+    a::AbstractMatrix{<:AbstractTensorMap{S,2,1}},
+    m::AbstractMatrix{<:AbstractTensorMap{S,2,2}},
+    x::Int,
+    y::Int,
+    ::Val{1},
+) where {S}
+    flu = similar(fl)
+    @tensoropt begin
+        flu[8; 6 7] =
+            fl[3; 1 2] *
+            (a[x, y])[1 4; 6] *
+            (m[x, y])[2 5; 7 4] *
+            (a[x, y + 1]')[8; 3 5]
+    end
+    return flu
+end
 function flsolve(
     fl::AbstractTensorMap{S,1,2},
     a::AbstractMatrix{<:AbstractTensorMap{S,2,1}},
@@ -145,7 +142,7 @@ function flsolve(
     x::Int,
     y::Int,
     ::Val{2},
-) where {S<:IndexSpace}
+) where {S}
     flu = similar(fl)
     @tensoropt begin
         flu[13; 11 12] =
@@ -167,7 +164,7 @@ function flsolve(
     x::Int,
     y::Int,
     ::Val{3},
-) where {S<:IndexSpace}
+) where {S}
     flu = similar(fl)
     @tensoropt begin
         flu[18; 16 17] =
@@ -177,7 +174,7 @@ function flsolve(
             (a[x, y + 1]')[8; 3 5] *
             (a[x + 1, y])[6 9; 11] *
             (m[x + 1, y])[7 10; 12 9] *
-            (a[x + 1, y + 1]')[13; 8 10]*
+            (a[x + 1, y + 1]')[13; 8 10] *
             (a[x + 2, y])[11 14; 16] *
             (m[x + 2, y])[12 15; 17 14] *
             (a[x + 2, y + 1]')[18; 13 15]
@@ -185,6 +182,25 @@ function flsolve(
     return flu
 end
 
+# Right-environment
+function frsolve(
+    fr::AbstractTensorMap{S,2,1},
+    a::AbstractMatrix{<:AbstractTensorMap{S,2,1}},
+    m::AbstractMatrix{<:AbstractTensorMap{S,2,2}},
+    x::Int,
+    y::Int,
+    ::Val{1},
+) where {S}
+    fru = similar(fr)
+    @tensoropt begin
+        fru[1 2; 3] =
+            (a[x , y])[1 4; 6] *
+            (m[x , y])[2 5; 7 4] *
+            (a[x , y + 1]')[8; 3 5] *
+            fr[6 7; 8]
+    end
+    return fru
+end
 function frsolve(
     fr::AbstractTensorMap{S,2,1},
     a::AbstractMatrix{<:AbstractTensorMap{S,2,1}},
@@ -192,13 +208,13 @@ function frsolve(
     x::Int,
     y::Int,
     ::Val{2},
-) where {S<:IndexSpace}
+) where {S}
     fru = similar(fr)
     @tensoropt begin
         fru[1 2; 3] =
             (a[x - 1, y])[1 4; 6] *
             (m[x - 1, y])[2 5; 7 4] *
-            (a[x - 1, yp]')[8; 3 5] *
+            (a[x - 1, y + 1]')[8; 3 5] *
             (a[x, y])[6 9; 11] *
             (m[x, y])[7 10; 12 9] *
             (a[x, y + 1]')[13; 8 10] *
@@ -213,13 +229,13 @@ function frsolve(
     x::Int,
     y::Int,
     ::Val{3},
-) where {S<:IndexSpace}
+) where {S}
     fru = similar(fr)
     @tensoropt begin
         fru[1 2; 3] =
             (a[x - 2, y])[1 4; 6] *
             (m[x - 2, y])[2 5; 7 4] *
-            (a[x - 2, yp]')[8; 3 5] *
+            (a[x - 2, y + 1]')[8; 3 5] *
             (a[x - 1, y])[6 9; 11] *
             (m[x - 1, y])[7 10; 12 9] *
             (a[x - 1, y + 1]')[13; 8 10] *
@@ -229,4 +245,13 @@ function frsolve(
             fr[16 17; 18]
     end
     return fru
+end
+
+function envtest(FL,FR,A,M)
+    nx,ny = size(M)
+    AL,C,AR,_  = unpack(A)
+    for x in 1:nx, y in 1:ny
+        println("Left: ", isapprox(normalize(FL[x,y]), normalize(envsolve(FL[x,y], AL, M, x,y))))
+        println("Right: ",isapprox(normalize(FR[x,y]), normalize(envsolve(FR[x,y], AR, M, x,y))))
+    end
 end

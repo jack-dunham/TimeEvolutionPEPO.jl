@@ -91,8 +91,8 @@ function optimise_isometries(γ::AbstractTensorMap{<:IndexSpace,2,2}, D; maxiter
     σ = id(ntsp)
 
     u, s, v = tsvd(σ; trunc=truncspace(D))
-    u = TensorMap(rand, codomain(u), domain(u))
-    v = TensorMap(rand, codomain(v), domain(v))
+    # u = TensorMap(rand, eltype(γ), codomain(u), domain(u))
+    # v = TensorMap(rand,  eltype(γ), codomain(v), domain(v))
     # println("F0: ", _fidelity(γ, u, s, v))
 
     # this is awfully confusing
@@ -120,7 +120,7 @@ function optimise_isometries(γ::AbstractTensorMap{<:IndexSpace,2,2}, D; maxiter
         @tensor B2[-1 2; 3 -4]:=γ[1 2;3 4] * v[-1;1] * (v')[4; -4]
 
         # @tensor P2[3 4; -3] := γ[u d 3 4; u d 7 8] * (v')[7 8; -3]
-        @tensor P2[2;-4] :=[x 2; x 4]*(v')[4;-4]
+        @tensor P2[2;-4] :=γ[x 2; x 4]*(v')[4;-4]
 
         # B2inv = pinv(permute(B2, (4, 5, 3), (1, 2, 6)))
         # R2 = permute(permute(P2, (), (1, 2, 3)) * B2inv, (1, 2), (3,))
@@ -133,7 +133,7 @@ function optimise_isometries(γ::AbstractTensorMap{<:IndexSpace,2,2}, D; maxiter
 
         δu = sqrt(real(tr((u - up) * (u - up)')))
         δv = sqrt(real(tr((v - vp) * (v - vp)')))
-        #println("δu: ", δu, "\tδv", δv)
+        println("δu: ", δu, "\tδv", δv)
     end
     # println("fidelity: ", fidelity(γ, u, s, v))
     return u, s, v

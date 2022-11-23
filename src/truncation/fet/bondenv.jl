@@ -1,44 +1,6 @@
-# const Post_HS_MPOTensor{S,T} = MPOTensor{
-#     S,:POST_HS_SIG,6,6,T,MPOSignature{:POST_HS_SIG,2,2,1,1,2,2,1,1}
-# }
+const TruncationMetric{Nx,Ny,D<:AbsTen{2,2}} = UnitCell{TruncMetric,Nx,Ny,D}
 
-# const Post_HS_InfMPO{Nx,Ny,S,P<:Post_HS_MPOTensor{S}} = InfMPO{Nx,Ny,S,:POST_HS_SIG,P}
-
-abstract type AbstractMetricTensor{S,N₁,N₂,T} <: AbstractPhysicalTensor{S,N₁,N₁,T} end
-# For truncating a bond
-abstract type AbstractTruncationMetricTensor{S,T} <: AbstractMetricTensor{S,4,4,T} end
-# For calculating traces
-abstract type AbstractTraceMetricTensor{S,T} <: AbstractMetricTensor{S,2,2,T} end
-
-abstract type AbstractTruncationMetric{L,P<:AbstractMetricTensor} <:
-              AbstractTensorLattice{L,P} end
-
-struct TruncationMetricTensor{S,T} <: AbstractTruncationMetricTensor{S,T}
-    tensor::T
-end
-
-struct TruncationMetric{L,P<:AbstractTruncationMetricTensor} <:
-       AbstractTruncationMetric{L,P}
-    data::Matrix{P}
-end
-
-# function hsbondenv(vhs::TensorMap{ComplexSpace,6,6}, D::Integer)
-#     sp = hcat(codomain(vhs)..., domain(vhs)...)
-#     A = TensorMap(randn, ComplexF64, sp[9] * ℂ^D, sp[6] * ℂ^D)
-#     λ, AL, C, AR, FL, FR = vumps(A, vhs; maxiter=100, verbose=true)
-#     return _construct_hsbondenv(vhs, AL, C, AR, FL, FR)
-# end
-
-# function randhsmps(vhs::TensorMap{S,6,6}, χ::Int) where {S<:IndexSpace}
-#     unitsp = oneunit(S)
-#     bondsp = ⊕(fill(unitsp,χ)...)
-
-#     sp = hcat(codomain(vhs)..., domain(vhs)...)
-#     A = TensorMap(randn, ComplexF64, sp[9] * bondsp, sp[6] * bondsp)
-#     return A
-# end
-
-# alg could be ::VUMPS, ::CTMRG, ::FPCM, ::RG 
+TruncationMetric(L::LatticeStyle,Y::AbstractMatrix) = Lattice(TruncMetric(), L, Y) 
 
 @doc raw"""
     truncmetric(state::Union{AbstractBoundaryState, AbstractNeighbourhoodState})
@@ -53,7 +15,7 @@ function truncmetric(Dη, state::AbstractBoundaryState)
     return truncmetric(Dη, mpo, tensors)
 end
 # MPO is a hilbertschmidt mpo
-function truncmetric(Dη, mpo::InfMPO, tensors::VUMPS)
+function truncmetric(Dη, mpo::InfiniteMPO, tensors::VUMPS)
     Y = vumps_fetmetric(Dη, mpo, tensors.A, tensors.FL, tensors.FR)
     return Y
 end
@@ -170,26 +132,23 @@ function vumps_fetmetric(
     return y
 end
 
-function vumps_fetmetric(Dη, M::InfMPO, A::InfMPS, FL::LeftEnv, FR::RightEnv)
+function vumps_fetmetric(
+    Dη, M::InfiniteMPO, A::MultilineInfiniteMPS, FL::LeftEnvironment, FR::RightEnvironment
+)
+    
     nx, ny = size(M)
 
-    # Useful for obtaining the type of the matrix elements.
-    # this is very janky way of doing this
-    s = space(M[1, 1], :w)[1]
-    p0 = TruncationMetricTensor(similar(M[1, 1].tensor, s * s, s * s)) #this is discarded!
-
-    Ym = Matrix{typeof(p0)}(undef, nx, ny)
+    # Initialise the lattice.
+    Y = @. similar(M, Dη * Dη, Dη * Dη )
 
     # Get the tensor matrices of the MPS
-    AL = lefttensor(A)
-    AR = righttensor(A)
-    C = bondtensor(A)
+    AL, C, AR, _ = unpack(A)
 
-    U = [unitary(codomain[x, y][1], Dη[x, y] * Dη[x, y]) for x in 1:nx, y in 1:ny]
+    U = @. unitary(getindex(domain(M), 1), Dη * Dη')
 
-    ## Calculate the HS bond environment for each site in unit cell
+    # Calculate the truncation metric for each site in unit cell
     for x in 1:nx, y in 1:ny
-        Ym[x, y] = TruncationMetricTensor(
+        Y[x, y] = 
             vumps_fetmetric(
                 M[x, y],
                 M[x + 1, y],
@@ -202,10 +161,9 @@ function vumps_fetmetric(Dη, M::InfMPO, A::InfMPS, FL::LeftEnv, FR::RightEnv)
                 FL[x, y],
                 FR[x + 1, y],
                 U[x, y],
-            ),
-        )
+            )
     end
-    return TruncationMetric(Y)
+    return TruncationMetric(latticestyle(M), Y)
 end
 
 function hsnorm(vp, D)
@@ -280,7 +238,14 @@ end
 hilbertschmidt(vp::TensorMap) = hilbertschmidt(vp, vp')
 
 function hilbertschmidt(P::Lattice{L}) where {L}
-    nx,ny = size(P)
-    mat = hilbertschmidt.(P)
-    return InfMPO{L}(mat)
+    hs = hilbertschmidt.(P)
+    return convertstyle(MPO, merge_hilbertschmidt_bonds.(hs))
+end
+
+function merge_hilbertschmidt_bonds(t::AbsTen{4,4})
+    c = codomain(t)
+    d = domain(t)
+    c_m = fuse(c[1]*c[2]) * fuse(c[3] * c[4])
+    d_m = fuse(d[1]*c[2]) * fuse(d[3] * d[4])
+    return TensorMap(t.data, c_m, d_m)
 end

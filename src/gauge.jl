@@ -1,12 +1,10 @@
+#TODO: Clean this mess
 function leftgauge_multi(
-    A,
-    L=[
-        TensorMap(randn, eltype(A[1]), codomain(A[1])[2], codomain(A[1])[2]) for
-        i in 1:length(A)
-    ];
+    A::UnitCell{MPS,Nx,1,<:AbsTen{2,1}},
+    L::UnitCell{BondMatrix,Nx,1,<:AbsTen{1,1}};
     tol=1e-12,
     maxiter=100,
-)
+) where {Nx}
     normalize!(L[end])
     numsites = length(A)
     r = 1:numsites
@@ -43,7 +41,7 @@ function leftgauge_multi(
     # _,R[end] = leftorth(Ls[1])
 
     for x in r
-        AL[x], _, R[x], λ[x] = PEPOKit.leftgaugefactor(R[mod(x - 1, r)], A[x])
+        AL[x], _, R[x], λ[x] = leftgaugefactor(R[x - 1], A[x])
         # ϵ[x] = norm(L[x] - R[x])
     end
 
@@ -77,139 +75,78 @@ function leftgauge_multi(
             # λ = λs[1]
             _, R[end] = leftorth(Ls[1])
         end
-        # for x in r
-        #     AL[x], L[mod(x-1,r)], R[x], λ[x] = PEPOKit.leftgaugefactor(L[mod(x - 1, r)], A[x])
-        #     ϵ[x] = norm(L[x] - R[x])
-        # end
+
         for x in r
-            AL[x], _, R[x], λ[x] = PEPOKit.leftgaugefactor(R[mod(x - 1, r)], A[x])
-            # ϵ[x] = norm(L[x] - R[x])
+            AL[x], _, R[x], λ[x] = leftgaugefactor(R[x - 1], A[x])
         end
 
         for x in r
             AC = _AC(AL[x], R[x])
-            CA = _CA(R[mod(x - 1, r)], A[x])
+            CA = _CA(R[x - 1], A[x])
             normalize!(AC)
             normalize!(CA)
             ϵ[x] = norm(AC - CA)
         end
-        # for x in r
-        #     AL[x] = _CA(L[mod(x - 1, r)], A[x])
-        #     AL[x], L[x] = leftorth!(AL[x])
 
-        #     λ[x] = norm(L[x])
-
-        #     L[x] = L[x] / λ[x]
-
-        #     # ϵ[x] = norm(Lold - L[x])
-        # end
         numiter += 1
-        # @info "Convergence $ϵ"
     end
     return AL, R, λ
 end
 
 function leftgauge(
-    A::SizedVector{Nx,<:MPSTensor}, C::SizedVector{Nx,<:BondTensor}; tol=1e-12, maxiter=100
+    A::UngaugedInfiniteMPS{Nx}, C::UnitCell{BondMatrix,Nx}; tol=1e-12, maxiter=100
 ) where {Nx}
-    AL, R, λ = leftgauge_multi(totensor.(A), totensor.(C); tol=tol, maxiter=maxiter)
-    return MPSTensor.(AL), BondTensor.(R), λ
+    AL, R, λ = leftgauge_multi(A, C; tol=tol, maxiter=maxiter)
+    return AL, R, λ
 end
 
-#TODO: check the lbspace of it all 
-function leftgauge(A::SizedVector{Nx,M}) where {Nx,M<:MPSTensor}
-    χ = lbspace(A[begin])
-    C = [BondTensor(randn, eltype(M), χ) for _ in 1:Nx]
+function leftgauge(A::UngaugedInfiniteMPS)
+    # Get the eastbond. 
+    χs = eastbond.(A)
+    # Construct a vector of random bond matrices. 
+    data = [TensorMap(rand, numbertype(A), χs[i], χs[i + 1]) for i in length(A)]
+    # Apply similar lattice structure. 
+    C = Lattice(BondMatrix(), latticestyle(A), data)
     return leftgauge(A, C)
-end
-function rightgauge(
-    A::SizedVector{Nx,<:MPSTensor}, C::SizedVector{Nx,<:BondTensor}; tol=1e-12, maxiter=100
-) where {Nx}
-    AL, R, λ = rightgauge_multi(totensor.(A), totensor.(C); tol=tol, maxiter=maxiter)
-    return MPSTensor.(AL), BondTensor.(R), λ
-end
-
-#TODO: check the lbspace of it all
-function rightgauge(A::SizedVector{Nx,M}) where {Nx,M<:MPSTensor}
-    χ = lbspace(A[begin])
-    C = SizedVector{Nx}((BondTensor(randn, eltype(M), χ) for _ in 1:Nx))
-    return rightgauge(A, C)
-end
-
-function mixedgauge(
-    A::SizedVector{Nx,<:MPSTensor}, C::SizedVector{Nx,<:BondTensor}; tol=1e-12, maxiter=100
-) where {Nx}
-    AL, C, AR = mixedgauge(totensor.(A), totensor.(C))
-    return MPSTensor.(AL), BondTensor.(C), MPSTensor.(AR)
-end
-
-# function mixedgauge!(AL, AR, A::SizedVector{Nx,<:MPSTensor}, C::SizedVector{Nx,<:BondTensor}; tol=1e-12, maxiter=100
-# ) where {Nx}
-#     ALt, Ct, ARt = mixedgauge(totensor.(A), totensor.(C))
-#     AL .= MPSTensor.(ALt)
-#     C .= BondTensor.(Ct)
-#     AR .= MPSTensor.(ARt)
-#     return AL, C, AR
-# end
-
-#TODO: check the lbspace of it all
-function mixedgauge(A::SizedVector{Nx,M}) where {Nx,M<:MPSTensor}
-    χ = lbspace(A[begin])
-    C = SizedVector{Nx}((BondTensor(randn, eltype(M), χ) for _ in 1:Nx))
-    return mixedgauge(A, C)
-end
-
-function mixedgauge(A::InfMPS)
-    AL, C, AR = mixedgauge(A.AL, A.C)
-    return InfMPS(AL, C, AR)
 end
 
 function rightgauge_multi(
-    A,
-    R=[
-        TensorMap(randn, eltype(A[1]), codomain(A[1])[2], codomain(A[1])[2]) for
-        i in 1:length(A)
-    ];
-    tol=1e-12,
-    maxiter=100,
-)
-    N = numout(A[1])
-    M = numind(A[1])
-
-    p = PEPOKit.swap(N, M, NTuple{M,Int}(1:M))
+    A::UnitCell{MPS,Nx,1,<:AbsTen{2,1}},
+    R::UnitCell{BondMatrix,Nx,1,<:AbsTen{1,1}};
+    kwargs...,
+) where {Nx}
+    p = (3, 2, 1)
 
     AR, R, λ = leftgauge_multi(
-        broadcast(x -> _permute(x, p), A), broadcast(x -> _permute(x, (2, 1)), R)
+        broadcast(x -> _permute(x, p), A), broadcast(x -> _permute(x, (2, 1)), R); kwargs...
     )
     AR = broadcast(x -> _permute(x, invperm(p)), AR)
     R = broadcast(x -> _permute(x, (2, 1)), R)
     return AR, R, λ
 end
 
-function left2right(v::Vector{<:TensorMap})
-    N = numout(v[1])
-    M = numind(v[1])
-
-    p = swap(N, M, NTuple{M,Int}(1:M))
-
-    return broadcast(x -> _permute(x, p), v)
+function mixedgauge(A::UngaugedInfiniteMPS; tol=1e-12, maxiter=100)
+    # Get the eastbond. 
+    χs = eastbond.(A)
+    # Construct a vector of random bond matrices. 
+    data = [TensorMap(rand, numbertype(A), χs[i], χs[i + 1]) for i in 1:length(A)]
+    # Apply similar lattice structure. 
+    C = Lattice(BondMatrix(), latticestyle(A), data)
+    return mixedgauge(A, C; tol=tol, maxiter=maxiter)
 end
 
+# function mixedgauge(A::InfiniteMPS; kwargs...)
+#     AL, C, AR = mixedgauge(A.AL, A.C)
+#     return InfiniteMPS(AL, C, AR)
+# end
+
 function mixedgauge(
-    A,
-    C=[
-        TensorMap(randn, eltype(A[1]), codomain(A[1])[2], codomain(A[1])[2]) for
-        i in 1:length(A)
-    ];
-    diagonal=false,
-    tol=1e-12,
-    maxiter=100,
-)
-    kwargs = (tol=tol, maxiter=maxiter)
+    A::UnitCell{MPS,Nx,1,<:AbsTen{2,1}},
+    C::UnitCell{BondMatrix,Nx,1,<:AbsTen{1,1}};
+    kwargs...,
+) where {Nx}
     AR, _, _ = rightgauge_multi(A, C; kwargs...)
     AL, C, _ = leftgauge_multi(AR, C; kwargs...)
-
-    r = 1:length(A)
 
     # if diagonal==true
     #     U = similar(C)
@@ -226,7 +163,9 @@ function mixedgauge(
     return AL, C, AR
 end
 
-function mps_transfer(a::TensorMap{S,2,1}, al::TensorMap{S,2,1}) where {S<:IndexSpace}
+function mps_transfer(
+    a::AbstractTensorMap{S,2,1}, al::AbstractTensorMap{S,2,1}
+) where {S<:IndexSpace}
     @tensoropt T[lu rd; ru ld] := a[lu a; ru] * (al')[rd; ld a]
     return T
 end
@@ -257,10 +196,11 @@ end
 #     @tensor y[d; u] := a[a 2; b u] * (al')[b d; a 1] * x[1; 2]
 #     return y
 # end
-function isgauged(A::InfMPS{Nx}) where {Nx}
+function isgauged(A::InfiniteMPS{Nx}) where {Nx}
     r = 1:Nx
+    AL, C, AR, AC = unpack(A)
     for x in r
-        if (A.AL[x] × A.C[x] ≈ A.C[mod(x - 1, r)] × A.AR[x] ≈ A.AC[x]) == false
+        if (_AC(AL[x], C[x]) ≈ _CA(C[x - 1], AR[x]) ≈ AC[x]) == false
             return false
         else
             return true

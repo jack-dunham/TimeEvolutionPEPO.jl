@@ -1,16 +1,11 @@
-# const PEPO_ORDER = (:ket, :xout, :yout, :sx, :bra, :xin, :yin, :sy)
-# const VPEPO_ORDER = (:bra, :ket, :xout, :yout, :sx, :xin, :yin, :sy)
-struct PEPOTensor{S,T<:AbstractTensorMap{S,3,3}} <: AbstractPhysicalTensor{S,3,3,T}
-    tensor::T
-end
+const AbstractProjectedEntangledPairOperator{L,P<:AbsTen{3,3}} = Lattice{PEPO, L, P}
+const AbstractPEPO = AbstractProjectedEntangledPairOperator
 
-# A PEPO is exactly a lattice filled with PEPOTensor
-const AbstractPEPO{L, P<:PEPOTensor} = AbstractLattice{L,P}
-const AbstractInfPEPO{L<:Infinite} = AbstractPEPO{L}
-const PEPO{L, P<:PEPOTensor} = TensorLattice{L,P}
-const InfPEPO{L<:Infinite} = PEPO{L}
+const ProjectedEntangledPairOperator{L,P<:AbsTen{3,3}} = Lattice{PEPO, L, P}
 
-function Base.permutedims!(p::PEPOTensor, perm::NTuple{6,Int})
+const InfinitePEPO{Nx,Ny,P} = ProjectedEntangledPairOperator{Infinite{Nx,Ny},P}
+
+function Base.permutedims!(p::AbsTen{3,3}, perm::NTuple{6,Int})
     p.tensor = _permute(p.tensor, perm)
     return p
 end
@@ -56,7 +51,7 @@ function blochpepo(a::Vector, D::Int)
 
     @tensor p[2 3 1; 5 6 4] := p2[s1 2; 4] * p3[s2 3; s1] * p5[s3; s2 5] * p6[1; s3 6]
 
-    return PEPOTensor(p)
+    return p
 end
 
 function test_evolve(p, η)

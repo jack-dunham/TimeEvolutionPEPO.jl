@@ -1,49 +1,30 @@
-# A mess?
-abstract type AbstractLiouvillianTensor{S,N₁,N₂,T} <: AbstractPhysicalTensor{S,N₁,N₂,T} end
-abstract type AbstractLiouvillian{L<:LatticeSize,O<:AbstractLiouvillianTensor} end
+struct Trotter <: TensorStyle end
 
-abstract type AbstractLiouvillianMapTensor{S,N₁,N₂,T} <:
-              AbstractLiouvillianTensor{S,N₁,N₂,T} end
-const AbstractLiouvillianMap{L,O<:AbstractLiouvillianMapTensor} = AbstractLiouvillian{L,O}
+abstract type AbstractSuperOperator{L<:LatticeStyle,O<:AbstractTensorMap} end
 
-abstract type AbstractLiouvillianMPOTensor{S,T} <: AbstractLiouvillianTensor{S,3,3,T} end
-const AbstractLiouvillianMPO{L,O<:AbstractLiouvillianMPOTensor} = AbstractLiouvillian{L,O}
-
-struct LiouvillianMapTensor{S,N₁,N₂,T<:AbstractTensorMap{S,N₁,N₂}} <:
-       AbstractLiouvillianMapTensor{S,N₁,N₂,T}
-    tensor::T
+struct SuperOperator{T<:Union{Trotter,MPO},L<:LatticeStyle,O<:AbstractTensorMap} <:
+       AbstractSuperOperator{L,O}
+    x::Lattice{T,L,O}
+    y::Lattice{T,L,O}
 end
 
-struct LiouvillianMap{L,O} <: AbstractLiouvillianMap{L,O}
-    x::TensorLattice{L,O}
-    y::TensorLattice{L,O}
-end
+const SuperOperatorTrotter{L,O<:AbsTen{N,N} where {N}} = SuperOperator{Trotter,L,O}
+const SuperOperatorMPO{L,O<:AbsTen{3,3}} = SuperOperator{MPO,L,O}
 
-struct LiouvillianMPOTensor{S,T<:AbstractTensorMap{S}} <: AbstractLiouvillianMPOTensor{S,T}
-    tensor::T
-end
-
-struct LiouvillianMPO{L,O} <: AbstractLiouvillianMPO{L,O}
-    x::TensorLattice{L,O}
-    y::TensorLattice{L,O}
-end
-
-function locality(T::Type{<:AbstractLiouvillianMapTensor})
-    N₁ = numout(tensortype(T))
-    return Int(N₁ / 2)
-end
+locality(::SuperOperatorTrotter{<:LatticeStyle,<:AbsTen{N,N}}) where {N} = Int(N / 2)
+locality(::Lattice{Trotter,<:LatticeStyle,<:AbsTen{N,N}}) where {N} = Int(N / 2)
 
 # fuck knows if any of this works
 
-function to_mpo(L::AbstractLiouvillianMap)
+function to_mpo(L::SuperOperatorTrotter)
     tx = _to_mpo(L.x)
     ty = permutedims(_to_mpo(permutedims(L.y)))
-    return LiouvillianMPO(tx, ty)
+    return SuperOperator(tx, ty)
 end
 
-function _to_mpo(mat::TensorLattice{L,O}) where {L,O<:AbstractLiouvillianMapTensor}
+function _to_mpo(mat::Lattice{Trotter,L,O}) where {L,O}
     # The locality is the number of sites the map acts on.
-    l = locality(O)
+    l = locality(mat)
     local mpos
     for y in 1:l
         m = decompose(mat[1, y]) # Get A1, A2, A3, etc 
@@ -59,9 +40,9 @@ function _to_mpo(mat::TensorLattice{L,O}) where {L,O<:AbstractLiouvillianMapTens
             mpos[:, y] = contract_along_ph.(m, mpos[:, y])
         end
     end
-    Size = Infinite{l,l}
-    rv = LiouvillianMPOTensor.(mpos)
-    return Lattice{Size}(rv)
+    Size = Infinite{l,l}()
+
+    return Lattice(MPO(), Size, mpos)
 end
 
 # Add dummy indices to edge tensors.
@@ -103,12 +84,8 @@ function merge_bonds(m::AbstractTensorMap{<:IndexSpace,4,4}) # merge (1,2) and (
     return TensorMap(m.data, sp_l * cod[3] * cod[4], sp_r * dom[3] * dom[4])
 end
 
-# Decompose a Liouvillian map tensor into an MPO L -> L1 - L2 - L3 ...
-function decompose(L::AbstractLiouvillianMapTensor)
-    return _decompose(totensor(L))
-end
-
-function _decompose(t::AbstractTensorMap)
+# Decompose a super operator map tensor into an MPO L -> L1 - L2 - L3 ...
+function decompose(t::AbstractTensorMap)
     # Initialisation
     U1, V1 = liouvillian_split_initial(t)
     # Add dummy leg to the left-most tensor
@@ -129,10 +106,14 @@ end
 
 function liouvillian_split_initial(t)
     N = numin(t) # We have: numin(t) = numout(t). 
-    
+
     # Put all the indices corresponding to the first site into the codomain (and only these
     # indices.)
-    U, S, V = tsvd(t, (1, 2, N + 1, N + 2), (3:N..., ((N + 3):(2N))...))
+    U, S, V, err = tsvd(
+        t, (1, 2, N + 1, N + 2), (3:N..., ((N + 3):(2N))...); trunc=truncdim(4)
+    )
+
+    @info "MPO truncation error: $err"
 
     # We need to do something with the matrix of singular values.
     Up = U * sqrt(S)
@@ -158,12 +139,18 @@ function liouvillian_split(vec, v::AbstractTensorMap{<:IndexSpace,1})
         # the only bond index (first index and only index already in codomain). The 
         # latter index will become the left (west) bond index for the MPO formed from U.
         # All the remaining indices stay in the domain. 
-        U, S, V = tsvd(v, (1, 2, 3, N + 2, N + 3), ((4:(N + 1))..., ((N + 4):(2N + 1))...))
-        
+        U, S, V, err = tsvd(
+            v,
+            (1, 2, 3, N + 2, N + 3),
+            ((4:(N + 1))..., ((N + 4):(2N + 1))...);
+            trunc=truncerr(1e-12),
+        )
+        @info "MPO truncation error: $err"
+
         # We need to do something with the matrix of singular values.
         Up = U * sqrt(S)
         Vp = sqrt(S) * V
-    
+
         # Return indices to their rightful places: [W₁ D₁ D₂; E₁ N₁ N₂]
         Upp = permute(Up, (1, 2, 3), (6, 4, 5))
 

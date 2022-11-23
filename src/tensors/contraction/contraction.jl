@@ -19,6 +19,7 @@ mutable struct ConvergenceInfo
     converged::Bool
     error::Float64
     iterations::Int
+    finished::Bool
 end
 
 @doc raw"""
@@ -61,14 +62,13 @@ can be one of `VUMPS`, `CTMRG`, `FPCM`, `FPCM_CTMRG`, or a user-defined algorith
 """
 struct BoundaryState{Alg<:AbstractBoundary} <: AbstractBoundaryState{Alg}
     data::Alg
-    mpo::InfMPO
+    mpo::InfiniteMPO
     initial::Alg
     info::ConvergenceInfo
     param::BoundaryParameters
-    finished::Bool
 end
 
-function calculate!(alg::AbstractBoundaryState) end
+function calculate!(::AbstractBoundaryState) end
 
 @doc raw"""
     reset!(conv::ConvergenceInfo)
@@ -83,25 +83,23 @@ function reset!(conv::ConvergenceInfo)
     return conv
 end
 
-ConvergenceInfo() = ConvergenceInfo(false, Inf, 0)
+ConvergenceInfo() = ConvergenceInfo(false, Inf, 0, false)
 
 include("vumps/vumps.jl")
 
-# const DEFAULT_BOUNDARY_ALG = BoundaryParameters{VUMPS}(1, ℂ^4, 100, 1e-10)
-
 function initialise_tensors(
-    ::Type{Alg}, m::InfMPO, param::AbstractBoundaryParameters
+    ::Type{Alg}, m::InfiniteMPO, param::AbstractBoundaryParameters
 ) where {Alg<:AbstractBoundary} end
 
 function initialise_state(
-    ::Type{Alg}, m::InfMPO, param::AbstractBoundaryParameters
+    ::Type{Alg}, m::InfiniteMPO, param::AbstractBoundaryParameters
 ) where {Alg<:AbstractBoundary}
     tensors = initialise_tensors(Alg, m, param)
     return initialise_state(tensors, m, param)
 end
 
 function initialise_state(
-    tensors::Alg, m::InfMPO, param::AbstractBoundaryParameters
+    tensors::Alg, m::InfiniteMPO, param::AbstractBoundaryParameters
 ) where {Alg<:AbstractBoundary} 
-    return BoundaryState{Alg}(tensors, m, tensors, ConvergenceInfo(), param, false)
+    return BoundaryState{Alg}(tensors, m, tensors, ConvergenceInfo(), param)
 end

@@ -17,21 +17,33 @@ export cj, conjugate
 
 export σ0, σ1, σ2, σ3, σp, σm, pauli
 
-export MultiSiteInfMPS
+# TensorStyle
+export Generic, NotTensor
+export BondMatrix, MPS, MPO, PEPO, LeftEnv,RightEnv,TruncMetric
+# LatticeStyle
+export Infinite, Finite, Periodic, Open
+# Lattice
+export Lattice, UnitCell
+# Matrix product state
+export MatrixProductState
+export InfiniteMPS
+# Matrix product Operator
+export MatrixProductOperator
+export InfiniteMPO
+export MultilineInfiniteMPS
+# Environments
+export LeftEnvironment, RightEnvironment
 
 #generic 
 include("utils.jl")
 include("linalg.jl")
+include("tensorlattice.jl")
 #tensors
-include("unitcell.jl")
-include("physicaltensor.jl")
-include("tensoroperations.jl")
-include("indexmap.jl")
-include("mps.jl")
 include("mpo.jl")
+include("mps.jl")
 include("states/states.jl")
 include("environments.jl")
-include("transfermatrix.jl")
+include("transfermatrix.jl") # What is this for? Fixed points?
 # include("symmetrise.jl")
 
 #algorthims

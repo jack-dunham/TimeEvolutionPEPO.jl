@@ -11,9 +11,9 @@ A struct holding the boundary tensors obtained via the VUMPS algorithm.
 - `RF::RightEnv:` The right environment of the transfer matrix.
 """
 struct VUMPS <: AbstractBoundary
-    A::MultilineInfMPS
-    FL::LeftEnv
-    FR::RightEnv
+    A::MultilineInfiniteMPS
+    FL::LeftEnvironment
+    FR::RightEnvironment
 end
 
 const VUMPSState = BoundaryState{VUMPS}
@@ -27,18 +27,21 @@ function initialise_tensors(::Type{VUMPS}, P, L, param)
     spx = fuse(cod_P[1]*cod_L[1]*cod[2]')
     spy = fuse(cod_P[2]*cod_P[2]')
 
-    A = MultilineInfMPS(rand, ComplexF64, spx * spy, spx * spy)
+    A = MultilineInfiniteMPS(rand, ComplexF64, spx * spy, spx * spy)
 end
 
 function initialise_tensors(::Type{VUMPS},
-    M::InfMPO, param::BoundaryParameters
+    M::InfiniteMPO, param::BoundaryParameters
 )
-    χsp = param.bondspace
-    # χsp = ⊕(fill(oneunit(physcod), χ)...)
     nx, ny = size(M)
-    physcod, physdom = space(M, :n)
 
-    A = MultilineInfMPS{nx,ny}(rand, ComplexF64, physdom, physcod, χsp)
+    χsp = param.bondspace
+    Dsp = @. getindex(domain(M),2)
+
+    c = Ref(χsp) .* Dsp
+
+    data = Tuple(InfiniteMPS{nx}(TensorMap.(rand, numbertype(M), c[:,y], Ref(χsp))) for y in 1:ny)
+    A = MultilineInfiniteMPS(data...)
     FL, FR = environments(A, M)
 
     return VUMPS(A, FL, FR)
@@ -46,11 +49,12 @@ end
 
 
 function initialise_state(::Type{VUMPS},
-    M::InfMPO, param::BoundaryParameters
+    M::InfiniteMPO, param::BoundaryParameters
 )
     tensors = initialise_tensors(VUMPS, M, param)
-    return BoundaryState{VUMPS}(tensors, M, tensors, ConvergenceInfo(), param, false)
+    return BoundaryState{VUMPS}(tensors, M, tensors, ConvergenceInfo(), param)
 end
 
+calculate!(v::VUMPSState) = vumps!(v)
 
 include("alg.jl")
