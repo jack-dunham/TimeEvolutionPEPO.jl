@@ -20,7 +20,7 @@ struct MatrixProductState{L,M<:AbsTen{2,1},CT<:AbsTen{1,1}} <: AbstractMPS{L,M,C
                 throw(SpaceMismatch(""))
             end
         end
-        AC = _AC.(AL, C)
+        AC = AL * C
         return new{L,M,CT}(AL, C, AR, AC)
     end
 end
@@ -29,6 +29,13 @@ function MatrixProductState(l::LatticeStyle, AL::Vector, C::Vector, AR::Vector)
     return MatrixProductState(
         Lattice(MPS(), l, AL), Lattice(MPS(), l, C), Lattice(MPS(), l, AR)
     )
+end
+
+function Base.:*(A::Lattice{MPS},C::Lattice{BondMatrix})
+    return convertstyle(MPS, _AC.(A,C))
+end
+function Base.:*(C::Lattice{BondMatrix},A::Lattice{MPS})
+    return convertstyle(MPS, _CA.(circshift(C,(1,0)),A))
 end
 
 bondtensor(A::AbstractMPS) = A.C
