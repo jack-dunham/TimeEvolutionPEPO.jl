@@ -92,25 +92,6 @@ west-northerly (west first) positon, then domain in same order.
 #     return HAC
 # end
 
-# yet unused
-
-## For HS
-function applyhac(
-    ac::AbstractTensorMap{S,2,2},
-    fl::AbstractTensorMap{S,3,3},
-    fr::AbstractTensorMap{S,3,3},
-    m::AbstractTensorMap{S,6,6},
-) where {S<:IndexSpace}
-    @tensoropt begin
-        hac[-1 -2; -3 -4] :=
-            ac[9 a; 6 b] *
-            fl[10 11 -2; 1 2 a] *
-            m[1 2 -1 4 5 6; 7 8 9 10 11 -3] *
-            fr[7 8 b; 4 5 -4]
-    end
-    return hac
-end
-
 ## For TR
 # PERF: Convention corrected
 function applyhac(
@@ -125,15 +106,6 @@ function applyhac(
     return hac
 end
 
-#for HS
-function applyhc(
-    c::AbstractTensorMap{S,1,1}, fl::AbstractTensorMap{S,3,3}, fr::AbstractTensorMap{S,3,3}
-) where {S<:IndexSpace}
-    @tensoropt begin
-        hc[a; b] := c[x; y] * fl[1 2 a; 4 5 x] * fr[4 5 y; 1 2 b]
-    end
-    return hc
-end
 #for TR
 # PERF: Convention corrected
 function applyhc(
@@ -221,7 +193,7 @@ end
 # Apply a matrix C to the right bond of a MPS Tensor
 # assumes left bond is last cod index, and right bond is last dom index
 function _AC(A::AbstractTensorMap{S}, C::AbstractTensorMap{S,1,1}) where {S<:IndexSpace}
-    p = (3,2,1)
+    p = (3, 2, 1)
     CA = _CA(_permute(C, (2, 1)), _permute(A, p))
     return _permute(CA, invperm(p))
 end
@@ -311,11 +283,9 @@ end
 function vumpsupdate!(
     A::MultilineInfiniteMPS, FL::LeftEnvironment, FR::RightEnvironment, M::InfiniteMPO
 )
-    nx, ny = size(A)
+    nx, ny = size(M)
     rx = 1:nx
     ry = 1:ny
-
-    λ = 1
 
     AC = centraltensor(A)
     C = bondtensor(A)
@@ -364,7 +334,7 @@ function vumpsupdate!(
 
     errL, _ = findmax(errL)
     errR, _ = findmax(errR)
-    @info "errL = $errL \t errR = $errR"
+    # @info "errL = $errL \t errR = $errR"
     return A, errL, errR
 end
 
@@ -373,16 +343,29 @@ function vumpsstep!(
 )
     A, errL, errR = vumpsupdate!(A, FL, FR, M) # array form
 
-    _, _ = simple_environments!(FL, FR, A, M)
+    _, _ = environments!(FL, FR, A, M)
 
     AC = centraltensor(A)
 
     # Error calculation
-    vl = leftnull.(circshift(AC, -1))
+    vl = leftnull.(circshift(AC, (0, -1)))
     ac = applyhac.(AC, FL, FR, M)
-    err = norm.(vl' .* ac)
+    err = @. norm(adjoint(vl) * ac)
 
-    println("err: ", err)
+    # nx,ny = size(M)
+    # err = zeros(Float64, nx, ny)
+
+    # rx = 1:nx; ry=1:ny
+    # for x in rx, y in ry
+    #     yp = mod(y+1, ry) 
+
+    #     vl = leftnull(AC[x,yp])
+
+    #     ac = applyhac(AC[x,y],FL[x,y],FR[x,y],M[x,y])
+
+    #     err[x,y] = norm(vl[x,y]'* ac[x,y])
+    # end
+
     erri = maximum(err)
 
     return A, FL, FR, erri
@@ -415,7 +398,7 @@ function vumps!(v::VUMPSState, ::Val{false})
 
     while error > tol && iterations < maxiter
         _, _, _, error = vumpsstep!(st, mpo)
-        verbosity > 0 && @info "Step $(iterations): error ≈ $(error)"
+        verbosity > 0 && @info "\t Step $(iterations): error ≈ $(error)"
 
         iterations += 1
     end
@@ -436,20 +419,18 @@ function vumps_test()
     println("β = \t", β)
 
     aM, aM2 = classicalisingmpo_alt(β)
-    tM = TensorMap(ComplexF64.(aM),  ℂ^2 * ℂ^2, ℂ^2 * ℂ^2) #mpo
+    tM = TensorMap(ComplexF64.(aM), ℂ^2 * ℂ^2, ℂ^2 * ℂ^2) #mpo
     tM2 = TensorMap(aM2, ℂ^2 * ℂ^2, ℂ^2 * ℂ^2) #mpo
 
-    M = Lattice(MPO(), Infinite{1,1}(), tM)
+    M = Lattice(MPO(), Infinite{2,2}(), tM)
 
-    alg = initialise_state(VUMPS, M, BoundaryParameters(2,ℂ^4,100, 1e-10))
-  
+    alg = initialise_state(VUMPS, M, BoundaryParameters(2, ℂ^4, 100, 1e-10))
+
     st = alg.data
 
     @assert isgauged(st.A[1])
 
-    envtest(st.FL, st.FR, st.A, M)
-
-    calculate!(alg)
+    return calculate!(alg)
 
     # _, FL, FR = vumps!(A, M)
 
@@ -463,7 +444,6 @@ function vumps_test()
 
     # return magn ./ z2
 end
-
 
 function vumps_test_dimer(x, A=MultilineInfMPS{2,2}(rand, ComplexF64, ℂ^4, ℂ^10))
     Tc = 0.65
@@ -739,4 +719,3 @@ function dimer_d(m)
     end
     return mo
 end
-

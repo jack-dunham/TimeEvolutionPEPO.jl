@@ -55,6 +55,10 @@ function initialise_state(::Type{VUMPS},
     return BoundaryState{VUMPS}(tensors, M, tensors, ConvergenceInfo(), param)
 end
 
+function initialise_state(b::BoundaryState{VUMPS}, M::InfiniteMPO)
+    return BoundaryState{VUMPS}(b.data, M, b.data, ConvergenceInfo(), b.param) 
+end
+
 calculate!(v::VUMPSState) = vumps!(v)
 
 include("alg.jl")
