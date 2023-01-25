@@ -1,32 +1,13 @@
-const AbstractProjectedEntangledPairOperator{L,P<:AbsTen{3,3}} = Lattice{PEPO, L, P}
+const AbstractProjectedEntangledPairOperator{L,P<:AbsTen{3,3}} = Lattice{PEPO,L,P}
 const AbstractPEPO = AbstractProjectedEntangledPairOperator
 
-const ProjectedEntangledPairOperator{L,P<:AbsTen{3,3}} = Lattice{PEPO, L, P}
+const ProjectedEntangledPairOperator{L,P<:AbsTen{3,3}} = Lattice{PEPO,L,P}
 
 const InfinitePEPO{Nx,Ny,P} = ProjectedEntangledPairOperator{Infinite{Nx,Ny},P}
 
 function Base.permutedims!(p::AbsTen{3,3}, perm::NTuple{6,Int})
     p.tensor = _permute(p.tensor, perm)
     return p
-end
-
-# Base.getindex(P::SitePEPO, ind::Int) = PEPO_ORDER[P.perm[ind]]
-# function Base.getindex(P::SitePEPO, ind::Symbol)
-#     ind_num = findfirst(x -> x === ind, PEPO_ORDER)
-#     return findfirst(x -> x == ind_num, P.perm)
-# end
-
-# function LinearAlgebra.vec(p::SitePEPO)
-#     t = p.tensor
-#     N₁ = numout(t)
-#     N = numind(t)
-#     perm = ((p.bra, Tuple(2:N₁+1)...), Tuple(N₁+2:N))  
-#     return VectorSitePEPO(permute(t, perm...),perm, 1, p.ket )
-# end
-
-function _vec(t::TensorMap{<:IndexSpace,N,M}) where {N,M}
-    return permute(t, (Tuple((N + 1):(N + M))..., Tuple(1:N)...)),
-    (Tuple((M + 1):(N + M)), Tuple(1:M))
 end
 
 function bloch(a::Vector)
@@ -38,157 +19,31 @@ function bloch(a::Vector)
     return 1 / 2 * mat
 end
 
-function blochpepo(a::Vector, D::Int)
+function blochpepo_data(a::Vector, Dw::Int, Ds::Int, De::Int, Dn::Int)
     m = bloch(a)
-    to = zeros(ComplexF64, 2, D, 2)
-    to[:, 1, :] = m
-    ti = zeros(ComplexF64, 2, 2, D)
-    ti[:, :, 1] = m
-    p2 = TensorMap(to, ℂ^2 * ℂ^D, ℂ^2)
-    p3 = TensorMap(to, ℂ^2 * ℂ^D, ℂ^2)
-    p5 = TensorMap(ti, ℂ^2, ℂ^2 * ℂ^D)
-    p6 = TensorMap(ti, ℂ^2, ℂ^2 * ℂ^D)
 
-    @tensor p[2 3 1; 5 6 4] := p2[s1 2; 4] * p3[s2 3; s1] * p5[s3; s2 5] * p6[1; s3 6]
+    tw = zeros(ComplexF64, 2, Dw, 2)
+    ts = zeros(ComplexF64, 2, Ds, 2)
+    tw[:, 1, :] = ts[:, 1, :] = m
+
+    te = zeros(ComplexF64, 2, 2, De)
+    tn = zeros(ComplexF64, 2, 2, Dn)
+    te[:, :, 1] = tn[:, :, 1] = m
+
+    @tensor p[2 3 1; 5 6 4] := tw[s1 2; 4] * ts[s2 3; s1] * te[s3; s2 5] * tn[1; s3 6]
 
     return p
 end
 
-function test_evolve(p, η)
-    id = Matrix{ComplexF64}(I(2))
-    arr = zeros(ComplexF64, 2, η, 2, η)
-    arr[:, 1, :, 1] = id
-    m = TensorMap(arr, ℂ^2 * ℂ^η, ℂ^2 * ℂ^η)
-    return @tensor pe[1 2 3 4; 5 6 7 8] := p[s 2 4; 5 6 8] * m[1 3; s 7]
-end
+function blochpepo(lattice, a, bonds_x, bonds_y=bonds_x)
+    L = latticestyle(lattice)
 
+    bond_w = bonds_x
+    bond_e = circshift(bonds_x, (0, -1))
+    bond_s = bonds_y
+    bond_n = circshift(bonds_y, (-1, 0))
 
-function test_thermal(τ, D=4, J=1.0)
-    βc = log(1 + sqrt(2)) / 2
-    σ = pauli
-    l = exp(1 / 2 * τ * βc * σ[3] ⊗ σ[3])
-    lb = TensorMap(convert(Array, l), (ℂ^2)' * (ℂ^2)', (ℂ^2)' * (ℂ^2)')
-    L = permute(lb ⊗ l, (1, 3, 2, 4), (5, 7, 6, 8))
-    u, s, v, err = tsvd(L, (1, 2, 5, 6), (3, 4, 7, 8); trunc=truncdim(D))
-    print("err: ", err)
-    up = permute(u * sqrt(s), (1, 2), (3, 4, 5))
-    vp = permute(sqrt(s) * v, (2, 3, 1), (4, 5))
-
-    @tensor m[sk sb l; tk tb r] := up[mk mb; tk tb r] * vp[sk sb l; mk mb]
-
-    return m
-end
-
-function test_thermal_sym(τ, D=4, J=1.0)
-    S = Z2Space(0 => 1, 1 => 1)
-
-    βc = log(1 + sqrt(2)) / 2
-    σ = pauli
-    l = TensorMap(convert(Array, exp(1 / 2 * τ * βc * σ[3] ⊗ σ[3])), S * S, S * S)
-    lb = TensorMap(convert(Array, l), S' * S', S' * S')
-    L = permute(lb ⊗ l, (1, 3, 2, 4), (5, 7, 6, 8))
-    u, s, v, err = tsvd(L, (1, 2, 5, 6), (3, 4, 7, 8); trunc=truncdim(D))
-    print("err: ", err)
-    up = permute(u * sqrt(s), (1, 2), (3, 4, 5))
-    vp = permute(sqrt(s) * v, (2, 3, 1), (4, 5))
-
-    @tensor m[sk sb l; tk tb r] := up[mk mb; tk tb r] * vp[sk sb l; mk mb]
-
-    return m
-end
-
-# function test_th_ev(t)
-#     τ = t / 20
-#     m = test_thermal(τ)
-#     p = 2 * PEPOKit.blochpepo([0.0, 0.0, 0.0], 2)
-#     vp = permute(p, (4, 1, 2, 3), (5, 6))
-
-#     mag = []
-
-#     @time begin
-#         for i in 1:20
-#             vp = fetstep!(vp, m, :x)
-#             _, ptr = wip_normalise(vp)
-#             vp = fetstep!(vp, m, :y)
-#             _, ptr = wip_normalise(vp)
-#             push!(mag, abs(tr(σ3 * ptr)))
-#         end
-#     end
-#     return vp, mag
-# end
-function test_th_ev(t)
-    n = 20
-    τ = t / n
-    m = test_thermal(τ)
-    p = 2 * PEPOKit.blochpepo([0.0, 0.0, 0.0], 2)
-    vp = permute(p, (4, 1, 2, 3), (5, 6))
-
-    vp = propagate(vp, m, n, 2)
-
-    return vp
-end
-function test_th_ev2(t)
-    n = 20
-    τ = t / n
-    m = test_thermal(τ)
-    p = 2 * PEPOKit.blochpepo([0.0, 0.0, 0.0], 2)
-
-    p = propagate(p, m, n, 2)
-
-    return vp
-end
-
-function test_th_ev_sym(t)
-    S = Z2Space(0 => 1, 1 => 1)
-
-    pi = 1 / 2 * Matrix{ComplexF64}([1 0; 0 1])
-    to = zeros(ComplexF64, 2, 2, 2)
-    to[:, 1, :] = pi
-    ti = zeros(ComplexF64, 2, 2, 2)
-    ti[:, :, 1] = pi
-    p2 = TensorMap(to, S * Z2Space(0 => 2), S)
-    p3 = TensorMap(to, S * Z2Space(0 => 2), S)
-    p5 = TensorMap(ti, S, S * Z2Space(0 => 2))
-    p6 = TensorMap(ti, S, S * Z2Space(0 => 2))
-    @tensor p[1 2 3; 4 5 6] := p2[s1 2; 4] * p3[s2 3; s1] * p5[s3; s2 5] * p6[1; s3 6]
-
-    τ = t / 20
-    m = test_thermal_sym(τ)
-    p = 2 * p
-    vp = permute(p, (4, 1, 2, 3), (5, 6))
-    mag = []
-
-    Z = TensorMap(σ3.data, S, S)
-
-    @time begin
-        for i in 1:20
-            vp = fetstep!(vp, m, :x)
-            _, ptr = wip_normalise(vp)
-            vp = fetstep!(vp, m, :y)
-            _, ptr = wip_normalise(vp)
-            push!(mag, abs(tr(Z * ptr)))
-        end
-    end
-    return vp, mag
-end
-
-function wip_normalise(vp::TensorMap{S}) where {S<:IndexSpace}
-    @tensor vtr[2 3; 5 6] := vp[s s 2 3; 5 6]
-    p = permute(vp, (2, 3, 4), (1, 5, 6))
-    sp = hcat(codomain(vtr)..., domain(vtr)...)
-
-    unitsp = oneunit(S)
-    bondsp = ⊕(fill(unitsp, dim(sp[4])^2)...)
-
-    A = TensorMap(randn, ComplexF64, sp[4] * bondsp, bondsp)
-
-    λ, AL, C, AR, FL, FR = vumps(A, vtr; maxiter=20, verbose=false, tol=1e-20)
-    @assert isapprox(_AC(AL, C), _CA(C, AR), rtol=1e-4)
-    AC = _AC(AL, C)
-    @tensoropt begin
-        ptr[o; i] :=
-            FL[b1; 1 a1] * AC[4 a1; a2] * p[o 1 2; i 3 4] * (AC')[b2; 2 b1] * FR[3 a2; b2]
-    end
-
-    return vp / tr(ptr), ptr / tr(ptr)
+    p_data = blochpepo_data.(Ref(a), dim.(bond_w), dim.(bond_s), dim.(bond_e), dim.(bond_n))
+    p_tensors = @. TensorMap(p_data, bond_w * bond_s * lattice, bond_e * bond_n * lattice)
+    return convertstyle(PEPO, p_tensors)
 end
