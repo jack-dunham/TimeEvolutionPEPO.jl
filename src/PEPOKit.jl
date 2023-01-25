@@ -5,8 +5,9 @@ using TensorKit
 import TensorKit.IndexTuple, TensorKit.AdjointTensorMap
 using LinearAlgebra
 using KrylovKit
-using StaticArrays
 using MacroTools: @forward
+using DataStructures: DefaultOrderedDict
+using TrotterMacros
 
 import Base.*
 
@@ -19,7 +20,7 @@ export σ0, σ1, σ2, σ3, σp, σm, pauli
 
 # TensorStyle
 export Generic, NotTensor
-export BondMatrix, MPS, MPO, PEPO, LeftEnv,RightEnv,TruncMetric
+export BondMatrix, MPS, MPO, PEPO, LeftEnv, RightEnv, TruncMetric
 # LatticeStyle
 export Infinite, Finite, Periodic, Open
 # Lattice
