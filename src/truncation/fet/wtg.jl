@@ -28,7 +28,7 @@ function wtg!(U, S, V, Y::TruncationMetric; ξ=Inf, test=false)
     nx, ny = size(Y)
     rx = 1:nx
     ry = 1:ny
-    for x in nx, y in ny
+    for x in rx, y in ry
         U[x, y], S[x, y], V[mod(x + 1, rx), y] = wtg(
             U[x, y], S[x, y], V[mod(x + 1, rx), y], Y[x, y]; ξ=ξ, test=test
         )
@@ -60,7 +60,7 @@ function wtg(
     #     γ[1 2 3 4; 5 6 7 8] * u[5 6; -3] * v[-1; 1 2] * (u')[-2; 3 4] * (v')[7 8; -4]
 
     @tensoropt γi[-1 -2; -3 -4] :=
-        γ[1 2; 3 4] * u[3; -3] * v[-1; 1 ] * (u')[-2; 2] * (v')[4; -4]
+        γ[1 2; 3 4] * u[3; -3] * v[-1; 1] * (u')[-2; 2] * (v')[4; -4]
 
     γm = permute(γi, (1, 4), (3, 2)) # Transform to matrix
     @tensor γN = γm[a b; a b]
@@ -69,16 +69,9 @@ function wtg(
 
     # γmr = γm * (s ⊗ permute(s', (2,), (1,)))
     ri = Tensor(rand, ComplexF64, domain(γm))
-    _, rs, _ = eigsolve(
-        x -> γm * x,
-        ri,
-        1,
-        :LM;
-        eager=true,
-        ishermitian=true,
-    )
+    _, rs, _ = eigsolve(x -> γm * x, ri, 1, :LM; eager=true, ishermitian=true)
 
-    li = TensorMap(randn, ComplexF64, one(codomain(γm)), codomain(γm))
+    li = TensorMap(rand, ComplexF64, one(codomain(γm)), codomain(γm))
     # γml = (s ⊗ permute(s', (2,), (1,))) * γm
     _, ls, _ = eigsolve(x -> x * γm, li, 1, :LM; eager=true, ishermitian=true)
 
@@ -119,6 +112,8 @@ function wtg(
         end
     end
 
+    println(st)
+
     return un, st, vn
 
     #### this is an approach for complex space
@@ -135,11 +130,10 @@ end
 
 #TODO: Tidy this once I am sure it is working.
 function wtg_test(
-    u::TensorMap{S,1,1}, s::TensorMap{S,1,1}, v::TensorMap{S,1,1}, γ::TensorMap{S,2,2} 
+    u::TensorMap{S,1,1}, s::TensorMap{S,1,1}, v::TensorMap{S,1,1}, γ::TensorMap{S,2,2}
 ) where {S<:IndexSpace}
-
     @tensoropt γin[-1 -2; -3 -4] :=
-        γ[1 2; 3 4] * u[3; -3] * v[-1; 1 ] * (u')[-2; 2] * (v')[4; -4]
+        γ[1 2; 3 4] * u[3; -3] * v[-1; 1] * (u')[-2; 2] * (v')[4; -4]
 
     # @tensoropt γin[-1 -2; -3 -4] :=
     #     γ[1 2 3 4; 5 6 7 8] * u[5 6; -3] * v[-1; 1 2] * (u')[-2; 3 4] * (v')[7 8; -4]
