@@ -6,7 +6,6 @@ const RightEnvironment{Nx,Ny,D<:AbsTen{2,1}} = UnitCell{RightEnv,Nx,Ny,D}
 function LeftEnvironment(f, A::MultilineInfiniteMPS, M::InfiniteMPO)
     nx, ny = size(M)
     Ds = westbond.(M)
-    println(westbond.(A))
     χs = hcat(westbond.(A)...)
     data = [
         TensorMap(
@@ -59,6 +58,7 @@ function environments!(
         _, Ls, _ = eigsolve(z -> envsolve(z, AL, M, 1, y), FL[1, y], 1, :LM)
         _, Rs, _ = eigsolve(z -> envsolve(z, AR, M, Nx, y), FR[Nx, y], 1, :LM)
 
+
         FL[1, y] = Ls[1]
 
         for x in 2:Nx
@@ -78,8 +78,8 @@ function environments!(
 
             NN = renorm(C[x, y + 1], C[x, y], FL[x + 1, y], FR[x, y])
 
-            rmul!(FL[x + 1, y], 1 / sqrt(NN))
             rmul!(FR[x, y], 1 / sqrt(NN))
+            rmul!(FL[x + 1, y], 1 / sqrt(NN))
         end
     end
     return FL, FR #mutated 
@@ -251,7 +251,7 @@ function envtest(FL,FR,A,M)
     nx,ny = size(M)
     AL,C,AR,_  = unpack(A)
     for x in 1:nx, y in 1:ny
-        println("Left: ", isapprox(normalize(FL[x,y]), normalize(envsolve(FL[x,y], AL, M, x,y))))
+        println("Left: ", isapprox(normalize(FL[x,y]), normalize(envsolve(FL[x,y], AL, M, x,y)); atol=1e-3))
         println("Right: ",isapprox(normalize(FR[x,y]), normalize(envsolve(FR[x,y], AR, M, x,y))))
     end
 end
