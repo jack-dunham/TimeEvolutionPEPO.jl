@@ -1,6 +1,7 @@
 #PERF: Removed PhysicalTensor
 ### AbstractTensorLattice
 
+
 # The type of tensors hosted on the lattice
 abstract type TensorStyle end
 abstract type PureTensorStyle <: TensorStyle end
@@ -19,7 +20,7 @@ struct LeftEnv <: Env end
 struct RightEnv <: Env end
 struct TruncMetric <: PureTensorStyle end
 
-Base.promote_rule(::Type{<:PureTensorStyle}, ::Type{Generic}) = Generic
+Base.promote_rule(::Type{<:PureTensorStyle}, ::Type{<:PureTensorStyle}) = Generic
 Base.promote_rule(::Type{NotTensor}, ::Type{<:TensorStyle}) = NotTensor
 
 
@@ -87,7 +88,9 @@ struct Lattice{T<:TensorStyle,L<:LatticeStyle,D} <: AbstractLattice{T,L,D}
     end
 end
 
-convertstyle(T::Type{<:TensorStyle}, l::AbstractLattice) = Lattice(T(), latticestyle(l), l.data) 
+function convertstyle(T::Type{<:TensorStyle}, l::AbstractLattice)
+    return Lattice(T(), latticestyle(l), l.data)
+end
 
 to_matrix(M::AbstractLattice) = M.data
 
@@ -119,7 +122,7 @@ end
 function Lattice(style::TensorStyle, lattice::ColLatticeStyle{Ny}, data::Vector) where {Ny}
     return Lattice(style, lattice, permutedims(hcat(data)))
 end
-function Lattice(style::TensorStyle, lattice::LatticeStyle{1,1}, data::Vector) 
+function Lattice(style::TensorStyle, lattice::LatticeStyle{1,1}, data::Vector)
     return Lattice(style, lattice, data[1])
 end
 
@@ -201,7 +204,7 @@ function Base.setindex!(M::AbstractLattice{T,D}, v::D, i::Int) where {T,D}
     to_matrix(M)[i] = v
     return M
 end
-function Base.setindex!(M::AbstractLattice, v, x::Int, y::Int) 
+function Base.setindex!(M::AbstractLattice, v, x::Int, y::Int)
     to_matrix(M)[x, y] = v
     return M
 end
@@ -214,68 +217,86 @@ function Base.iterate(M::AbstractLattice, state=1)
     end
 end
 
-function Base.BroadcastStyle(
-    ::Type{<:AbstractLattice{T,L,D}}
-) where {T,L,D}
-    return Broadcast.ArrayStyle{AbstractLattice{T,L,D}}()
+abstract type AbstractLatticeBroadcast{L<:LatticeStyle} <: Broadcast.AbstractArrayStyle{2} end
+struct LatticeBroadcast{T,L,ElType} <: AbstractLatticeBroadcast{L} end
+struct LatticeFallback{L} <: AbstractLatticeBroadcast{L} end
+
+LatticeBroadcast{T,L,ElType}(::Val{2}) where {T,L,ElType} = LatticeBroadcast{T,L,ElType}()
+LatticeFallback{L}(::Val{2}) where {L} = LatticeFallback{L}()
+
+function Base.BroadcastStyle(::Type{<:AbstractLattice{T,L,D}}) where {T,L,D}
+    return LatticeBroadcast{T,L,D}()
 end
 
+# If element type matches the element type of broadcast style then assume type of tensor
+# has remained unchanged, thus keep the same tensor style. 
 function Base.similar(
-    bc::Broadcast.Broadcasted{Broadcast.ArrayStyle{AbstractLattice{T,L,ElType}}},
-    ::Type{ElType},
+    bc::Broadcast.Broadcasted{LatticeBroadcast{T,L,ElType}}, ::Type{ElType}
 ) where {T,L,ElType<:AbstractTensorMap}
-    # Use the char field of A to create the output
     return Lattice(T(), L(), similar(Matrix{ElType}, axes(bc)))
 end
 
+# Else, fallback to Generic()
 function Base.similar(
-    bc::Broadcast.Broadcasted{Broadcast.ArrayStyle{AbstractLattice{T,L,ElType1}}},
-    ::Type{ElType2},
-) where {T,L,ElType1,ElType2<:AbstractTensorMap}
-    # Use the char field of A to create the output
-    return Lattice(Generic(), L(), similar(Matrix{ElType2}, axes(bc)))
-end
-function Base.similar(
-    bc::Broadcast.Broadcasted{Broadcast.ArrayStyle{AbstractLattice{T,L,ElType1}}},
-    ::Type{ElType2},
-) where {T,L,ElType1,ElType2}
-    # Use the char field of A to create the output
-    return Lattice(NotTensor(), L(), similar(Matrix{ElType2}, axes(bc)))
+    bc::Broadcast.Broadcasted{<:AbstractLatticeBroadcast{L}}, ::Type{ElType}
+) where {L,ElType<:AbstractTensorMap}
+    return Lattice(Generic(), L(), similar(Matrix{ElType}, axes(bc)))
 end
 
-struct LatticeFallback{T<:TensorStyle,L<:LatticeStyle} <: Broadcast.AbstractArrayStyle{2} end
-
+# If elements are not tensors, always use tensor style NotTensor()
 function Base.similar(
-    bc::Broadcast.Broadcasted{LatticeFallback{T,L}},
-    ::Type{ElType},
-) where {T, L,ElType}
-    # Use the char field of A to create the output
-    return Lattice(T(), L(), similar(Matrix{ElType}, axes(bc)))
+    bc::Broadcast.Broadcasted{<:AbstractLatticeBroadcast{L}}, ::Type{ElType}
+) where {L,ElType}
+    return Lattice(NotTensor(), L(), similar(Matrix{ElType}, axes(bc)))
+end
+
+# If broadcasting across lattices of tensors, then we do not know the resulting type so
+# best we can do is a Generic lattice.
+function Base.BroadcastStyle(
+    ::LatticeBroadcast{<:PureTensorStyle,L,E1}, ::LatticeBroadcast{<:PureTensorStyle,L,E2}
+) where {
+    E1<:AbstractTensorMap,E2<:AbstractTensorMap,L
+}
+    return LatticeFallback{L}()
+end
+# Lattices of tensors take precedence over lattices of non-tensor objects. 
+function Base.BroadcastStyle(
+    ::LatticeBroadcast{T1,L,E1}, ::LatticeBroadcast{T2,L,E2}
+) where {T1<:PureTensorStyle,T2<:NotTensor,L,E1<:AbstractTensorMap,E2}
+    return LatticeBroadcast{T1, L, E1}()
+end
+
+function Base.BroadcastStyle(::LatticeBroadcast,::LatticeBroadcast)
+    return Broadcast.Unknown()
 end
 
 function Base.BroadcastStyle(
-    ::Broadcast.ArrayStyle{AbstractLattice{PEPO,L,E1}}, 
-    ::Broadcast.ArrayStyle{AbstractLattice{MPO,L,E2}}) where {E1,E2,L}
-    return LatticeFallback{PEPO,L}()
+    t::LatticeFallback{L}, ::LatticeBroadcast{<:TensorStyle,L}
+) where {L}
+    return t
 end
-function Base.BroadcastStyle(
-    ::Broadcast.ArrayStyle{AbstractLattice{MPS,L,E1}}, 
-    ::Broadcast.ArrayStyle{AbstractLattice{BondMatrix,L,E2}}) where {E1,E2,L}
-    return LatticeFallback{MPS,L}()
+function Base.BroadcastStyle(a::LatticeFallback{L}, ::LatticeFallback{L}) where {L}
+    return a
 end
 
-
-
-Base.hcat(l1::AbstractLattice, l2::AbstractLattice, l3::AbstractLattice, args::AbstractLattice...) = hcat(hcat(l1, l2), l3, args...)
+function Base.hcat(
+    l1::AbstractLattice, l2::AbstractLattice, l3::AbstractLattice, args::AbstractLattice...
+)
+    return hcat(hcat(l1, l2), l3, args...)
+end
 Base.hcat(a::AbstractLattice) = a
 
-function Base.hcat(a::AbstractLattice{T1}, b::AbstractLattice{T2}) where {T1,T2} 
-    T = promote_type(T1,T2)
+function Base.hcat(a::AbstractLattice{T1}, b::AbstractLattice{T2}) where {T1,T2}
+    T = promote_type(T1, T2)
     return _hcat(latticestyle(a), latticestyle(b), T(), a, b)
 end
 function _hcat(
-    ::Infinite{Nx,Ny}, ::Infinite{Mx,My},T::TensorStyle, a::AbstractLattice, b::AbstractLattice
-    ) where {Nx,Ny,Mx,My}
+    ::Infinite{Nx,Ny},
+    ::Infinite{Mx,My},
+    T::TensorStyle,
+    a::AbstractLattice,
+    b::AbstractLattice,
+) where {Nx,Ny,Mx,My}
     if Nx != Mx
         throw(DimensionMismatch("Unequal dimensions along axis"))
     end
@@ -283,5 +304,3 @@ function _hcat(
     L = Infinite{N,Ny + My}()
     return Lattice(T, L, hcat(a.data, b.data))
 end
-
-
