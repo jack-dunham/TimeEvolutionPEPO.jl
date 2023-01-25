@@ -45,6 +45,12 @@ struct BoundaryParameters <: AbstractBoundaryParameters
     tol::Float64
 end
 
+function BoundaryParameters(P::InfinitePEPO)
+    χ = westbond(P[1,1])
+    bondspace = χ ⊕ χ
+    return BoundaryParameters(2,bondspace,100,1e-10)
+end
+
 @doc raw"""
     BoundaryState{Alg<:AbstractBoundary} <: AbstractBoundaryState{Alg}
 
@@ -70,6 +76,12 @@ end
 
 function calculate!(::AbstractBoundaryState) end
 
+function reset!(b::BoundaryState) 
+    reset!(b.info)
+    return b
+end
+
+
 @doc raw"""
     reset!(conv::ConvergenceInfo)
 
@@ -80,6 +92,7 @@ function reset!(conv::ConvergenceInfo)
     conv.converged = false
     conv.error = Inf
     conv.iterations = 0
+    conv.finished = false
     return conv
 end
 
