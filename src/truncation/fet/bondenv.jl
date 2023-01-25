@@ -1,6 +1,6 @@
 const TruncationMetric{Nx,Ny,D<:AbsTen{2,2}} = UnitCell{TruncMetric,Nx,Ny,D}
 
-TruncationMetric(L::LatticeStyle,Y::AbstractMatrix) = Lattice(TruncMetric(), L, Y) 
+TruncationMetric(L::LatticeStyle, Y::AbstractMatrix) = Lattice(TruncMetric(), L, Y)
 
 @doc raw"""
     truncmetric(state::Union{AbstractBoundaryState, AbstractNeighbourhoodState})
@@ -18,6 +18,14 @@ end
 function truncmetric(Dη, mpo::InfiniteMPO, tensors::VUMPS)
     Y = vumps_fetmetric(Dη, mpo, tensors.A, tensors.FL, tensors.FR)
     return Y
+end
+
+function truncmetric(pepo_left, pepo_right, environment)
+    hs_left = hilbertschmidt(pepo_left)
+    hs_right = hilbertschmidt(pepo_right)
+    merge_east(hs_left)
+    merge_west(hs_right)
+    return nothing
 end
 
 # TODO: Multisite
@@ -99,6 +107,33 @@ function vumps_fetmetric(
 end
 #PERF:
 function vumps_fetmetric(
+    M1::AbstractTensorMap{S,2,3}, # (x, y)     a hilbertschmidt mpo tensor
+    M2::AbstractTensorMap{S,3,2}, # (x + 1, y) a hilbertschmidt mpo tensor
+    ALu::AbstractTensorMap{S,2,1},# (x, y)
+    ALd::AbstractTensorMap{S,2,1},# (x, y + 1)
+    Cu::AbstractTensorMap{S,1,1}, # (x, y)
+    Cd::AbstractTensorMap{S,1,1}, # (x, y + 1)
+    ARu::AbstractTensorMap{S,2,1},# (x + 1, y)
+    ARd::AbstractTensorMap{S,2,1},# (x + 1, y + 1)
+    FL::AbstractTensorMap{S,1,2}, # (x, y)
+    FR::AbstractTensorMap{S,2,1}, # (x + 1, y)
+) where {S<:IndexSpace}
+    @tensoropt begin
+        y[11 10; 9 12] :=
+            FL[3; 1 2] *
+            ALu[1 4; 6] *
+            (ALd')[8; 3 5] *
+            M1[2 5; 9 10 4] *
+            Cu[6; 13] *
+            (Cd')[15; 8] *
+            M2[11 12 17; 19 16] *
+            ARu[13; 16 18] *
+            (ARd')[20; 15 17] *
+            FR[18 19; 20]
+    end
+    return y
+end
+function vumps_fetmetric(
     M1::AbstractTensorMap{S,2,2}, # (x, y)     a hilbertschmidt mpo tensor
     M2::AbstractTensorMap{S,2,2}, # (x + 1, y) a hilbertschmidt mpo tensor
     ALu::AbstractTensorMap{S,2,1},# (x, y)
@@ -111,23 +146,20 @@ function vumps_fetmetric(
     FR::AbstractTensorMap{S,2,1}, # (x + 1, y)
     U::AbstractTensorMap{S,1,2},    # for splitting the indices
 ) where {S<:IndexSpace}
-    @info "Constructing bond environment..."
-    @time begin
-        @tensoropt begin
-            y[11 10; 9 12] :=
-                FL[3; 1 2] *
-                ALu[1 4; 6] *
-                (ALd')[8; 3 5] *
-                M1[2 5; 7 4] *
-                U[7; 9 10] *
-                Cu[6; 13] *
-                (Cd')[15; 8] *
-                (U')[11 12; 14] *
-                M2[14 17; 19 16] *
-                ARu[13; 16 18] *
-                (ARd')[20; 15 17] *
-                FR[18 19; 20]
-        end
+    @tensoropt begin
+        y[11 10; 9 12] :=
+            FL[3; 1 2] *
+            ALu[1 4; 6] *
+            (ALd')[8; 3 5] *
+            M1[2 5; 7 4] *
+            U[7; 9 10] *
+            Cu[6; 13] *
+            (Cd')[15; 8] *
+            (U')[11 12; 14] *
+            M2[14 17; 19 16] *
+            ARu[13; 16 18] *
+            (ARd')[20; 15 17] *
+            FR[18 19; 20]
     end
     return y
 end
@@ -135,11 +167,10 @@ end
 function vumps_fetmetric(
     Dη, M::InfiniteMPO, A::MultilineInfiniteMPS, FL::LeftEnvironment, FR::RightEnvironment
 )
-    
     nx, ny = size(M)
 
     # Initialise the lattice.
-    Y = @. similar(M, Dη * Dη, Dη * Dη )
+    Y = @. similar(M, Dη * Dη, Dη * Dη)
 
     # Get the tensor matrices of the MPS
     AL, C, AR, _ = unpack(A)
@@ -148,22 +179,21 @@ function vumps_fetmetric(
 
     # Calculate the truncation metric for each site in unit cell
     for x in 1:nx, y in 1:ny
-        Y[x, y] = 
-            vumps_fetmetric(
-                M[x, y],
-                M[x + 1, y],
-                AL[x, y],
-                AL[x, y + 1],
-                C[x, y],
-                C[x, y + 1],
-                AR[x + 1, y],
-                AR[x + 1, y + 1],
-                FL[x, y],
-                FR[x + 1, y],
-                U[x, y],
-            )
+        Y[x, y] = vumps_fetmetric(
+            M[x, y],
+            M[x + 1, y],
+            AL[x, y],
+            AL[x, y + 1],
+            C[x, y],
+            C[x, y + 1],
+            AR[x + 1, y],
+            AR[x + 1, y + 1],
+            FL[x, y],
+            FR[x + 1, y],
+            U[x, y],
+        )
     end
-    return TruncationMetric(latticestyle(M), Y)
+    return TruncationMetric(latticestyle(M), Y.data)
 end
 
 function hsnorm(vp, D)
@@ -230,12 +260,13 @@ end
 function hilbertschmidt(
     p1::TensorMap{S,3,3}, p2::TensorKit.AdjointTensorMap{S,3,3}
 ) where {S<:IndexSpace}
+    # hs[w w s s; e e n n]
     @tensoropt begin
-        vhs[1 -4 2 -5; 4 -1 5 -2] := p1[1 2 k; 4 5 b] * p2[-1 -2 b; -4 -5 k]
+        hs[1 -4 2 -5; 4 -1 5 -2] := p1[1 2 k; 4 5 b] * p2[-1 -2 b; -4 -5 k]
     end
-    return vhs
+    return hs
 end
-hilbertschmidt(vp::TensorMap) = hilbertschmidt(vp, vp')
+hilbertschmidt(p::TensorMap) = hilbertschmidt(p, p')
 
 function hilbertschmidt(P::Lattice{L}) where {L}
     hs = hilbertschmidt.(P)
@@ -245,7 +276,18 @@ end
 function merge_hilbertschmidt_bonds(t::AbsTen{4,4})
     c = codomain(t)
     d = domain(t)
-    c_m = fuse(c[1]*c[2]) * fuse(c[3] * c[4])
-    d_m = fuse(d[1]*c[2]) * fuse(d[3] * d[4])
+    c_m = fuse(c[1] * c[2]) * fuse(c[3] * c[4])
+    d_m = fuse(d[1] * c[2]) * fuse(d[3] * d[4])
+    return TensorMap(t.data, c_m, d_m)
+end
+
+function merge_east(t::AbsTen{4,4})
+    c_m = fuse(c[1] * c[2]) * fuse(c[3] * c[4])
+    d_m = d[1] * d[2] * fuse(d[3] * d[4])
+    return TensorMap(t.data, c_m, d_m)
+end
+function merge_west(t::AbsTen{4,4})
+    c_m = c[1] * c[2] * fuse(c[3] * c[4])
+    d_m = fuse(d[1] * d[2]) * fuse(d[3] * d[4])
     return TensorMap(t.data, c_m, d_m)
 end

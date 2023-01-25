@@ -58,26 +58,26 @@ function isometryupdate!(
     u::AbstractTensorMap{S,1,1},
     v::AbstractTensorMap{S,1,1},
 ) where {S<:IndexSpace}
-    @tensoropt p[-1 -2 k; -4 -5 b] = pe[1 2 k; 4 5 b] * v[-1; 1] * u[4; -4]
+    @tensoropt p[-1 -2 k; -4 -5 b] = pe[1 -2 k; 4 -5 b] * v[-1; 1] * u[4; -4]
     return p
 end
 
 function fidelity(
-    γ::AbstractTensorMap{S,4,4},
-    u::AbstractTensorMap{S,2,1},
+    γ::AbstractTensorMap{S,2,2},
+    u::AbstractTensorMap{S,1,1},
     s::AbstractTensorMap{S,1,1},
-    v::AbstractTensorMap{S,1,2},
+    v::AbstractTensorMap{S,1,1},
 ) where {S<:IndexSpace}
     @tensor trϕϕ =
-        γ[1 2 3 4; 5 6 7 8] *
-        u[5 6; a1] *
+        γ[1 2; 3 4] *
+        u[3; a1] *
         s[a1; a2] *
-        v[a2; 1 2] *
-        (v')[7 8; b2] *
+        v[a2; 1] *
+        (v')[4; b2] *
         (s')[b2; b1] *
-        (u')[b1; 3 4]
-    @tensor trρρ = γ[1 2 3 4; 1 2 3 4]
-    @tensor trρϕ = γ[1 2 3 4; 1 2 7 8] * (u')[a; 3 4] * (s')[b; a] * (v')[7 8; b]
+        (u')[b1; 2]
+    @tensor trρρ = γ[1 2; 1 2]
+    @tensor trρϕ = γ[1 3; 1 4] * (u')[a; 3] * (s')[b; a] * (v')[4; b]
     return real(trρϕ / sqrt(trϕϕ * trρρ))
 end
 
@@ -85,59 +85,113 @@ function purity(bondenv)
     return @tensor trρρ = bondenv[1 2 3 4; 1 2 3 4]
 end
 
-#TODO: Test this and clean once verified.
-function optimise_isometries(γ::AbstractTensorMap{<:IndexSpace,2,2}, D; maxiter=100)
-    ntsp = codomain(γ)[1]
-    σ = id(ntsp)
-
-    u, s, v = tsvd(σ; trunc=truncspace(D))
-    # u = TensorMap(rand, eltype(γ), codomain(u), domain(u))
-    # v = TensorMap(rand,  eltype(γ), codomain(v), domain(v))
-    # println("F0: ", _fidelity(γ, u, s, v))
-
-    # this is awfully confusing
+function optimise_isometries(u, s, v, t_metric, trunc; maxiter=100)
     δu = 1.0
     δv = 1.0
     counter = 0
-    while !(counter > maxiter || max(δu, δv) < 1e-8)
+    while !(counter > maxiter || max(δu, δv) < 1e-10)
         up = u
         vp = v
 
-        # @tensor B1[1 2 -3; -4 7 8] := γ[1 2 3 4; 5 6 7 8] * u[5 6; -4] * (u')[-3; 3 4]
         @tensor B1[1 -2; -3 4] := γ[1 2; 3 4] * u[3; -3] * (u')[-2; 2]
 
-        # @tensor P1[-3; 7 8] := γ[u d 3 4; u d 7 8] * (u')[-3; 3 4]
         @tensor P1[-2; 4] := γ[x 2; x 4] * (u')[-2; 2]
 
-        # B1inv = pinv(permute(B1, (4, 1, 2), (3, 5, 6)))
-        # R1 = permute(permute(P1, (), (1, 2, 3)) * B1inv, (1,), (2, 3))
-        # u, s, v = tsvd(u * R1; trunc=truncspace(ntsp[1]))
-        B1inv = pinv(permute(B1, (3,1),(2,4)))
-        R1 = permute(permute(P1, (), (1,2)) *B1inv, (1,),(2,))  
-        u, s, v = tsvd(u * R1; trunc=truncspace(D))
+        B1inv = pinv(permute(B1, (3, 1), (2, 4)))
+        R1 = permute(permute(P1, (), (1, 2)) * B1inv, (1,), (2,))
+        u, s, v, err = tsvd(u * R1; trunc=trunc)
 
-        # @tensor B2[3 4 -3; 5 6 -6] := γ[1 2 3 4; 5 6 7 8] * v[-3; 1 2] * (v')[7 8; -6]
-        @tensor B2[-1 2; 3 -4]:=γ[1 2;3 4] * v[-1;1] * (v')[4; -4]
+        @tensor B2[-1 2; 3 -4] := γ[1 2; 3 4] * v[-1; 1] * (v')[4; -4]
 
-        # @tensor P2[3 4; -3] := γ[u d 3 4; u d 7 8] * (v')[7 8; -3]
-        @tensor P2[2;-4] :=γ[x 2; x 4]*(v')[4;-4]
+        @tensor P2[2; -4] := γ[x 2; x 4] * (v')[4; -4]
 
-        # B2inv = pinv(permute(B2, (4, 5, 3), (1, 2, 6)))
-        # R2 = permute(permute(P2, (), (1, 2, 3)) * B2inv, (1, 2), (3,))
-        # u, s, v = tsvd(R2 * v; trunc=truncspace(ntsp[1]))
-        B2inv = pinv(permute(B2, (3,1),(2,4)))
-        R2 = permute(permute(P2, (), (1,2)) *B2inv, (1,),(2,))  
-        u, s, v = tsvd(R2 * v; trunc=truncspace(D))
+        B2inv = pinv(permute(B2, (3, 1), (2, 4)))
+        R2 = permute(permute(P2, (), (1, 2)) * B2inv, (1,), (2,))
+        u, s, v, err = tsvd(R2 * v; trunc=trunc)
 
         counter = counter + 1
 
         δu = sqrt(real(tr((u - up) * (u - up)')))
         δv = sqrt(real(tr((v - vp) * (v - vp)')))
-        println("δu: ", δu, "\tδv", δv)
+        println("du: ", δu, "\t dv: ", δv)
+        println("Fidelity:  ", fidelity(γ, u, s, v))
+        # print("|")
     end
-    # println("fidelity: ", fidelity(γ, u, s, v))
+    print("\n")
     return u, s, v
 end
+
+#TODO: Test this and clean once verified.
+
+# function optimise_isometries(γ::AbstractTensorMap{<:IndexSpace,2,2}, D; maxiter=100)
+#     ntsp = codomain(γ)[1]
+#
+#     if dim(ntsp) < dim(D)
+#         u, s, v = tsvd(id(D); trunc=truncspace(ntsp))
+#         return v, id(D), u
+#     end
+#
+#     σ = id(ntsp)
+#
+#     # @tensor N  = γ[x y; y x] 
+#     # γ = γ * 1/N
+#
+#     u, s, v = tsvd(σ; trunc=truncspace(D))
+#     u = TensorMap(rand, eltype(γ), ntsp, D)
+#     v = TensorMap(rand, eltype(γ), D, ntsp)
+#
+#     # u = isometry(Matrix{eltype(γ)}, ntsp, D)
+#     # v = permute(isometry(Matrix{eltype(γ)}, ntsp', D'),(2,),(1,))
+#     # println("F0: ", _fidelity(γ, u, s, v))
+#
+#     # this is awfully confusing
+#     δu = 1.0
+#     δv = 1.0
+#     counter = 0
+#
+#     print("FET: ")
+#
+#     while !(counter > maxiter || max(δu, δv) < 1e-10)
+#         up = u
+#         vp = v
+#
+#         # @tensor B1[1 2 -3; -4 7 8] := γ[1 2 3 4; 5 6 7 8] * u[5 6; -4] * (u')[-3; 3 4]
+#         @tensor B1[1 -2; -3 4] := γ[1 2; 3 4] * u[3; -3] * (u')[-2; 2]
+#
+#         # @tensor P1[-3; 7 8] := γ[u d 3 4; u d 7 8] * (u')[-3; 3 4]
+#         @tensor P1[-2; 4] := γ[x 2; x 4] * (u')[-2; 2]
+#
+#         # B1inv = pinv(permute(B1, (4, 1, 2), (3, 5, 6)))
+#         # R1 = permute(permute(P1, (), (1, 2, 3)) * B1inv, (1,), (2, 3))
+#         # u, s, v = tsvd(u * R1; trunc=truncspace(ntsp[1]))
+#         B1inv = pinv(permute(B1, (3, 1), (2, 4)))
+#         R1 = permute(permute(P1, (), (1, 2)) * B1inv, (1,), (2,))
+#         u, s, v, err = tsvd(u * R1; trunc=truncspace(D))
+#
+#         # @tensor B2[3 4 -3; 5 6 -6] := γ[1 2 3 4; 5 6 7 8] * v[-3; 1 2] * (v')[7 8; -6]
+#         @tensor B2[-1 2; 3 -4] := γ[1 2; 3 4] * v[-1; 1] * (v')[4; -4]
+#
+#         # @tensor P2[3 4; -3] := γ[u d 3 4; u d 7 8] * (v')[7 8; -3]
+#         @tensor P2[2; -4] := γ[x 2; x 4] * (v')[4; -4]
+#
+#         # B2inv = pinv(permute(B2, (4, 5, 3), (1, 2, 6)))
+#         # R2 = permute(permute(P2, (), (1, 2, 3)) * B2inv, (1, 2), (3,))
+#         # u, s, v = tsvd(R2 * v; trunc=truncspace(ntsp[1]))
+#         B2inv = pinv(permute(B2, (3, 1), (2, 4)))
+#         R2 = permute(permute(P2, (), (1, 2)) * B2inv, (1,), (2,))
+#         u, s, v, err = tsvd(R2 * v; trunc=truncspace(D))
+#
+#         counter = counter + 1
+#
+#         δu = sqrt(real(tr((u - up) * (u - up)')))
+#         δv = sqrt(real(tr((v - vp) * (v - vp)')))
+#         println("du: ", δu)
+#         println("Fidelity:  ", fidelity(γ, u, s, v))
+#         # print("|")
+#     end
+#     print("\n")
+#     return u, s, v
+# end
 
 # p(x) u(x) s(x) v(x+1) p(x + 1) u(x+1) ...
 function optimise_isometries(Y::TruncationMetric, truncspace)
