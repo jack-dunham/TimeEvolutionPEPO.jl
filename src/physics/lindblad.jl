@@ -14,6 +14,54 @@ const SuperOperatorMPO{L,O<:AbsTen{3,3}} = SuperOperator{MPO,L,O}
 locality(::SuperOperatorTrotter{<:LatticeStyle,<:AbsTen{N,N}}) where {N} = Int(N / 2)
 locality(::Lattice{Trotter,<:LatticeStyle,<:AbsTen{N,N}}) where {N} = Int(N / 2)
 
+function SuperOperator(
+    lattice,
+    data_x::AbstractMatrix{<:AbstractMatrix},
+    data_y::AbstractMatrix{<:AbstractMatrix}=data_x,
+)
+    tensors_x = mats2tensors(lattice, data_x)
+    tensors_y = mats2tensors(permutedims(lattice), data_y)
+
+    return SuperOperator(tensors_x, tensors_y)
+end
+
+function SuperOperator(lattice, a::NTuple{2,AbstractMatrix{<:Number}})
+    return SuperOperator(lattice, a[1], a[2])
+end
+function SuperOperator(
+    lattice, data_x::AbstractMatrix{<:Number}, data_y::AbstractMatrix{<:Number}=data_x
+)
+    s = size(lattice)
+    data_x_mat = fill(data_x, s)
+    data_y_mat = fill(data_y, s)
+    return SuperOperator(lattice, data_x_mat, data_y_mat)
+end
+
+function mats2tensors(lattice, data)
+    L = latticestyle(lattice)
+    nx, ny = size(L)
+    spaces = lattice
+
+    #WARN: Not type stable! Hacky...not general
+    locality = Int(log(4, size(data[1, 1])[1]))
+
+    tensors = [
+        TensorMap(
+            data[x, y],
+            getsuperspace(spaces, x, y, Val(locality)),
+            getsuperspace(spaces, x, y, Val(locality)),
+        ) for x in 1:nx, y in 1:ny
+    ]
+
+    return Lattice(Trotter(), L, interlace_permute.(tensors))
+end
+
+function getsuperspace(spaces, x, y, ::Val{l}) where {l}
+    # ket_space = circshift(spaces[:, y], -x + 1)
+    ket_space = [circshift(spaces, (-x + 1, 0))[i, y] for i in 1:l]
+    return *(adjoint.(ket_space)..., ket_space...)
+end
+
 # fuck knows if any of this works
 
 function to_mpo(L::SuperOperatorTrotter)
@@ -22,27 +70,27 @@ function to_mpo(L::SuperOperatorTrotter)
     return SuperOperator(tx, ty)
 end
 
-function _to_mpo(mat::Lattice{Trotter,L,O}) where {L,O}
-    # The locality is the number of sites the map acts on.
+function _to_mpo(mat::Lattice{Trotter,L}) where {L}
     l = locality(mat)
-    local mpos
-    for y in 1:l
-        m = decompose(mat[1, y]) # Get A1, A2, A3, etc 
-        if y == 1
-            mpos = Matrix{eltype(m)}(undef, l, l)
-        end
-        mpos[:, y] = m
+    nx, ny = size(mat)
 
-        for x in 2:l # Look at the next gate in unit cell 
-            m = decompose(mat[x, y]) # decompose this
+    m = decompose.(mat)
 
-            circshift!(m, x - 1)
-            mpos[:, y] = contract_along_ph.(m, mpos[:, y])
+    println("up: ", space(mat[1, 1]))
+    println("down: ", space(mat[2, 1]))
+    rv = Matrix{eltype(m[1])}(undef, nx, ny)
+
+    # We need a MPO for each trotter gate in the unit cell.
+    for y in 1:ny
+        for x in 1:nx
+            rv[x, y] = m[x, y][1] # Periodic in first indices
+            for i in 1:(l - 1)
+                M_x = m[x + i, y][i + 1]
+                rv[x, y] = contract_along_ph(M_x, rv[x, y])
+            end
         end
     end
-    Size = Infinite{l,l}()
-
-    return Lattice(MPO(), Size, mpos)
+    return Lattice(MPO(), L(), rv)
 end
 
 # Add dummy indices to edge tensors.
@@ -84,6 +132,14 @@ function merge_bonds(m::AbstractTensorMap{<:IndexSpace,4,4}) # merge (1,2) and (
     return TensorMap(m.data, sp_l * cod[3] * cod[4], sp_r * dom[3] * dom[4])
 end
 
+# Simple decomposition of a two-local operator (1 2 3 4)(5 6 7 8), with truncation
+function twolocal_decompose(t::AbstractTensorMap)
+    U, S, V = tsvd(t, (1, 2, 5, 6), (3, 4, 7, 8); trunc=truncerr(1e-10))
+    L = permute(U * sqrt(S), (1, 2, 5), (3, 4))
+    R = permute(sqrt(S) * V, (1, 2, 3), (4, 5))
+    return L, R
+end
+
 # Decompose a super operator map tensor into an MPO L -> L1 - L2 - L3 ...
 function decompose(t::AbstractTensorMap)
     # Initialisation
@@ -113,7 +169,7 @@ function liouvillian_split_initial(t)
         t, (1, 2, N + 1, N + 2), (3:N..., ((N + 3):(2N))...); trunc=truncdim(4)
     )
 
-    @info "MPO truncation error: $err"
+    @info "MPO truncation error: $err, with bond dimension $(dim(codomain(S)))"
 
     # We need to do something with the matrix of singular values.
     Up = U * sqrt(S)
@@ -143,7 +199,7 @@ function liouvillian_split(vec, v::AbstractTensorMap{<:IndexSpace,1})
             v,
             (1, 2, 3, N + 2, N + 3),
             ((4:(N + 1))..., ((N + 4):(2N + 1))...);
-            trunc=truncerr(1e-12),
+            trunc=truncerr(1e-10),
         )
         @info "MPO truncation error: $err"
 
@@ -162,100 +218,75 @@ function liouvillian_split(vec, v::AbstractTensorMap{<:IndexSpace,1})
     end
 end
 
-#FIX:
-@doc raw"""
-    dissipator(n::Int, l)
-
-Construct the `n`-site vectorised dissipator corresponding to a single 1-local Lindblad 
-operator `l` acting on a 2-dimensional Hilbert space represented by $ℂ^2$. The Lindblad 
-operator argument `l` defaults to the Pauli-lowering operator $σ^{-}$.
-"""
-function local_dissipator(N::Int, L::AbstractMatrix=σm)
-    L_list = [one(L) for _ in 1:N]
-    L_list[1] = L
-
-    Li = Vector(undef, N)
-
-    Ds = Vector{Matrix{eltype(L)}}([])
-
-    for i in 1:N
-        if N == 1
-            Li[1] = L_list[1]
-        else
-            Li[i] = kron(circshift(L_list, i - 1)...)
-        end
-        rv =
-            1 / 2 * (
-                2 * (kron(conj(Li[i]), Li[i])) - kron(one(Li[i]), (Li[i]' * Li[i])) -
-                kron(transpose(Li[i]) * conj(Li[i]), one(Li[i]))
-            )
-        push!(Ds, rv)
-    end
-    return sum(Ds) / N
-end
-# function dissipator(n::Int; l=σm)
-#     L = Dict([])
-
-#     Llist = [one(l) for _ in 1:n]
-#     Llist[1] = l
-
-#     Ds = []
-
-#     for i in 1:n
-#         if n == 1
-#             L[1] = Llist[1]
-#         else
-#             L[i] = ⊗(circshift(Llist, i - 1)...)
-#         end
-#         push!(
-#             Ds,
-#             2 * (cj(L[i]) ⊗ L[i]) - one(L[i]) ⊗ (L[i]' * L[i]) -
-#             (cj(L[i])' * cj(L[i])) ⊗ one(L[i]),
-#         )
-#     end
-#     return sum(Ds)
-# end
-
-@doc raw"""
-    coherent(H::AbstractTensorMap)
-
-Construct the super-operator $\mathcal{H}$ corresponding to the coherent part of 
-the Liouvillian super-operator. That is, given a 2-local $H_{\alpha, \beta}$ provided by 
-`H`, constructs the `TensorMap`
-```math
-\mathcal{H}_{\alpha,\beta} = - i (\mathbb{I}_{\alpha, \beta} \otimes H_{\alpha,\beta} 
-- H^{T}_{\alpha,\beta} \otimes \mathbb{I}_{\alpha, \beta})
-```
-where $\alpha$ and $\beta$ are lattice indices corresponding to any two adjacent
-lattice sites.
-"""
-coherent(H::AbstractTensorMap) = -im * (one(H) ⊗ H - cj(H)' ⊗ one(H))
-
-coherent(H::AbstractMatrix) = -im * (kron(one(H), H) - kron(transpose(H), one(H)))
-
 #TODO: Move to utils.jl
 # (1 2 3 4 ... N) -> (1 N/2 2 N/2 + 1 ...)
 # Used for the following vector space reordering:
 # (K₁ ⊗ K₂ ⊗ ⋯  ⊗ Kₙ) ⊗ (H₁ ⊗ H₂ ⊗ ⋯  ⊗ Hₙ) -> (K₁ ⊗ H₁) ⊗ (K₂ ⊗ K₂) ⊗ ⋯  ⊗ (Kₙ ⊗ Hₙ)
 # i.e. pairs ket and bra sectors for each unit cell together.
 function interlace_perm(::Val{N}) where {N}
-    p = (isodd(x) ? Int((x + 1) / 2) : Int(x / 2) + N for x in 1:(2N))
+    p = (isodd(x) ? Int((x + 1) / 2) : Int(x / 2) + Int(N / 2) for x in 1:(N))
     return Tuple(p)
 end
 
-function liouvillian(
-    spaces::NTuple{N,S}, H::T, L::NTuple{M,T}
-) where {N,M,S<:IndexSpace,T<:AbstractMatrix}
-    # n = Int(log2(size(H)[1]))
-    data = coherent(H)
-    for l in L
-        data = data + local_dissipator(N, l)
-    end
-
-    sp = ⊗((adjoint.(spaces))..., spaces...)
-    t = TensorMap(data, sp, sp)
-
-    p = interlace_perm(Val(N))
-
-    return LiouvillianMapTensor(permute(t, p, 2N .+ p))
+function interlace_permute(t::AbstractTensorMap{<:IndexSpace,N,N}) where {N}
+    perm = interlace_perm(Val(N))
+    return permute(t, perm, N .+ perm)
 end
+
+# function liouvillian(
+#     space::BondSpace{<:LatticeStyle{Nx,Ny}},
+#     H::T, # need the size of this in a type stable way.
+#     L::NTuple{M,T},
+# ) where {Nx,Ny,M,T<:AbstractMatrix}
+#     map_x = _liouvillian(space, H, L)
+#     map_y = _liouvillian(permutedims(space, (2, 1)), H, L)
+#     return SuperOperator(map_x, map_y)
+# end
+#
+# function _liouvillian(
+#     space::BondSpace{<:LatticeStyle{Nx,Ny}}, H::T, L::NTuple{M,T}
+# ) where {Nx,Ny,M,T<:AbstractMatrix}
+#     # n = Int(log2(size(H)[1]))
+#
+#     data = coherent(H)
+#     for l in L
+#         data = data + local_dissipator(Nx, l)
+#     end
+#
+#     p = interlace_perm(Val(Nx))
+#
+#     maps = Matrix(undef, Nx, Ny)
+#
+#     for y in 1:Ny
+#         spaces = space[:, y]
+#         for x in 1:Nx
+#             spaces_x = circshift(spaces, 1 - x)
+#
+#             sp = ⊗((adjoint.(spaces_x))..., spaces...)
+#
+#             t_x = TensorMap(data, sp, sp)
+#
+#             maps[x, y] = permute(t_x, p, 2 * Nx .+ p)
+#         end
+#     end
+#
+#     return maps
+# end
+# function _liouvillian(
+#     spaces::NTuple{N,S}, H::T, L::NTuple{M,T}
+# ) where {N,M,S<:IndexSpace,T<:AbstractMatrix}
+#     # n = Int(log2(size(H)[1]))
+#     data = coherent(H)
+#     for l in L
+#         data = data + local_dissipator(N, l)
+#     end
+
+#     sp = ⊗((adjoint.(spaces))..., spaces...)
+#     t = TensorMap(data, sp, sp)
+
+#     p = interlace_perm(Val(N))
+
+#     map = permute(t, p, 2N .+ p)
+
+#     return map
+# end
