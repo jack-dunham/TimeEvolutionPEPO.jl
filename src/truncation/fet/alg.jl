@@ -1,110 +1,97 @@
-@doc raw"""
-    truncate!(P, PE, Y::TruncationMetric; gauge=2)
+function updatestep!(pepo, op_tuple, boundary, trunc)
+    # Convenience
+    P = pepo
+    O = op_tuple
 
-Truncate the tensor `PE` along the east-west bond according the truncation metric `Y`, and 
-store the result in `P`.
-"""
-function truncate!(P, PE, Y::TruncationMetric; ξ=Inf, gauge=2)
-    truncspace = codomain(P[1, 1])[1] # The space we wish to truncate down to.
+    Nx, Ny = size(pepo)
+    for y in 1:Ny
+        if Nx == 1
+            PL, PR = fetstep(P[1, y], P[1, y], O[1, y], boundary, trunc, 1, y)
+            P[1, y], _ = fetstep(PR, PL, O[1, y], boundary, trunc, 1, y)
+        else
+            for x in 1:1
+                # Odd bond
+                P[x, y], P[x + 1, y] = fetstep(
+                    P[x, y], P[x + 1, y], O[x, y], boundary, trunc, x, y
+                )
+                P[x + 1, y], P[x, y] = fetstep(
+                    P[x + 1, y], P[x, y], O[x + 1, y], boundary, trunc, x + 1, y
+                )
+            end
+        end
+    end
+    return P
+end
 
-    # Optimise the isometries to maximise fidelity.
-    U, S, V, = optimise_isometries(Y, truncspace)
+function fetstep(
+    pepo_left,
+    pepo_right,
+    op_tuple,
+    environment,
+    trunc::TruncationScheme,
+    x,
+    y;
+    ξ=Inf,
+    gauge=2,
+)
+    # Get the operators that will apply to the left and right sites
+    op_left = op_tuple[1]
+    op_right = op_tuple[2]
 
-    # Convert the isometries to the weighted trace gauge 
+    # Apply evolution operator, and then extract isometry
+    A, q_left, l = evolveleft_alt(pepo_left, op_left)
+    B, r, q_right = evolveright_alt(pepo_right, op_right)
+
+    # q_left = evolveleft_alt(pepo_left, op_left)
+    # q_right = evolveright_alt(pepo_right, op_right)
+
+    # Apply an initial truncation to isometries
+    u, s, v, err = tsvd(l * r; trunc=truncdim(3))
+    println(err)
+
+    # Obtain the truncation metric with respect to the updated sites
+    t_metric = truncmetric(q_left, q_left, q_right, q_right, environment.data, x, y)
+
+    # Optimise the isometries with respect to the truncation metric
+    # u, s, v = tsvd(id(domain(A)[1]); trunc=trunc)
+
+    # u, s, v = optimise_isometries(u, s, v, t_metric, trunc)
+    u, s, v = optiso(l, r, t_metric, trunc)
+    println(s)
+
+    # Convert to the weighted trace gauge.
     if !(gauge == 0)
-        U, S, V = wtg!(U, S, V, Y; ξ=ξ, test=false)
+        u, s, v = wtg(u, s, v, t_metric; ξ=ξ, test=false)
 
         if !(gauge == 1)
-            tested = wtg_test.(U, S, V, Y)
-            for i in tested
-                left = i[1]
-                right = i[2]
-                if !left
-                    @warn "Left weighted trace gauge condition was not met"
-                end
-                if !right
-                    @warn "Right weighted trace gauge condition was not met"
-                end
+            tested = wtg_test(u, s, v, t_metric)
+            left = tested[1]
+            right = tested[2]
+            if !left
+                @warn "Left weighted trace gauge condition was not met"
+            end
+            if !right
+                @warn "Right weighted trace gauge condition was not met"
             end
         end
     end
 
-    # Truncate the bonds using the isometries
-    U = @. U * sqrt(S)
-    V = sqrt.(circshift(S, (0, 1))) .* V
+    # Update left and right sites (truncation step)
+    new_pepo_left = similar(pepo_left)
+    new_pepo_right = similar(pepo_right)
 
-    isometryupdate!.(P, PE, U, V)
+    truncrightbond!(new_pepo_left, q_left, u * sqrt(s))
+    truncleftbond!(new_pepo_right, q_right, sqrt(s) * v)
 
-    return P
-end
-
-function fulltrotterstep!(pepo, op_tuple_x, op_tuple_y, bx_i, by_i)
-    pepo, bx = axistrotterstep!(pepo, op_tuple_x)
-
-    perm = (2, 1, 3, 5, 4, 6)
-    pepo = _permute.(pepo, Ref(perm))
-
-    pepo, by = axistrotterstep!(pepo, op_tuple_y)
-
-    pepo = _permute.(pepo, Ref(invperm(perm)))
-
-    return pepo, bx, by
-end
-
-function axistrotterstep!(pepo, op_tuple)
-    pepo_hs = hilbertschmidt(pepo)
-
-    boundary = get_initialboundary(pepo_hs)
-    boundary = calculate!(pepo_hs)
-
-    updatestep!(pepo, op_tuple, boundary)
-
-    return pepo, boundary
-end
-
-function updatestep!(pepo, op_tuple, boundary)
-    # Convenience
-    P = pepo
-    O = op_tuple
-    E = boundary
-
-    Nx, Ny = size(pepo)
-    for y in 1:Ny
-        for x in 1:Nx
-            # Odd bond
-            fetstep!(P[x, y], P[x + 1, y], O[x, y], E[x, y], trunc)
-            # Even bond
-            fetstep!(P[x + 1, y], P[x + 2, y], O[x + 1, y], E[x + 1, y], trunc)
-        end
-    end
-    return P
-end
-
-function fetstep!(pepo_left, pepo_right, op_tuple, environment, trunc::TruncationScheme)
-    op_left = op_tuple[1]
-    op_right = op_tuple[2]
-
-    q_left, l = evolveleft(pepo_left, op_left)
-    r, q_right = evolveright(pepo_right, op_right)
-
-    u, s, v = tsvd(r * l; trunc=trunc)
-
-    t_metric = truncmetric(q_left, q_right, environment)
-
-    u, s, v = optimise_isometries(u, s, v, t_metric, trunc)
-    wtg!(u, s, v, t_metric)
-
-    truncrightbond!(pepo_left, q_left, u * sqrt(s))
-    truncleftbond!(pepo_right, q_right, sqrt(s) * v)
-
-    return pepo_left, pepo_right
+    # Return updated sites
+    return normalize(new_pepo_left), normalize(new_pepo_right)
 end
 
 function truncrightbond!(p, q, u)
     @tensoropt p[w s k; e n b] = q[w s k; ee n b] * u[ee; e]
     return p
 end
-function truncleftbond!(p, q, u)
+function truncleftbond!(p, q, v)
     @tensoropt p[w s k; e n b] = q[ww s k; e n b] * v[w; ww]
     return p
 end

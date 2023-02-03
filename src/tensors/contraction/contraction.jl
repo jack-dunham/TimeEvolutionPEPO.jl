@@ -46,9 +46,9 @@ struct BoundaryParameters <: AbstractBoundaryParameters
 end
 
 function BoundaryParameters(P::InfinitePEPO)
-    χ = westbond(P[1,1])
+    χ = westbond(P[1, 1])
     bondspace = χ ⊕ χ
-    return BoundaryParameters(2,bondspace,100,1e-10)
+    return BoundaryParameters(0, bondspace, 100, 1e-10)
 end
 
 @doc raw"""
@@ -76,11 +76,10 @@ end
 
 function calculate!(::AbstractBoundaryState) end
 
-function reset!(b::BoundaryState) 
+function reset!(b::BoundaryState)
     reset!(b.info)
     return b
 end
-
 
 @doc raw"""
     reset!(conv::ConvergenceInfo)
@@ -113,6 +112,6 @@ end
 
 function initialise_state(
     tensors::Alg, m::InfiniteMPO, param::AbstractBoundaryParameters
-) where {Alg<:AbstractBoundary} 
+) where {Alg<:AbstractBoundary}
     return BoundaryState{Alg}(tensors, m, tensors, ConvergenceInfo(), param)
 end

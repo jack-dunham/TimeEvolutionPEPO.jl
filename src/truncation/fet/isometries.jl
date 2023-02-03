@@ -85,11 +85,79 @@ function purity(bondenv)
     return @tensor trρρ = bondenv[1 2 3 4; 1 2 3 4]
 end
 
+function optiso(L, R, t_metric, trunc; maxiter=100)
+    # But in the appropriate matrix form for the Ritz procedure. 
+    Y = permute(t_metric, (2, 4), (3, 1))
+
+    # Symmetrise and nomralize the truncation metric.
+    Y = (0.5 * (Y + Y')) / tr(Y)
+    #
+    # The following tensor will be useful...
+    LR = permute(L * R, (1, 2), ())
+    Y_LR = Y * LR
+
+    # Get initial guess.
+    u, s, Mb = tsvd(L * R; trunc=trunc)
+
+    # Get an appropriate identity matrix for the spaces
+    id_a = id(codomain(u))
+    id_b = transpose(id(domain(Mb)))
+
+    counter = 0
+    δϵ = 1.0
+    ϵ = 1.0
+    print("Optimising isometries: [")
+    while !(counter > maxiter || δϵ < 1e-10)
+        ϵ_old = ϵ
+        # Optimise for Ma with Mb fixed
+        Ma = u * s
+        Ma_max, ϵ = optsingleiso(id_a ⊗ transpose(Mb), Y, Y_LR, ϵ)
+        Ma, s, v = tsvd(Ma_max * Mb; trunc=trunc)
+
+        # Optimise for Mb with Ma fixed
+        Mb = s * v
+        Mb_max, ϵ = optsingleiso(Ma ⊗ id_b, Y, Y_LR, ϵ)
+        u, s, Mb = tsvd(Ma * Mb_max; trunc=trunc)
+
+        δϵ = abs(ϵ - ϵ_old)
+
+        counter = counter + 1
+        print("|")
+    end
+    print("]\n")
+    @info "Isometries optimised to a tolerance of: $ϵ after $counter iterations."
+    # Return u,s,v (aliased to Mb here) for transformation to WTG.
+    return u, s, Mb
+end
+
+function optsingleiso(id_Mb, Y, Y_LR, ϵ0)
+    temp = id_Mb' * Y
+
+    g = id_Mb' * Y * id_Mb
+    j = id_Mb' * Y_LR
+
+    Ma_max = pinv(g) * j
+
+    ϵ_j = scalar(Ma_max' * j)
+    ϵ = scalar(Ma_max' * g * Ma_max) - ϵ_j - ϵ_j' + ϵ0
+
+    return permute(Ma_max, (1,), (2,)), abs(ϵ)
+end
 function optimise_isometries(u, s, v, t_metric, trunc; maxiter=100)
+    γ = t_metric
+
+    # println("Initial fidelity:  ", fidelity(γ, u, s, v))
+
+    u = TensorMap(rand, ComplexF64, codomain(u), domain(u))
+    v = TensorMap(rand, ComplexF64, codomain(v), domain(v))
+
+    println(space(u))
+    println(space(γ))
+
     δu = 1.0
     δv = 1.0
     counter = 0
-    while !(counter > maxiter || max(δu, δv) < 1e-10)
+    while !(counter > maxiter || max(δu, δv) < 1e-6)
         up = u
         vp = v
 
@@ -99,7 +167,7 @@ function optimise_isometries(u, s, v, t_metric, trunc; maxiter=100)
 
         B1inv = pinv(permute(B1, (3, 1), (2, 4)))
         R1 = permute(permute(P1, (), (1, 2)) * B1inv, (1,), (2,))
-        u, s, v, err = tsvd(u * R1; trunc=trunc)
+        u, s, v, err = tsvd(normalize(u * R1); trunc=trunc)
 
         @tensor B2[-1 2; 3 -4] := γ[1 2; 3 4] * v[-1; 1] * (v')[4; -4]
 
@@ -107,17 +175,19 @@ function optimise_isometries(u, s, v, t_metric, trunc; maxiter=100)
 
         B2inv = pinv(permute(B2, (3, 1), (2, 4)))
         R2 = permute(permute(P2, (), (1, 2)) * B2inv, (1,), (2,))
-        u, s, v, err = tsvd(R2 * v; trunc=trunc)
+        u, s, v, err = tsvd(normalize(R2 * v); trunc=trunc)
 
         counter = counter + 1
 
         δu = sqrt(real(tr((u - up) * (u - up)')))
         δv = sqrt(real(tr((v - vp) * (v - vp)')))
-        println("du: ", δu, "\t dv: ", δv)
-        println("Fidelity:  ", fidelity(γ, u, s, v))
-        # print("|")
+        # println("du: ", δu, "\t dv: ", δv)
+        # println("Fidelity:  ", fidelity(γ, u, s, v))
+        print("|")
     end
-    print("\n")
+    println("")
+    # println("Final fidelity:  ", fidelity(γ, u, s, v))
+    println("")
     return u, s, v
 end
 

@@ -23,43 +23,34 @@ function simulate!(sim::TimeEvolutionSimulation)
     Lx = L.x
     Ly = L.y
 
-    Op_x = @. exp(τ * Lx)
-    Op_y = @. exp(τ * Ly)
+    Op_x = @. twolocal_decompose(exp(τ * Lx))
+    Op_y = @. twolocal_decompose(exp(τ * Ly))
 
-    Op = SuperOperator(Op_x, Op_y)
-
-    propagate!(P, Op, n, alg)
+    propagate!(P, Op_x, Op_y, n, alg)
 
     return P
 end
 
-function propagate!(P, Op, n, alg::FET{VUMPS})
-    # Current VUMPS implementation using MPOs rather than trotter gates. 
-    Op = to_mpo(Op)
-
-    U = Op
-
-    # L = latticestyle(P)
-    # U = SuperOperator(Lattice(MPO(), L, Op.x[1,1]), Lattice(MPO(),L, Op.y[1,1]))
-
-    _propagate!(P, U, n, alg)
-    return P
-end
-
-function _propagate!(P, Op, n, alg::FET{Alg}) where {Alg}
+function propagate!(P, Op_x, Op_y, n, alg::FET{Alg}) where {Alg}
     # Unroll algorithm parameters.
     recycle = alg.recycle   # Whether to recycle the metric
     gauge = alg.gauge       # Whether to fix the gauge of the metric
     ξ = alg.ξ               # Correlation length scaling parameter
     param = alg.boundary    # Parameters of the boundary algorithm
 
+    # Z = TensorMap(pauli[1], ℂ^2, ℂ^2)
+    # Z_exp = tr.(Ref(Z) .* onelocal(P))
+    # @warn "Initial mag: $((Z_exp))"
     # First time step.
     Bx_i = By_i = x -> initialise_state(Alg, x, param)
     # Apply the time evolution operator, calculate the metric, and then truncate.
-    P, Bx, By = trotterstep!(P, Op, Bx_i, By_i; ξ=ξ, gauge=gauge)
+    P, Bx, By = trotterstep!(P, Op_x, Op_y, Bx_i, By_i; ξ=ξ, gauge=gauge)
 
+    # Z = TensorMap(pauli[1], ℂ^2, ℂ^2)
+    # Z_exp = tr.(Ref(Z) .* onelocal(P))
+    # @warn "$((Z_exp))"
     # Remaining time steps.
-    for i in 1:(n - 1)
+    for i in 2:(n)
         @info "Trotter step $i"
         # If we wish to recycle the metric, set the function that returns the initial guess
         # for the boundary to simply return the boundary of the previous time step.
@@ -69,59 +60,48 @@ function _propagate!(P, Op, n, alg::FET{Alg}) where {Alg}
         end
 
         # Apply the time evolution operator, calculate the metric, and then truncate.
-        P, Bx, By = trotterstep!(P, Op, Bx_i, By_i; ξ=ξ, gauge=gauge)
+        P, Bx, By = trotterstep!(P, Op_x, Op_y, Bx_i, By_i; ξ=ξ, gauge=gauge)
 
         # Measure 
+        X = TensorMap(pauli[1], ℂ^2, ℂ^2)
+        X_exp = tr.(Ref(X) .* onelocal(P))
+        @warn "X: $((X_exp))"
+
+        Y = TensorMap(pauli[2], ℂ^2, ℂ^2)
+        Y_exp = tr.(Ref(Y) .* onelocal(P))
+        @warn "X: $((Y_exp))"
+
         Z = TensorMap(pauli[3], ℂ^2, ℂ^2)
         Z_exp = tr.(Ref(Z) .* onelocal(P))
-        println(Z_exp)
+        @warn "Z: $((Z_exp))"
     end
 
     # Return the PEPO state after n applications of the operator.
     return P
 end
 
-function trotterstep!(P, Op, Bx_i, By_i; kwargs...)
-    # Apply the time evolution operator along x-axis. 
-    P, Bx = half_trotterstep!(P, Op.x, Bx_i; kwargs...)
+function trotterstep!(pepo, op_tuple_x, op_tuple_y, bx_i, by_i; kwargs...)
+    pepo, bx = axistrotterstep!(pepo, op_tuple_x, bx_i; kwargs...)
 
-    # Permute the y- and x-axis of the PEPO.
     perm = (2, 1, 3, 5, 4, 6)
-    P = _permute.(P, Ref(perm))
+    pepo = _permute.(pepo, Ref(perm))
 
-    # Apply the time evolution operator along x-axis (now the y-axis.)
-    P, By = half_trotterstep!(P, Op.y, Bx_i; kwargs...)
+    pepo, by = axistrotterstep!(pepo, op_tuple_y, by_i; kwargs...)
 
-    # Undo the previous permutation.
-    P = _permute.(P, Ref(invperm(perm)))
+    pepo = _permute.(pepo, Ref(invperm(perm)))
 
-    return P, Bx, By
+    return pepo, bx, by
 end
 
-# Evolves the PEPO state P according to Op along a single axis 
-function half_trotterstep!(P, Op, get_initialboundary; kwargs...)
-    # Apply time evolution operator to the state.
-    PE = evolve(P, Op)
+function axistrotterstep!(pepo, op_tuple, get_initialboundary; kwargs...)
+    pepo_hs = hilbertschmidt(pepo)
 
-    # Get the single bond space for each site.
-    Dη = getindex.(domain.(PE), 1)
-
-    # Calculate the hilbertschmidt tensor tr(ρρ'). 
-    PE_hs = hilbertschmidt(PE)
-
-    # Get the initial guess for the boundary.
-    boundary = get_initialboundary(PE_hs)
-
-    # Run the boundary algorithm to obtain the boundary.
+    boundary = get_initialboundary(pepo_hs)
     boundary = calculate!(boundary)
 
-    # Form the truncation metric tensor from the boundary.
-    Y = truncmetric(Dη, boundary)
+    updatestep!(pepo, op_tuple, boundary, truncspace(codomain(pepo[1, 1])[1]))
 
-    # Truncate the bond.
-    P = truncate!(P, PE, Y; kwargs...)
-
-    return P, boundary
+    return pepo, boundary
 end
 
 # m[s_b s_ph' s_ph; s_b s_ph' s_ph] (l,b,k ; r b k)
@@ -179,15 +159,43 @@ function evolveleft(pepo_left, op_left)
     Q, L = leftorth(_evolveleft(pepo_left, op_left))
     return permute(Q, (1, 2, 3), (6, 4, 5)), L
 end
+function evolveleft_alt(pepo_left, op_left)
+    pepo_new = _evolveleft(pepo_left, op_left)
+
+    Q, L = leftorth(pepo_new)
+    Q = permute(Q, (1, 2, 3), (6, 4, 5))
+
+    pp = permute(pepo_new, (1, 2, 3), (6, 7, 4, 5))
+    c = codomain(pp)
+    d = domain(pp)
+    A = TensorMap(pp.data, c, fuse(d[1] * d[2]) * d[3] * d[4])
+
+    return A, Q, L
+end
+
 function evolveright(pepo_right, op_right)
-    R, Q = rightorth(_evolveleft(pepo_left, op_left))
+    R, Q = rightorth(_evolveright(pepo_right, op_right))
     return R, permute(Q, (1, 2, 3), (4, 5, 6))
 end
+function evolveright_alt(pepo_right, op_right)
+    pepo_new = _evolveright(pepo_right, op_right)
+
+    R, Q = rightorth(pepo_new)
+    Q = permute(Q, (1, 2, 3), (4, 5, 6))
+
+    pp = permute(pepo_new, (1, 2, 3, 4), (5, 6, 7))
+    c = codomain(pp)
+    d = domain(pp)
+    B = TensorMap(pp.data, fuse(c[1] * c[2]) * c[3] * c[4], d)
+
+    return B, R, Q
+end
+
 function _evolveleft(pl, op)
-    @tensoropt pl_n[w s k n b; e1 e2] = pl[w s mk; e1 n mb] * op[b k; e2 mb mk]
+    @tensoropt pl_n[w s k n b; e1 e2] := pl[w s mk; e1 n mb] * op[b k; e2 mb mk]
     return pl_n
 end
 function _evolveright(pr, mr)
-    @tensoropt pr_n[w1 w2; s k e n b] = pr[w1 s mk; e n mb] * mr[w2 b k; mb mk]
+    @tensoropt pr_n[w1 w2; s k e n b] := pr[w1 s mk; e n mb] * mr[w2 b k; mb mk]
     return pr_n
 end

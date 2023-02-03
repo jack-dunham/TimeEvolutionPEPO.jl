@@ -20,12 +20,44 @@ function truncmetric(Dη, mpo::InfiniteMPO, tensors::VUMPS)
     return Y
 end
 
-function truncmetric(pepo_left, pepo_right, environment)
-    hs_left = hilbertschmidt(pepo_left)
-    hs_right = hilbertschmidt(pepo_right)
-    merge_east(hs_left)
-    merge_west(hs_right)
-    return nothing
+function truncmetric(pepo_left, A, pepo_right, B, tensors::VUMPS, x, y)
+    hs_left = merge_east(hilbertschmidt(pepo_left, A'))
+    hs_right = merge_west(hilbertschmidt(pepo_right, B'))
+
+    t_metric = vumpsfetmetric(hs_left, hs_right, tensors.A, tensors.FL, tensors.FR, x, y)
+
+    Y = permute(t_metric, (4, 2), (1, 3))
+
+    println("Y norm: ", norm(Y - Y'))
+    Y = 0.5 * (Y + Y') / tr(Y)
+
+    γ = permute(Y, (3, 2), (4, 1))
+
+    return γ
+end
+
+function vumpsfetmetric(hs_left, hs_right, mps, left_env, right_env, x, y)
+    Ml = hs_left
+    Mr = hs_right
+
+    AL, C, AR, _ = unpack(mps)
+
+    FL = left_env
+    FR = right_env
+
+    t_metric = vumps_fetmetric(
+        Ml,
+        Mr,
+        AL[x, y],
+        AL[x, y + 1],
+        C[x, y],
+        C[x, y + 1],
+        AR[x + 1, y],
+        AR[x + 1, y + 1],
+        FL[x, y],
+        FR[x + 1, y],
+    )
+    return t_metric
 end
 
 # TODO: Multisite
@@ -106,6 +138,7 @@ function vumps_fetmetric(
     return γ
 end
 #PERF:
+# No splitting
 function vumps_fetmetric(
     M1::AbstractTensorMap{S,2,3}, # (x, y)     a hilbertschmidt mpo tensor
     M2::AbstractTensorMap{S,3,2}, # (x + 1, y) a hilbertschmidt mpo tensor
@@ -133,6 +166,7 @@ function vumps_fetmetric(
     end
     return y
 end
+# With splitting
 function vumps_fetmetric(
     M1::AbstractTensorMap{S,2,2}, # (x, y)     a hilbertschmidt mpo tensor
     M2::AbstractTensorMap{S,2,2}, # (x + 1, y) a hilbertschmidt mpo tensor
@@ -282,11 +316,15 @@ function merge_hilbertschmidt_bonds(t::AbsTen{4,4})
 end
 
 function merge_east(t::AbsTen{4,4})
+    c = codomain(t)
+    d = domain(t)
     c_m = fuse(c[1] * c[2]) * fuse(c[3] * c[4])
     d_m = d[1] * d[2] * fuse(d[3] * d[4])
     return TensorMap(t.data, c_m, d_m)
 end
 function merge_west(t::AbsTen{4,4})
+    c = codomain(t)
+    d = domain(t)
     c_m = c[1] * c[2] * fuse(c[3] * c[4])
     d_m = fuse(d[1] * d[2]) * fuse(d[3] * d[4])
     return TensorMap(t.data, c_m, d_m)

@@ -56,6 +56,11 @@ function wtg(
     u = u * sqrt(s)
     v = sqrt(s) * v
 
+    s_vals = [convert(Array, s)[i, i] for i in 1:dim(codomain(s))]
+    s_min = minimum(abs.(s_vals))
+
+    s_min < 1e-14 ? (@info "Skipped gauge fixing"; return u, s, v) : nothing
+
     # @tensoropt γi[-1 -2; -3 -4] :=
     #     γ[1 2 3 4; 5 6 7 8] * u[5 6; -3] * v[-1; 1 2] * (u')[-2; 3 4] * (v')[7 8; -4]
 
@@ -63,17 +68,19 @@ function wtg(
         γ[1 2; 3 4] * u[3; -3] * v[-1; 1] * (u')[-2; 2] * (v')[4; -4]
 
     γm = permute(γi, (1, 4), (3, 2)) # Transform to matrix
-    @tensor γN = γm[a b; a b]
+    @tensor γN = γm[a b; a b] # Y_ji
     γm = γm / γN
-    γm = 1 / 2 * (γm' + γm) # γm is now hermitian, so SVD gives eigen-decomposition
+    # γold = γm
+    println("Yuv norm: ", norm(γm - γm'))
+    # γm = 1 / 2 * (γm' + γm) # γm is now hermitian, so SVD gives eigen-decomposition
 
     # γmr = γm * (s ⊗ permute(s', (2,), (1,)))
     ri = Tensor(rand, ComplexF64, domain(γm))
-    _, rs, _ = eigsolve(x -> γm * x, ri, 1, :LM; eager=true, ishermitian=true)
+    _, rs, _ = eigsolve(x -> γm * x, ri, 1, :LM; eager=true, ishermitian=false)
 
     li = TensorMap(rand, ComplexF64, one(codomain(γm)), codomain(γm))
     # γml = (s ⊗ permute(s', (2,), (1,))) * γm
-    _, ls, _ = eigsolve(x -> x * γm, li, 1, :LM; eager=true, ishermitian=true)
+    _, ls, _ = eigsolve(x -> x * γm, li, 1, :LM; eager=true, ishermitian=false)
 
     l0 = permute(ls[1], (2,), (1,))
     r0 = permute(rs[1], (1,), (2,))
@@ -111,8 +118,6 @@ function wtg(
             @warn "Right gauge condition was not met"
         end
     end
-
-    println(st)
 
     return un, st, vn
 
