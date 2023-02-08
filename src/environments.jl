@@ -1,7 +1,7 @@
-const AbstractEnvironment{E<:Env} = UnitCell{E}
+const AbstractEnvironment{E<:Env} = OnUnitCell{E}
 
-const LeftEnvironment{Nx,Ny,D<:AbsTen{1,2}} = UnitCell{LeftEnv,Nx,Ny,D}
-const RightEnvironment{Nx,Ny,D<:AbsTen{2,1}} = UnitCell{RightEnv,Nx,Ny,D}
+const LeftEnvironment{Nx,Ny,D<:AbsTen{1,2}} = OnUnitCell{LeftEnv,Nx,Ny,D}
+const RightEnvironment{Nx,Ny,D<:AbsTen{2,1}} = OnUnitCell{RightEnv,Nx,Ny,D}
 
 function LeftEnvironment(f, A::MultilineInfiniteMPS, M::InfiniteMPO)
     nx, ny = size(M)
@@ -12,7 +12,7 @@ function LeftEnvironment(f, A::MultilineInfiniteMPS, M::InfiniteMPO)
             f, promote_type(numbertype(A), numbertype(M)), χs[x, y + 1], χs[x, y] * Ds[x, y]
         ) for x in 1:nx, y in 1:ny
     ]
-    return Lattice(LeftEnv(), latticestyle(M), data)
+    return OnLattice(LeftEnv(), latticestyle(M), data)
 end
 function RightEnvironment(f, A::MultilineInfiniteMPS, M::InfiniteMPO)
     nx, ny = size(M)
@@ -23,7 +23,7 @@ function RightEnvironment(f, A::MultilineInfiniteMPS, M::InfiniteMPO)
             f, promote_type(numbertype(A), numbertype(M)), χs[x, y] * Ds[x, y], χs[x, y + 1]
         ) for x in 1:nx, y in 1:ny
     ]
-    return Lattice(RightEnv(), latticestyle(M), data)
+    return OnLattice(RightEnv(), latticestyle(M), data)
 end
 
 function renorm(cb, ca, fl, fr)
@@ -54,10 +54,8 @@ function environments!(
     AL, C, AR, _ = unpack(A)
 
     for y in 1:Ny
-        
         _, Ls, _ = eigsolve(z -> envsolve(z, AL, M, 1, y), FL[1, y], 1, :LM)
         _, Rs, _ = eigsolve(z -> envsolve(z, AR, M, Nx, y), FR[Nx, y], 1, :LM)
-
 
         FL[1, y] = Ls[1]
 
@@ -85,7 +83,7 @@ function environments!(
     return FL, FR #mutated 
 end
 
-function simple_environments!(FL,FR,A,M)
+function simple_environments!(FL, FR, A, M)
     Nx, Ny = size(M)
 
     # λ = Matrix{numbertype(M)}(undef, Nx, Ny)
@@ -93,7 +91,6 @@ function simple_environments!(FL,FR,A,M)
     AL, C, AR, _ = unpack(A)
 
     for x in 1:Nx, y in 1:Ny
-        
         _, Ls, _ = eigsolve(z -> envsolve(z, AL, M, x, y), FL[x, y], 1, :LM)
         _, Rs, _ = eigsolve(z -> envsolve(z, AR, M, x, y), FR[x, y], 1, :LM)
 
@@ -104,13 +101,13 @@ function simple_environments!(FL,FR,A,M)
 end
 
 function envsolve(
-    fl::AbsTen{1,2}, A::AbstractUnitCell{MPS,Nx,Ny}, M::InfiniteMPO{Nx,Ny}, x::Int, y::Int
+    fl::AbsTen{1,2}, A::AbstractOnUnitCell{MPS,Nx,Ny}, M::InfiniteMPO{Nx,Ny}, x::Int, y::Int
 ) where {Nx,Ny}
     fl_n = flsolve(fl, A, M, x, y, Val(Nx))
     return fl_n
 end
 function envsolve(
-    fr::AbsTen{2,1}, A::AbstractUnitCell{MPS,Nx,Ny}, M::InfiniteMPO{Nx,Ny}, x::Int, y::Int
+    fr::AbsTen{2,1}, A::AbstractOnUnitCell{MPS,Nx,Ny}, M::InfiniteMPO{Nx,Ny}, x::Int, y::Int
 ) where {Nx,Ny}
     fr_n = frsolve(fr, A, M, x, y, Val(Nx))
     return fr_n
@@ -128,10 +125,7 @@ function flsolve(
     flu = similar(fl)
     @tensoropt begin
         flu[8; 6 7] =
-            fl[3; 1 2] *
-            (a[x, y])[1 4; 6] *
-            (m[x, y])[2 5; 7 4] *
-            (a[x, y + 1]')[8; 3 5]
+            fl[3; 1 2] * (a[x, y])[1 4; 6] * (m[x, y])[2 5; 7 4] * (a[x, y + 1]')[8; 3 5]
     end
     return flu
 end
@@ -194,10 +188,7 @@ function frsolve(
     fru = similar(fr)
     @tensoropt begin
         fru[1 2; 3] =
-            (a[x , y])[1 4; 6] *
-            (m[x , y])[2 5; 7 4] *
-            (a[x , y + 1]')[8; 3 5] *
-            fr[6 7; 8]
+            (a[x, y])[1 4; 6] * (m[x, y])[2 5; 7 4] * (a[x, y + 1]')[8; 3 5] * fr[6 7; 8]
     end
     return fru
 end
@@ -247,11 +238,19 @@ function frsolve(
     return fru
 end
 
-function envtest(FL,FR,A,M)
-    nx,ny = size(M)
-    AL,C,AR,_  = unpack(A)
+function envtest(FL, FR, A, M)
+    nx, ny = size(M)
+    AL, C, AR, _ = unpack(A)
     for x in 1:nx, y in 1:ny
-        println("Left: ", isapprox(normalize(FL[x,y]), normalize(envsolve(FL[x,y], AL, M, x,y)); atol=1e-3))
-        println("Right: ",isapprox(normalize(FR[x,y]), normalize(envsolve(FR[x,y], AR, M, x,y))))
+        println(
+            "Left: ",
+            isapprox(
+                normalize(FL[x, y]), normalize(envsolve(FL[x, y], AL, M, x, y)); atol=1e-3
+            ),
+        )
+        println(
+            "Right: ",
+            isapprox(normalize(FR[x, y]), normalize(envsolve(FR[x, y], AR, M, x, y))),
+        )
     end
 end

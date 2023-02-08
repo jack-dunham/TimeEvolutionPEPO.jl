@@ -1,7 +1,7 @@
-const AbstractProjectedEntangledPairOperator{L,P<:AbsTen{3,3}} = Lattice{PEPO,L,P}
+const AbstractProjectedEntangledPairOperator{L,P<:AbsTen{3,3}} = OnLattice{PEPO,L,P}
 const AbstractPEPO = AbstractProjectedEntangledPairOperator
 
-const ProjectedEntangledPairOperator{L,P<:AbsTen{3,3}} = Lattice{PEPO,L,P}
+const ProjectedEntangledPairOperator{L,P<:AbsTen{3,3}} = OnLattice{PEPO,L,P}
 
 const InfinitePEPO{Nx,Ny,P} = ProjectedEntangledPairOperator{Infinite{Nx,Ny},P}
 
@@ -35,8 +35,11 @@ function blochpepo_data(a::Vector, Dw::Int, Ds::Int, De::Int, Dn::Int)
     return p
 end
 
-function blochpepo(lattice, a, bonds_x, bonds_y=bonds_x)
-    L = latticestyle(lattice)
+function blochpepo(lattice, a, westbond, southbond=westbond)
+    bonds_x = OnLattice(NotTensor(), lattice, spacematrix(lattice, westbond))
+    bonds_y = OnLattice(NotTensor(), lattice, spacematrix(lattice, southbond))
+
+    localspace = lattice.localspace
 
     bond_w = bonds_x
     bond_e = circshift(bonds_x, (0, -1))
@@ -44,6 +47,8 @@ function blochpepo(lattice, a, bonds_x, bonds_y=bonds_x)
     bond_n = circshift(bonds_y, (-1, 0))
 
     p_data = blochpepo_data.(Ref(a), dim.(bond_w), dim.(bond_s), dim.(bond_e), dim.(bond_n))
-    p_tensors = @. TensorMap(p_data, bond_w * bond_s * lattice, bond_e * bond_n * lattice)
-    return convertstyle(PEPO, p_tensors)
+    p_tensors = @. TensorMap(
+        p_data, bond_w * bond_s * localspace, bond_e * bond_n * localspace
+    )
+    return OnLattice(PEPO(), lattice, p_tensors)
 end

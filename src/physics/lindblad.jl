@@ -1,18 +1,18 @@
 struct Trotter <: TensorStyle end
 
-abstract type AbstractSuperOperator{L<:LatticeStyle,O<:AbstractTensorMap} end
+abstract type AbstractSuperOperator{L<:AbstractLattice,O<:AbstractTensorMap} end
 
-struct SuperOperator{T<:Union{Trotter,MPO},L<:LatticeStyle,O<:AbstractTensorMap} <:
+struct SuperOperator{T<:Union{Trotter,MPO},L<:AbstractLattice,O<:AbstractTensorMap} <:
        AbstractSuperOperator{L,O}
-    x::Lattice{T,L,O}
-    y::Lattice{T,L,O}
+    x::OnLattice{T,L,O}
+    y::OnLattice{T,L,O}
 end
 
 const SuperOperatorTrotter{L,O<:AbsTen{N,N} where {N}} = SuperOperator{Trotter,L,O}
 const SuperOperatorMPO{L,O<:AbsTen{3,3}} = SuperOperator{MPO,L,O}
 
-locality(::SuperOperatorTrotter{<:LatticeStyle,<:AbsTen{N,N}}) where {N} = Int(N / 2)
-locality(::Lattice{Trotter,<:LatticeStyle,<:AbsTen{N,N}}) where {N} = Int(N / 2)
+locality(::SuperOperatorTrotter{<:AbstractLattice,<:AbsTen{N,N}}) where {N} = Int(N / 2)
+locality(::OnLattice{Trotter,<:AbstractLattice,<:AbsTen{N,N}}) where {N} = Int(N / 2)
 
 function SuperOperator(
     lattice,
@@ -38,9 +38,9 @@ function SuperOperator(
 end
 
 function mats2tensors(lattice, data)
-    L = latticestyle(lattice)
+    L = lattice
     nx, ny = size(L)
-    spaces = lattice
+    spaces = OnLattice(NotTensor(), lattice, lattice.localspace)
 
     #WARN: Not type stable! Hacky...not general
     locality = Int(log(4, size(data[1, 1])[1]))
@@ -53,7 +53,7 @@ function mats2tensors(lattice, data)
         ) for x in 1:nx, y in 1:ny
     ]
 
-    return Lattice(Trotter(), L, interlace_permute.(tensors))
+    return OnLattice(Trotter(), L, interlace_permute.(tensors))
 end
 
 function getsuperspace(spaces, x, y, ::Val{l}) where {l}
@@ -70,7 +70,7 @@ function to_mpo(L::SuperOperatorTrotter)
     return SuperOperator(tx, ty)
 end
 
-function _to_mpo(mat::Lattice{Trotter,L}) where {L}
+function _to_mpo(mat::OnLattice{Trotter,L}) where {L}
     l = locality(mat)
     nx, ny = size(mat)
 
@@ -90,7 +90,7 @@ function _to_mpo(mat::Lattice{Trotter,L}) where {L}
             end
         end
     end
-    return Lattice(MPO(), L(), rv)
+    return OnLattice(MPO(), L(), rv)
 end
 
 # Add dummy indices to edge tensors.

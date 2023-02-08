@@ -14,6 +14,7 @@ A mutable struct that holds information about the convergence progress of an alg
 - `converged::Bool`: a boolean stating if an algorithm has converged or not
 - `error::Float64`: stores the current error
 - `iterations::Int`: stores the number of interations so far
+- `finished::Bool`: whether or not the algorithm has finished running
 """
 mutable struct ConvergenceInfo
     converged::Bool
@@ -22,33 +23,45 @@ mutable struct ConvergenceInfo
     finished::Bool
 end
 
+ConvergenceInfo() = ConvergenceInfo(false, Inf, 0, false)
+
 @doc raw"""
     BoundaryParameters{S<:IndexSpace} <: AbstractBoundaryParameters
 
 Stores the parameters of a boundary algorithm.
 
 # Fields
-- `verbosity::Int`: the verbosity level logging during the algorithm's progress. A value of
-    `0` denotes no logging, with increasing integers representing increasingly verbose 
-    logging.
 - `bondspace::IndexSpace`: the vector space of the bond indices of the boundary 
     tensors. Unrelated to the bond space of the matrix product operator to be contracted by
     the algorithm. 
+- `verbosity::Int`: the verbosity level logging during the algorithm's progress. A value of
+    `0` denotes no logging, with increasing integers representing increasingly verbose 
+    logging.
 - `maxiter::Int`: maximum number of iterations before the algorithm must terminate.
 - `tol::Float64`: error tolerence. The algorithm terminates after the error drops below this
     value, even if the number of iterations is less than `maxiter`.
 """
 struct BoundaryParameters <: AbstractBoundaryParameters
-    verbosity::Int
     bondspace::IndexSpace
+    verbosity::Int
     maxiter::Int
     tol::Float64
+end
+
+@doc raw"""
+    BoundaryParameters(bondspace; verbosity=0, maxiter=100, tol=1e-8)
+
+Constructor for the `BoundaryParameters` type, with defaults. Note, the bondspace of the
+boundary must always be set by the user.
+"""
+function BoundaryParameters(bondspace; verbosity=0, maxiter=100, tol=1e-8)
+    return BoundaryParameters(bondspace, verbosity, maxiter, tol)
 end
 
 function BoundaryParameters(P::InfinitePEPO)
     χ = westbond(P[1, 1])
     bondspace = χ ⊕ χ
-    return BoundaryParameters(0, bondspace, 100, 1e-10)
+    return BoundaryParameters(bondspace, 0, 100, 1e-10)
 end
 
 @doc raw"""
@@ -64,7 +77,6 @@ can be one of `VUMPS`, `CTMRG`, `FPCM`, `FPCM_CTMRG`, or a user-defined algorith
 - `initial::Alg`: the tensors used as the starting point of the algorithm
 - `info::ConvergenceInfo`: information about the covergence progress of the algorithm
 - `param::BoundaryParameters`: the paramaters used in the algorithm
-- `finished::Bool`: States whether or not the algorithm has completed according to `param`
 """
 struct BoundaryState{Alg<:AbstractBoundary} <: AbstractBoundaryState{Alg}
     data::Alg
@@ -94,8 +106,6 @@ function reset!(conv::ConvergenceInfo)
     conv.finished = false
     return conv
 end
-
-ConvergenceInfo() = ConvergenceInfo(false, Inf, 0, false)
 
 include("vumps/vumps.jl")
 

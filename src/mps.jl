@@ -1,18 +1,18 @@
-const UngaugedInfiniteMPS{Nx, D<:AbsTen{2,1}} = Lattice{MPS, Infinite{Nx,1}, D}
+const UngaugedInfiniteMPS{Nx,D<:AbsTen{2,1}} = OnLattice{MPS,Infinite{Nx,1},D}
 
-abstract type AbstractMatrixProductState{L<:RowLatticeStyle,M<:AbsTen{2,1},C<:AbsTen{1,1}} end
+abstract type AbstractMatrixProductState{L<:RowLattice,M<:AbsTen{2,1},C<:AbsTen{1,1}} end
 
 const AbstractMPS = AbstractMatrixProductState
-const AbstractInfiniteMPS{Nx,M,C} = AbstractMatrixProductState{UnitCell{Nx,1},M,C}
+const AbstractInfiniteMPS{Nx,M,C} = AbstractMatrixProductState{OnUnitCell{Nx,1},M,C}
 
 struct MatrixProductState{L,M<:AbsTen{2,1},CT<:AbsTen{1,1}} <: AbstractMPS{L,M,CT}
-    AL::Lattice{MPS,L,M}
-    C::Lattice{BondMatrix,L,CT}
-    AR::Lattice{MPS,L,M}
-    AC::Lattice{MPS,L,M}
+    AL::OnLattice{MPS,L,M}
+    C::OnLattice{BondMatrix,L,CT}
+    AR::OnLattice{MPS,L,M}
+    AC::OnLattice{MPS,L,M}
     function MatrixProductState(
-        AL::Lattice{MPS,L,M}, C::Lattice{BondMatrix,L,CT}, AR::Lattice{MPS,L,M}
-    ) where {L<:RowLatticeStyle,S,M<:AbsTen{2,1}{S},CT<:AbsTen{1,1}{S}}
+        AL::OnLattice{MPS,L,M}, C::OnLattice{BondMatrix,L,CT}, AR::OnLattice{MPS,L,M}
+    ) where {L<:RowLattice,S,M<:AbsTen{2,1}{S},CT<:AbsTen{1,1}{S}}
         Nx, _ = size(L) #(Nx,1)
         r = 1:Nx
         for i in r
@@ -25,24 +25,23 @@ struct MatrixProductState{L,M<:AbsTen{2,1},CT<:AbsTen{1,1}} <: AbstractMPS{L,M,C
     end
 end
 
-function MatrixProductState(l::LatticeStyle, AL::Vector, C::Vector, AR::Vector)
+function MatrixProductState(l::AbstractLattice, AL::Vector, C::Vector, AR::Vector)
     return MatrixProductState(
-        Lattice(MPS(), l, AL), Lattice(MPS(), l, C), Lattice(MPS(), l, AR)
+        OnLattice(MPS(), l, AL), OnLattice(MPS(), l, C), OnLattice(MPS(), l, AR)
     )
 end
 
-function Base.:*(A::Lattice{MPS},C::Lattice{BondMatrix})
-    return convertstyle(MPS, _AC.(A,C))
+function Base.:*(A::OnLattice{MPS}, C::OnLattice{BondMatrix})
+    return convertstyle(MPS, _AC.(A, C))
 end
-function Base.:*(C::Lattice{BondMatrix},A::Lattice{MPS})
-    return convertstyle(MPS, _CA.(circshift(C,(1,0)),A))
+function Base.:*(C::OnLattice{BondMatrix}, A::OnLattice{MPS})
+    return convertstyle(MPS, _CA.(circshift(C, (1, 0)), A))
 end
 
 bondtensor(A::AbstractMPS) = A.C
 centraltensor(A::AbstractMPS) = A.AC
 lefttensor(A::AbstractMPS) = A.AL
 righttensor(A::AbstractMPS) = A.AR
-
 
 westbond(A::MatrixProductState) = westbond.(lefttensor(A))
 eastbond(A::MatrixProductState) = eastbond.(lefttensor(A))
@@ -61,13 +60,13 @@ gauge.
 function InfiniteMPS{Nx,Ny}(AL::Vector, C::Vector, AR::Vector) where {Nx,Ny}
     return MatrixProductState(Infinite{Nx,Ny}(), AL, C, AR)
 end
-function InfiniteMPS(A::UnitCell{MPS, Nx,1,<:AbsTen{2,1}}) where {Nx}
+function InfiniteMPS(A::OnUnitCell{MPS,Nx,1,<:AbsTen{2,1}}) where {Nx}
     AL, C, AR = mixedgauge(A)
     return MatrixProductState(AL, C, AR)
 end
 
 function InfiniteMPS{Nx}(v::AbstractVector{<:AbsTen{2,1}}) where {Nx}
-    AL, C, AR = mixedgauge(Lattice(MPS(),Infinite{Nx,1}(), v))
+    AL, C, AR = mixedgauge(OnLattice(MPS(), Infinite{Nx,1}(), v))
     return MatrixProductState(AL, C, AR)
 end
 
@@ -89,37 +88,39 @@ function InfiniteMPS{Nx}(f, T::Type{<:Number}, χ₁::S, d::S, χ₂::S) where {
     return InfiniteMPS{Nx}(tensors...)
 end
 
-numsites(::AbstractMPS{<:LatticeStyle{Nx}}) where {Nx} = Nx
+numsites(::AbstractMPS{<:AbstractLattice{Nx}}) where {Nx} = Nx
 Base.length(a::AbstractMPS) = numsites(a)
 
 # The type of the bond tensor
 function bondtensortype(
-    ::Type{<:AbstractMPS{<:LatticeStyle,<:AbsTen{2,1},C}}
+    ::Type{<:AbstractMPS{<:AbstractLattice,<:AbsTen{2,1},C}}
 ) where {C<:AbsTen{1,1}}
     return C
 end
 bondtensortype(m::AbstractMPS) = bondtensortype(typeof(m))
 
 # The type of the matrix product state tensors
-function mpstensortype(::Type{<:AbstractMPS{<:LatticeStyle,M}}) where {M<:AbsTen{2,1}}
+function mpstensortype(::Type{<:AbstractMPS{<:AbstractLattice,M}}) where {M<:AbsTen{2,1}}
     return M
 end
 mpstensortype(m::AbstractMPS) = mpstensortype(typeof(m))
 
 # The type of the underlying spaces (ComplexSpace, GradedSpace{...} etc)
 function TensorKit.spacetype(
-    ::Type{<:AbstractMPS{<:LatticeStyle,<:AbsTen{2,1}{S}}}
+    ::Type{<:AbstractMPS{<:AbstractLattice,<:AbsTen{2,1}{S}}}
 ) where {S<:IndexSpace}
     return S
 end
 TensorKit.spacetype(m::AbstractMPS) = spacetype(typeof(m))
 
 # MultilineInfiniteMPS
-const AbstractMultilineInfiniteMPS{Nx,Ny,M,C} = AbstractUnitCell{NotTensor,1,Ny,InfiniteMPS{Nx,M,C}}
-const MultilineInfiniteMPS{Nx,Ny,M,C} = UnitCell{NotTensor,1,Ny,InfiniteMPS{Nx,M,C}}
+const AbstractMultilineInfiniteMPS{Nx,Ny,M,C} = AbstractOnUnitCell{
+    NotTensor,1,Ny,InfiniteMPS{Nx,M,C}
+}
+const MultilineInfiniteMPS{Nx,Ny,M,C} = OnUnitCell{NotTensor,1,Ny,InfiniteMPS{Nx,M,C}}
 
 function MultilineInfiniteMPS(v::Vararg{<:InfiniteMPS,Ny}) where {Ny}
-    return Lattice(NotTensor(), Infinite{1,Ny}(), hcat(v...))
+    return OnLattice(NotTensor(), Infinite{1,Ny}(), hcat(v...))
 end
 
 function MultilineInfiniteMPS{Nx,Ny}(
@@ -129,12 +130,13 @@ function MultilineInfiniteMPS{Nx,Ny}(
     return MultilineInfiniteMPS(mps...)
 end
 
-
 lefttensor(A::MultilineInfiniteMPS) = hcat((lefttensor(a) for a in A)...)
 righttensor(A::MultilineInfiniteMPS) = hcat((righttensor(a) for a in A)...)
 bondtensor(A::MultilineInfiniteMPS) = hcat((bondtensor(a) for a in A)...)
 centraltensor(A::MultilineInfiniteMPS) = hcat((centraltensor(a) for a in A)...)
 
-unpack(A::Union{AbstractMPS, MultilineInfiniteMPS}) = (lefttensor(A), bondtensor(A), righttensor(A), centraltensor(A))
+function unpack(A::Union{AbstractMPS,MultilineInfiniteMPS})
+    return (lefttensor(A), bondtensor(A), righttensor(A), centraltensor(A))
+end
 
 westbond(A::MultilineInfiniteMPS) = hcat(westbond.(A))

@@ -1,7 +1,7 @@
 #TODO: Clean this mess
 function leftgauge_multi(
-    A::UnitCell{MPS,Nx,1,<:AbsTen{2,1}},
-    L::UnitCell{BondMatrix,Nx,1,<:AbsTen{1,1}};
+    A::OnUnitCell{MPS,Nx,1,<:AbsTen{2,1}},
+    L::OnUnitCell{BondMatrix,Nx,1,<:AbsTen{1,1}};
     tol=1e-12,
     maxiter=100,
 ) where {Nx}
@@ -94,7 +94,7 @@ function leftgauge_multi(
 end
 
 function leftgauge(
-    A::UngaugedInfiniteMPS{Nx}, C::UnitCell{BondMatrix,Nx}; tol=1e-12, maxiter=100
+    A::UngaugedInfiniteMPS{Nx}, C::OnUnitCell{BondMatrix,Nx}; tol=1e-12, maxiter=100
 ) where {Nx}
     AL, R, λ = leftgauge_multi(A, C; tol=tol, maxiter=maxiter)
     return AL, R, λ
@@ -106,13 +106,13 @@ function leftgauge(A::UngaugedInfiniteMPS)
     # Construct a vector of random bond matrices. 
     data = [TensorMap(rand, numbertype(A), χs[i], χs[i + 1]) for i in length(A)]
     # Apply similar lattice structure. 
-    C = Lattice(BondMatrix(), latticestyle(A), data)
+    C = OnLattice(BondMatrix(), latticestyle(A), data)
     return leftgauge(A, C)
 end
 
 function rightgauge_multi(
-    A::UnitCell{MPS,Nx,1,<:AbsTen{2,1}},
-    R::UnitCell{BondMatrix,Nx,1,<:AbsTen{1,1}};
+    A::OnUnitCell{MPS,Nx,1,<:AbsTen{2,1}},
+    R::OnUnitCell{BondMatrix,Nx,1,<:AbsTen{1,1}};
     kwargs...,
 ) where {Nx}
     p = (3, 2, 1)
@@ -131,7 +131,7 @@ function mixedgauge(A::UngaugedInfiniteMPS; tol=1e-12, maxiter=100)
     # Construct a vector of random bond matrices. 
     data = [TensorMap(rand, numbertype(A), χs[i], χs[i + 1]) for i in 1:length(A)]
     # Apply similar lattice structure. 
-    C = Lattice(BondMatrix(), latticestyle(A), data)
+    C = OnLattice(BondMatrix(), latticestyle(A), data)
     return mixedgauge(A, C; tol=tol, maxiter=maxiter)
 end
 
@@ -141,8 +141,8 @@ end
 # end
 
 function mixedgauge(
-    A::UnitCell{MPS,Nx,1,<:AbsTen{2,1}},
-    C::UnitCell{BondMatrix,Nx,1,<:AbsTen{1,1}};
+    A::OnUnitCell{MPS,Nx,1,<:AbsTen{2,1}},
+    C::OnUnitCell{BondMatrix,Nx,1,<:AbsTen{1,1}};
     kwargs...,
 ) where {Nx}
     AR, _, _ = rightgauge_multi(A, C; kwargs...)

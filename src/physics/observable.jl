@@ -13,7 +13,7 @@ struct LocalObservable{T<:AbsTen{1,1}} <: AbstractObservable{T}
 end
 
 struct Trace{A<:AbstractBoundary,Nx,Ny,T<:AbsTen{2,2}}
-    data::UnitCell{TrMetric,Nx,Ny,T}
+    data::OnUnitCell{TrMetric,Nx,Ny,T}
     boundary::BoundaryState{A}
 end
 

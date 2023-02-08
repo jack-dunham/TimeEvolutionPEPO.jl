@@ -422,7 +422,7 @@ function vumps_test()
     tM = TensorMap(ComplexF64.(aM), ℂ^2 * ℂ^2, ℂ^2 * ℂ^2) #mpo
     tM2 = TensorMap(aM2, ℂ^2 * ℂ^2, ℂ^2 * ℂ^2) #mpo
 
-    M = Lattice(MPO(), Infinite{2,2}(), tM)
+    M = OnLattice(MPO(), Infinite{2,2}(), tM)
 
     alg = initialise_state(VUMPS, M, BoundaryParameters(2, ℂ^4, 100, 1e-10))
 

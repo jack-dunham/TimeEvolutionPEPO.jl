@@ -1,4 +1,4 @@
-function updatestep!(pepo, op_tuple, boundary, trunc)
+function updatestep!(pepo, coeffs, op_tuple, boundary, trunc)
     # Convenience
     P = pepo
     O = op_tuple
@@ -6,16 +6,13 @@ function updatestep!(pepo, op_tuple, boundary, trunc)
     Nx, Ny = size(pepo)
     for y in 1:Ny
         if Nx == 1
-            PL, PR = fetstep(P[1, y], P[1, y], O[1, y], boundary, trunc, 1, y)
-            P[1, y], _ = fetstep(PR, PL, O[1, y], boundary, trunc, 1, y)
+            PL, PR, coeffs[1, y] = fetstep(P[1, y], P[1, y], O[1, y], boundary, trunc, 1, y)
+            P[1, y], _, coeffs[2, y] = fetstep(PR, PL, O[1, y], boundary, trunc, 1, y)
         else
-            for x in 1:1
+            for x in 1:Nx
                 # Odd bond
-                P[x, y], P[x + 1, y] = fetstep(
-                    P[x, y], P[x + 1, y], O[x, y], boundary, trunc, x, y
-                )
-                P[x + 1, y], P[x, y] = fetstep(
-                    P[x + 1, y], P[x, y], O[x + 1, y], boundary, trunc, x + 1, y
+                P[x, y], P[x + 1, y], coeffs[x, y] = fetstep(
+                    P[x, y], P[x + 1, y], coeffs[x + 1, y], boundary, trunc, x, y
                 )
             end
         end
@@ -57,11 +54,12 @@ function fetstep(
 
     # u, s, v = optimise_isometries(u, s, v, t_metric, trunc)
     u, s, v = optiso(l, r, t_metric, trunc)
-    println(s)
 
     # Convert to the weighted trace gauge.
     if !(gauge == 0)
+        @info "Gauging..."
         u, s, v = wtg(u, s, v, t_metric; ξ=ξ, test=false)
+        @info "...done."
 
         if !(gauge == 1)
             tested = wtg_test(u, s, v, t_metric)
@@ -83,8 +81,8 @@ function fetstep(
     truncrightbond!(new_pepo_left, q_left, u * sqrt(s))
     truncleftbond!(new_pepo_right, q_right, sqrt(s) * v)
 
-    # Return updated sites
-    return normalize(new_pepo_left), normalize(new_pepo_right)
+    # Return updated sites and bond matrix. 
+    return normalize(new_pepo_left), normalize(new_pepo_right), convert(Array, s)
 end
 
 function truncrightbond!(p, q, u)

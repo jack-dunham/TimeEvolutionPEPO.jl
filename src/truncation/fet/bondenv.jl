@@ -1,6 +1,6 @@
-const TruncationMetric{Nx,Ny,D<:AbsTen{2,2}} = UnitCell{TruncMetric,Nx,Ny,D}
+const TruncationMetric{Nx,Ny,D<:AbsTen{2,2}} = OnUnitCell{TruncMetric,Nx,Ny,D}
 
-TruncationMetric(L::LatticeStyle, Y::AbstractMatrix) = Lattice(TruncMetric(), L, Y)
+TruncationMetric(L::AbstractLattice, Y::AbstractMatrix) = OnLattice(TruncMetric(), L, Y)
 
 @doc raw"""
     truncmetric(state::Union{AbstractBoundaryState, AbstractNeighbourhoodState})
@@ -302,7 +302,7 @@ function hilbertschmidt(
 end
 hilbertschmidt(p::TensorMap) = hilbertschmidt(p, p')
 
-function hilbertschmidt(P::Lattice{L}) where {L}
+function hilbertschmidt(P::OnLattice{L}) where {L}
     hs = hilbertschmidt.(P)
     return convertstyle(MPO, merge_hilbertschmidt_bonds.(hs))
 end

@@ -1,13 +1,13 @@
-const AbstractMatrixProductOperator{L,M<:AbsTen{2,2}} = AbstractLattice{MPO,L,M}
+const AbstractMatrixProductOperator{L,M<:AbsTen{2,2}} = AbstractOnLattice{MPO,L,M}
 const AbstractMPO = AbstractMatrixProductOperator
 
-const MatrixProductOperator{L<:LatticeStyle,M<:AbsTen{2,2}} = Lattice{MPO,L,M}
+const MatrixProductOperator{L<:AbstractLattice,M<:AbsTen{2,2}} = OnLattice{MPO,L,M}
 
-const InfiniteMatrixProductOperator{Nx,Ny,M<:AbsTen{2,2}} = UnitCell{MPO,Nx,Ny,M}
+const InfiniteMatrixProductOperator{Nx,Ny,M<:AbsTen{2,2}} = OnUnitCell{MPO,Nx,Ny,M}
 const InfiniteMPO = InfiniteMatrixProductOperator
 
-function MatrixProductOperator(l::LatticeStyle, m)
-    return Lattice(MPO(), l, m)
+function MatrixProductOperator(l::AbstractLattice, m)
+    return OnLattice(MPO(), l, m)
 end
 
 function InfiniteMatrixProductOperator{Nx,Ny}(m) where {Nx,Ny}

@@ -1,23 +1,95 @@
 abstract type AbstractSimulation{TruncAlg<:AbstractTruncationAlgorithm} end
 
-struct TimeEvolutionSimulation{TruncAlg,P<:AbstractPEPO,L<:AbstractSuperOperator} <:
+# function initsimulation(
+#     ::Type{<:AbstractSimulation},
+#     size::HilbertSpace,
+#     model::Model,
+#     initialstate,
+#     # Simulation specific parameters
+#     numsteps=100,
+#     timestep=0.1,
+#     d=BondSpace(size, ℂ^2), # Either IndexSpace, Matrix{IndexSpace}
+#     D=ℂ^2, # Either an IndexSpace, Tuple{IndexSpace}, Matrix{Tuple{IndexSpace}}
+#     initialstate=[1, 0, 0],
+#     truncalg=FET{VUMPS},
+# ) end
+
+struct TimeEvolution{TruncAlg,P<:AbstractPEPO,L<:AbstractSuperOperator} <:
        AbstractSimulation{TruncAlg}
+    # Necessary
     state::P
     liouvillian::L
-    duration::Float64
-    numsteps::Int
-    truncalg::TruncAlg # one of SU, FET, or NTU. 
-    initialstate::P
+    # Have defaults
+    timestep::Float64       # Timestep
+    numsteps::Int           # Number of time steps.
+    tol::Float64
+    truncalg::TruncAlg      # one of SU, FET, or NTU. 
+    initialstate::P         # Initial state
+    # Simulation agnostic
+    info::ConvergenceInfo   # Information about convergence.
+    # 0: Save nothing
+    # 1: Save just the convergence information at each time step
+    # 2: Save just the quantum state at each time step 
+    # 3: Save both the quantum state and the convergence info at each time step
+    save::Int
+    outfile::String
+    outdir::String
 end
 
-function simulate!(sim::TimeEvolutionSimulation)
-    t = sim.duration
+function TimeEvolution(
+    state,
+    liouvillian;
+    #KWARGS
+    timestep=0.01,
+    numsteps=100,
+    tol=0.0,
+    truncalg=SU(),
+    kwargs...,
+)
+    return TimeEvolution(
+        state, liouvillian, timestep, numsteps, tol, truncalg, state; kwargs...
+    )
+end
+
+function (::Type{Sim})(
+    vargs...; save=0, outfile="", outdir=pwd()
+) where {TruncAlg,Sim<:AbstractSimulation{<:TruncAlg}}
+    return Sim(vargs..., ConvergenceInfo(), save, outfile, outdir)
+end
+
+# function initsimulation(
+#     ::Type{TimeEvolutionSimulation},
+#     initialstate,
+#     liouvillian,
+#     timestep::Float64,
+#     numsteps::Int,
+#     truncalg::TruncAlg;
+#     save::Int=0,
+#     outfile::String="",
+#     outdir::String=pwd(),
+# )
+#     rv = TimeEvolutionSimulation(
+#         initialstate,
+#         liouvillian,
+#         timestep,
+#         numsteps,
+#         truncalg,
+#         initialstate,
+#         ConvergenceInfo(),
+#         save,
+#         outfile,
+#     )
+#     return rv
+# end
+
+function simulate!(sim::TimeEvolution)
+    τ = sim.timestep
     n = sim.numsteps
     P = sim.state
     L = sim.liouvillian
     alg = sim.truncalg
+    info = sim.info
 
-    τ = t / n # Calculate the trotter timestep.
     # Op = exp.(τ .* L) # Construct the time evolution operator from the semi-group generator.
 
     Lx = L.x
@@ -28,7 +100,7 @@ function simulate!(sim::TimeEvolutionSimulation)
 
     propagate!(P, Op_x, Op_y, n, alg)
 
-    return P
+    return sim
 end
 
 function propagate!(P, Op_x, Op_y, n, alg::FET{Alg}) where {Alg}
@@ -41,10 +113,17 @@ function propagate!(P, Op_x, Op_y, n, alg::FET{Alg}) where {Alg}
     # Z = TensorMap(pauli[1], ℂ^2, ℂ^2)
     # Z_exp = tr.(Ref(Z) .* onelocal(P))
     # @warn "Initial mag: $((Z_exp))"
+
+    Nx, Ny = size(P)
+
+    S_x = Matrix{Matrix{Float64}}(undef, Nx + 1, Ny)
+    S_y = Matrix{Matrix{Float64}}(undef, Nx + 1, Ny)
+
     # First time step.
+    @info "Trotter step 1"
     Bx_i = By_i = x -> initialise_state(Alg, x, param)
     # Apply the time evolution operator, calculate the metric, and then truncate.
-    P, Bx, By = trotterstep!(P, Op_x, Op_y, Bx_i, By_i; ξ=ξ, gauge=gauge)
+    P, Bx, By = trotterstep!(P, S_x, S_y, Op_x, Op_y, Bx_i, By_i; ξ=ξ, gauge=gauge)
 
     # Z = TensorMap(pauli[1], ℂ^2, ℂ^2)
     # Z_exp = tr.(Ref(Z) .* onelocal(P))
@@ -60,7 +139,16 @@ function propagate!(P, Op_x, Op_y, n, alg::FET{Alg}) where {Alg}
         end
 
         # Apply the time evolution operator, calculate the metric, and then truncate.
-        P, Bx, By = trotterstep!(P, Op_x, Op_y, Bx_i, By_i; ξ=ξ, gauge=gauge)
+        S_x_old = deepcopy(S_x)
+        S_y_old = deepcopy(S_y)
+
+        P, Bx, By = trotterstep!(P, S_x, S_y, Op_x, Op_y, Bx_i, By_i; ξ=ξ, gauge=gauge)
+        ϵ_x = findconvergence.(S_x, S_x_old)
+        ϵ_y = findconvergence.(S_y, S_y_old)
+
+        ϵ = max(ϵ_x..., ϵ_y...)
+
+        @info "Converged to: $ϵ"
 
         # Measure 
         X = TensorMap(pauli[1], ℂ^2, ℂ^2)
@@ -80,26 +168,32 @@ function propagate!(P, Op_x, Op_y, n, alg::FET{Alg}) where {Alg}
     return P
 end
 
-function trotterstep!(pepo, op_tuple_x, op_tuple_y, bx_i, by_i; kwargs...)
-    pepo, bx = axistrotterstep!(pepo, op_tuple_x, bx_i; kwargs...)
+function findconvergence(s, s_old)
+    return max(abs.(s .- s_old)...)
+end
+
+function trotterstep!(
+    pepo, coeffs_x, coeffs_y, op_tuple_x, op_tuple_y, bx_i, by_i; kwargs...
+)
+    pepo, bx = axistrotterstep!(pepo, coeffs_x, op_tuple_x, bx_i; kwargs...)
 
     perm = (2, 1, 3, 5, 4, 6)
     pepo = _permute.(pepo, Ref(perm))
 
-    pepo, by = axistrotterstep!(pepo, op_tuple_y, by_i; kwargs...)
+    pepo, by = axistrotterstep!(pepo, coeffs_y, op_tuple_y, by_i; kwargs...)
 
     pepo = _permute.(pepo, Ref(invperm(perm)))
 
     return pepo, bx, by
 end
 
-function axistrotterstep!(pepo, op_tuple, get_initialboundary; kwargs...)
+function axistrotterstep!(pepo, coeffs, op_tuple, get_initialboundary; kwargs...)
     pepo_hs = hilbertschmidt(pepo)
 
     boundary = get_initialboundary(pepo_hs)
     boundary = calculate!(boundary)
 
-    updatestep!(pepo, op_tuple, boundary, truncspace(codomain(pepo[1, 1])[1]))
+    updatestep!(pepo, coeffs, op_tuple, boundary, truncspace(codomain(pepo[1, 1])[1]))
 
     return pepo, boundary
 end

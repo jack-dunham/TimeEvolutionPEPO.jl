@@ -5,9 +5,10 @@ using TensorKit
 import TensorKit.IndexTuple, TensorKit.AdjointTensorMap
 using LinearAlgebra
 using KrylovKit
-using MacroTools: @forward
+using MacroTools
 using DataStructures: DefaultOrderedDict
 using TrotterMacros
+using Parameters
 
 import Base.*
 
@@ -24,7 +25,7 @@ export BondMatrix, MPS, MPO, PEPO, LeftEnv, RightEnv, TruncMetric
 # LatticeStyle
 export Infinite, Finite, Periodic, Open
 # Lattice
-export Lattice, UnitCell
+export OnLattice, OnUnitCell
 # Matrix product state
 export MatrixProductState
 export InfiniteMPS
