@@ -35,11 +35,10 @@ function blochpepo_data(a::Vector, Dw::Int, Ds::Int, De::Int, Dn::Int)
     return p
 end
 
-function blochpepo(lattice, a, westbond, southbond=westbond)
-    bonds_x = OnLattice(NotTensor(), lattice, spacematrix(lattice, westbond))
-    bonds_y = OnLattice(NotTensor(), lattice, spacematrix(lattice, southbond))
-
-    localspace = lattice.localspace
+function blochpepo(localspace, a, westbond, southbond=westbond)
+    L = latticestyle(localspace)
+    bonds_x = OnLattice(NotTensor(), L, spacematrix(L, westbond))
+    bonds_y = OnLattice(NotTensor(), L, spacematrix(L, southbond))
 
     bond_w = bonds_x
     bond_e = circshift(bonds_x, (0, -1))
@@ -50,5 +49,5 @@ function blochpepo(lattice, a, westbond, southbond=westbond)
     p_tensors = @. TensorMap(
         p_data, bond_w * bond_s * localspace, bond_e * bond_n * localspace
     )
-    return OnLattice(PEPO(), lattice, p_tensors)
+    return OnLattice(PEPO(), L, p_tensors)
 end

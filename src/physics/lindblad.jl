@@ -37,10 +37,10 @@ function SuperOperator(
     return SuperOperator(lattice, data_x_mat, data_y_mat)
 end
 
-function mats2tensors(lattice, data)
-    L = lattice
+function mats2tensors(localspace, data)
+    L = latticestyle(localspace)
     nx, ny = size(L)
-    spaces = OnLattice(NotTensor(), lattice, lattice.localspace)
+    spaces = localspace
 
     #WARN: Not type stable! Hacky...not general
     locality = Int(log(4, size(data[1, 1])[1]))

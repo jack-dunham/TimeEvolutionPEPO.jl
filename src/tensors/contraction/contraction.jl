@@ -78,10 +78,10 @@ can be one of `VUMPS`, `CTMRG`, `FPCM`, `FPCM_CTMRG`, or a user-defined algorith
 - `info::ConvergenceInfo`: information about the covergence progress of the algorithm
 - `param::BoundaryParameters`: the paramaters used in the algorithm
 """
-struct BoundaryState{Alg<:AbstractBoundary} <: AbstractBoundaryState{Alg}
-    data::Alg
+struct BoundaryState{Boundary<:AbstractBoundary} <: AbstractBoundaryState{Alg}
+    data::Boundary
     mpo::InfiniteMPO
-    initial::Alg
+    initial::Boundary
     info::ConvergenceInfo
     param::BoundaryParameters
 end

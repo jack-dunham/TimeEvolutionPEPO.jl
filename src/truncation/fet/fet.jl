@@ -1,4 +1,4 @@
-struct FET{Alg<:AbstractBoundary} <: AbstractTruncationAlgorithm
+struct FET{Alg<:AbstractBoundary} <: AbstractTruncationScheme
     boundary::BoundaryParameters
     gauge::Int # 0 -> no gauge fixing, 1 ->  gauge fixing, no testing 2 -> with testing
     ξ::Float64 # correlation length

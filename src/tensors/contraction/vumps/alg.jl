@@ -372,6 +372,7 @@ function vumpsstep!(
 end
 
 function vumpsstep!(T::VUMPS, M::InfiniteMPO)
+    # Function barrier.
     return vumpsstep!(T.A, T.FL, T.FR, M)
 end
 

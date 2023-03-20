@@ -24,24 +24,40 @@ s is the bond matrix (i think)
 
 =#
 
-function wtg!(U, S, V, Y::TruncationMetric; ξ=Inf, test=false)
+# Vectorised form
+
+function wtg!(U, S, V, Y::TruncationMetric; kwargs...)
     nx, ny = size(Y)
     rx = 1:nx
     ry = 1:ny
     for x in rx, y in ry
         U[x, y], S[x, y], V[mod(x + 1, rx), y] = wtg(
-            U[x, y], S[x, y], V[mod(x + 1, rx), y], Y[x, y]; ξ=ξ, test=test
+            U[x, y], S[x, y], V[mod(x + 1, rx), y], Y[x, y]; kwargs...
         )
     end
     return U, S, V
 end
+function wtg(u, s, v, g; gauge=2)
+    if gauge == 0
+        return u, s, v
+    else
+        return _wtg(u, s, v, g; test=Bool(gauge - 1))
+    end
+end
 
-function wtg(
+rescale!(S, ξ) = S .= rescale.(S, ξ)
+function rescale(s, ξ)
+    sclm = diagm([exp(-(i - 1) / ξ) for i in 1:dim(codomain(s))])
+    sclt = TensorMap(sclm, codomain(s), domain(s))
+    s = s * sclt
+    return s
+end
+
+function _wtg(
     u::TensorMap{S,1,1}, # u[x] 
     s::TensorMap{S,1,1}, # s[x]
     v::TensorMap{S,1,1}, # v[x+1]
     γ::TensorMap{S,2,2}; # γ[x]
-    ξ=Inf,
     test=true,
 ) where {S<:IndexSpace}
     # who knows if this works
@@ -71,7 +87,6 @@ function wtg(
     @tensor γN = γm[a b; a b] # Y_ji
     γm = γm / γN
     # γold = γm
-    println("Yuv norm: ", norm(γm - γm'))
     # γm = 1 / 2 * (γm' + γm) # γm is now hermitian, so SVD gives eigen-decomposition
 
     # γmr = γm * (s ⊗ permute(s', (2,), (1,)))
@@ -91,13 +106,6 @@ function wtg(
     # sp = sqrt(dl) * ul' * s * ur * sqrt(dr)
     sp = sqrt(dl) * ul' * ur * sqrt(dr)
     vl, st, vrt = tsvd!(sp)
-
-    # Rescale the singular values.
-    if ξ != Inf
-        sclm = diagm([exp(-(i - 1) / ξ) for i in 1:dim(codomain(st))])
-        sclt = TensorMap(sclm, codomain(st), domain(st))
-        st = st * sclt
-    end
 
     # x = vl' * sqrt(dl) * ul' 
     # y = ur * sqrt(dr) * vrt'
@@ -119,7 +127,7 @@ function wtg(
         end
     end
 
-    return un, st, vn
+    return un, normalize(st), vn
 
     #### this is an approach for complex space
     # eigr = eigh(γm; sortby = x -> -abs(x))

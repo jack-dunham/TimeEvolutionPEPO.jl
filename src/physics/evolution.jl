@@ -1,4 +1,4 @@
-abstract type AbstractSimulation{TruncAlg<:AbstractTruncationAlgorithm} end
+abstract type AbstractSimulation{TruncAlg<:AbstractTruncationScheme} end
 
 # function initsimulation(
 #     ::Type{<:AbstractSimulation},
@@ -23,7 +23,7 @@ struct TimeEvolution{TruncAlg,P<:AbstractPEPO,L<:AbstractSuperOperator} <:
     timestep::Float64       # Timestep
     numsteps::Int           # Number of time steps.
     tol::Float64
-    truncalg::TruncAlg      # one of SU, FET, or NTU. 
+    truncalg::TruncAlg      # one of SU, FET, or CLU
     initialstate::P         # Initial state
     # Simulation agnostic
     info::ConvergenceInfo   # Information about convergence.
@@ -98,12 +98,102 @@ function simulate!(sim::TimeEvolution)
     Op_x = @. twolocal_decompose(exp(τ * Lx))
     Op_y = @. twolocal_decompose(exp(τ * Ly))
 
-    propagate!(P, Op_x, Op_y, n, alg)
+    Nx, Ny = size(P)
 
-    return sim
+    if Nx == 1 && Ny == 1
+        twosite_lattice = Infinite{2,2}()
+        P = OnLattice(tensorstyle(P), twosite_lattice, P[1, 1])
+        Nx = Ny = 2
+    end
+
+    out = propagate!(P, Op_x, Op_y, n, alg)
+
+    return out
 end
 
+function propagate!(P, Op_x, Op_y, n, alg::CLU{NTU})
+    # Unroll algorithm parameters
+    gauge = alg.gauge
+    ξ = alg.ξ
+
+    Bx = By = initialise_state(NTU, P)
+
+    out = _propagate!(P, Op_x, Op_y, Bx, By, n; gauge=gauge, ξ=ξ)
+    return out
+end
 function propagate!(P, Op_x, Op_y, n, alg::FET{Alg}) where {Alg}
+    # Unroll algorithm parameters
+    gauge = alg.gauge
+    ξ = alg.ξ
+    recycle = alg.recycle   # Whether to recycle the metric
+    param = alg.boundary    # Parameters of the boundary algorithm
+
+    # Get the initial FET boundary
+    Bx = By = initialise_state(Alg, hilbertschmidt(P), param)
+
+    out = _propagate!(P, Op_x, Op_y, Bx, By, n; recycle=recycle, gauge=gauge, ξ=ξ)
+
+    return out
+end
+
+function _propagate!(P, Op_x, Op_y, Bx, By, n; kwargs...)
+    Nx, Ny = size(P)
+
+    S_x = Matrix{Matrix{Float64}}(undef, Nx, Ny)
+    S_y = Matrix{Matrix{Float64}}(undef, Nx, Ny)
+
+    @info "Trotter step: 1"
+    P, Bx, By = trotterstep!(P, S_x, S_y, Op_x, Op_y, Bx, By; init=true, kwargs...)
+
+    P0 = onelocal(P)
+
+    X = TensorMap(pauli[1], ℂ^2, ℂ^2)
+    X_exp = tr.(Ref(X) .* P0)
+    @warn "X: $((X_exp))"
+
+    Y = TensorMap(pauli[2], ℂ^2, ℂ^2)
+    Y_exp = tr.(Ref(Y) .* P0)
+    @warn "Y: $((Y_exp))"
+
+    Z = TensorMap(pauli[3], ℂ^2, ℂ^2)
+    Z_exp = tr.(Ref(Z) .* P0)
+    @warn "Z: $((Z_exp))"
+
+    obs_X = Vector{typeof(X_exp)}([])
+    obs_Y = Vector{typeof(Y_exp)}([])
+    obs_Z = Vector{typeof(Z_exp)}([])
+
+    append!(obs_X, Ref(X_exp))
+    append!(obs_Y, Ref(Y_exp))
+    append!(obs_Z, Ref(Z_exp))
+
+    for i in 2:n
+        @info "Trotter step: $i"
+
+        P, Bx, By = trotterstep!(P, S_x, S_y, Op_x, Op_y, Bx, By; kwargs...)
+
+        P0 = onelocal(P)
+
+        X = TensorMap(pauli[1], ℂ^2, ℂ^2)
+        X_exp = tr.(Ref(X) .* P0)
+        @warn "X: $((X_exp))"
+
+        Y = TensorMap(pauli[2], ℂ^2, ℂ^2)
+        Y_exp = tr.(Ref(Y) .* P0)
+        @warn "Y: $((Y_exp))"
+
+        Z = TensorMap(pauli[3], ℂ^2, ℂ^2)
+        Z_exp = tr.(Ref(Z) .* P0)
+        @warn "Z: $((Z_exp))"
+
+        append!(obs_X, Ref(X_exp))
+        append!(obs_Y, Ref(Y_exp))
+        append!(obs_Z, Ref(Z_exp))
+    end
+    return obs_X, obs_Y, obs_Z
+end
+
+function __propagate!(P, Op_x, Op_y, n, alg::FET{Alg}) where {Alg}
     # Unroll algorithm parameters.
     recycle = alg.recycle   # Whether to recycle the metric
     gauge = alg.gauge       # Whether to fix the gauge of the metric
@@ -116,8 +206,16 @@ function propagate!(P, Op_x, Op_y, n, alg::FET{Alg}) where {Alg}
 
     Nx, Ny = size(P)
 
-    S_x = Matrix{Matrix{Float64}}(undef, Nx + 1, Ny)
-    S_y = Matrix{Matrix{Float64}}(undef, Nx + 1, Ny)
+    if Nx == 1 && Ny == 1
+        twosite_lattice = Infinite{2,2}()
+        P = OnLattice(tensorstyle(P), twosite_lattice, P[1, 1])
+        Nx = Ny = 2
+    end
+
+    S_x = Matrix{Matrix{Float64}}(undef, Nx, Ny)
+    S_y = Matrix{Matrix{Float64}}(undef, Nx, Ny)
+
+    err = []
 
     # First time step.
     @info "Trotter step 1"
@@ -125,28 +223,41 @@ function propagate!(P, Op_x, Op_y, n, alg::FET{Alg}) where {Alg}
     # Apply the time evolution operator, calculate the metric, and then truncate.
     P, Bx, By = trotterstep!(P, S_x, S_y, Op_x, Op_y, Bx_i, By_i; ξ=ξ, gauge=gauge)
 
-    # Z = TensorMap(pauli[1], ℂ^2, ℂ^2)
-    # Z_exp = tr.(Ref(Z) .* onelocal(P))
-    # @warn "$((Z_exp))"
+    X = TensorMap(pauli[1], ℂ^2, ℂ^2)
+    X_exp = tr.(Ref(X) .* onelocal(P))
+    @warn "X: $((X_exp))"
+
+    Y = TensorMap(pauli[2], ℂ^2, ℂ^2)
+    Y_exp = tr.(Ref(Y) .* onelocal(P))
+    @warn "Y: $((Y_exp))"
+
+    Z = TensorMap(pauli[3], ℂ^2, ℂ^2)
+    Z_exp = tr.(Ref(Z) .* onelocal(P))
+    @warn "Z: $((Z_exp))"
+
+    obs_x = Vector{typeof(X_exp)}([])
+    obs_y = Vector{typeof(Y_exp)}([])
+    obs_z = Vector{typeof(Z_exp)}([])
+
+    append!(obs_x, Ref(X_exp))
+    append!(obs_y, Ref(Y_exp))
+    append!(obs_z, Ref(Z_exp))
+
     # Remaining time steps.
+
     for i in 2:(n)
         @info "Trotter step $i"
-        # If we wish to recycle the metric, set the function that returns the initial guess
-        # for the boundary to simply return the boundary of the previous time step.
-        if recycle == true
-            Bx_i = x -> initialise_state(Bx, x)
-            By_i = x -> initialise_state(By, x)
-        end
 
         # Apply the time evolution operator, calculate the metric, and then truncate.
         S_x_old = deepcopy(S_x)
         S_y_old = deepcopy(S_y)
 
-        P, Bx, By = trotterstep!(P, S_x, S_y, Op_x, Op_y, Bx_i, By_i; ξ=ξ, gauge=gauge)
-        ϵ_x = findconvergence.(S_x, S_x_old)
-        ϵ_y = findconvergence.(S_y, S_y_old)
+        P, Bx, By = trotterstep!(P, S_x, S_y, Op_x, Op_y, Bx, By; ξ=ξ, gauge=gauge)
 
-        ϵ = max(ϵ_x..., ϵ_y...)
+        # ϵ_x = findconvergence.(S_x, S_x_old)
+        # ϵ_y = findconvergence.(S_y, S_y_old)
+        # #
+        # ϵ = max(ϵ_x..., ϵ_y...)
 
         @info "Converged to: $ϵ"
 
@@ -157,15 +268,20 @@ function propagate!(P, Op_x, Op_y, n, alg::FET{Alg}) where {Alg}
 
         Y = TensorMap(pauli[2], ℂ^2, ℂ^2)
         Y_exp = tr.(Ref(Y) .* onelocal(P))
-        @warn "X: $((Y_exp))"
+        @warn "Y: $((Y_exp))"
 
         Z = TensorMap(pauli[3], ℂ^2, ℂ^2)
         Z_exp = tr.(Ref(Z) .* onelocal(P))
         @warn "Z: $((Z_exp))"
+
+        append!(obs_x, Ref(X_exp))
+        append!(obs_y, Ref(Y_exp))
+        append!(obs_z, Ref(Z_exp))
+        # append!(err, ϵ)
     end
 
     # Return the PEPO state after n applications of the operator.
-    return P
+    return obs_x, obs_y, obs_z, err
 end
 
 function findconvergence(s, s_old)
@@ -187,13 +303,25 @@ function trotterstep!(
     return pepo, bx, by
 end
 
-function axistrotterstep!(pepo, coeffs, op_tuple, get_initialboundary; kwargs...)
-    pepo_hs = hilbertschmidt(pepo)
+function axistrotterstep!(
+    pepo, coeffs, op_tuple, boundary; recycle=false, init=false, kwargs...
+)
+    # If this is the first trotterstep, then then hilbertschmidt tensor has already 
+    # been calculated, so skip it.
+    if !init
+        pepo_hs = hilbertschmidt(pepo)
+        if recycle
+            boundary = initialise_state(boundary, pepo_hs) # Get initial guess of boundary
+        else
+            boundary = randomstate(boundary, pepo_hs)
+        end
+    end
 
-    boundary = get_initialboundary(pepo_hs)
     boundary = calculate!(boundary)
 
-    updatestep!(pepo, coeffs, op_tuple, boundary, truncspace(codomain(pepo[1, 1])[1]))
+    D = codomain(pepo[1, 1])[1]
+
+    updatestep!(pepo, coeffs, op_tuple, boundary, truncspace(D); kwargs...)
 
     return pepo, boundary
 end
@@ -293,3 +421,136 @@ function _evolveright(pr, mr)
     @tensoropt pr_n[w1 w2; s k e n b] := pr[w1 s mk; e n mb] * mr[w2 b k; mb mk]
     return pr_n
 end
+
+# Update each site simultaneously, then truncate each bond simultaneously. Can be used with
+# a trivial unit cell, however requires a GULT metric. The optimisation step can be perfomed
+# on the isometries only.
+# L is a lattice of MPO's
+function siteupdate!(P, L, boundary::AbstractEnvironment; gauge=2, ξ=Inf)
+    PE = evolve(P, L)
+
+    G = metric(PE, boundary) # OnLattice
+
+    left0, right0 = isometryinit(G)
+    U, S, V = metricoptimise(left0, right0, G; EAT=false)
+
+    # Convert isometries to the weighted trace gauge if desired.
+    wtg!(U, S, V, G; gauge=gauge)
+    if !(ξ == Inf)
+        rescale!(S, ξ)
+        wtg!(U, S, V, G; gauge=gauge)
+    end
+
+    U = @. U * sqrt(S)
+    V = sqrt.(circshift(S, (0, 1))) .* V
+
+    isometryupdate!.(P, PE, U, V)
+
+    return P
+end
+
+# Update and truncate each bond separately, and in sequence. Not compatible with a trivial 
+# unit cell. Requires a LULT metric. The optimisation step can be performed on isometries,
+# or the tensors directly.
+function bondupdate!(P, L, boundary::AbstractEnvironment; kwargs...)
+    # We need to devectorise everything as bond update is sequential.
+    for y in axes(P, 2)
+        for x in axes(P, 1)
+            bondupdate!(P[x, y], P[x + 1, y], L[x, y], boundary, trunc, x, y; kwargs...)
+        end
+        # If we choose to enforce translational symmetry, then don't bother updating 
+        # mirror bonds.
+        if latticestyle(P).issymetric == true
+            for x in 1:(Nx - 1)
+                P[x, y + 1], P[x + 1, y + 1] = P[x + 1, y], P[x + 2, y]
+            end
+            break
+        end
+    end
+
+    return P
+end
+
+function bondupdate!(
+    pepo_left, pepo_right, op_tuple, boundary, trunc::TruncationScheme, x, y; ξ=Inf, gauge=2
+)
+    # Get the operators that will apply to the left and right sites
+    op_left = op_tuple[1]
+    op_right = op_tuple[2]
+
+    # Evolve the tensors
+    q_left, l = evolveleft(pepo_left, op_left)
+    r, q_right = evolveright(pepo_right, op_right)
+
+    # If doing tensor optimisation, then decompose into QL, and QR
+
+    # If doing isometry optimisation, then get initial guesses for L & R
+
+    G = metric(q_left, q_right, boundary, x, y)
+
+    opt.maxiter
+    opt.tol
+    opt.EAT
+    u, s, v = metricoptimise(l, r, G, trunc; maxiter=opt.maxiter, tol=opt.tol, EAT=opt.EAT)
+
+    u, s, v = wtg(u, s, v, G; kwargs...)
+
+    isometryupdateleft!(pepo_left, q_left, sqrt(s) * u)
+    isometryupdateright!(pepo_right, q_right, v * sqrt(s))
+
+    return pepo_left, pepo_right
+end
+
+abstract type AbstractOptimisation end
+
+# Optimise just the isometries.
+struct IsometryOptimisation <: AbstractOptimisation
+    maxiter::Int
+    tol::Float64
+end
+
+# Optimise the reduced tensors as isometries. 
+struct TensorOptimisation <: AbstractOptimisation
+    maxiter::Int
+    tol::Float64
+    EAT::Bool
+end
+
+function sequentialoptimise(alg::AbstractOptimisation, a, b, boundary, x, y)
+    return alg(a, b, boundary, x, y)
+end
+function paralleloptimise(PE, boundary, alg::IsometryOptimisation)
+    return alg()
+end
+
+function (alg::IsometryOptimisation)(args...)
+    G = metric(args)
+    left0, right0 = isometryinit(G)
+    U, S, V = metricoptimise(left0, right0, G; EAT=false)
+    return U, S, V
+end
+
+# Only works in sequence
+function (alg::TensorOptimisation)(A, B, boundary, x, y)
+    QL, left0 = leftrankreduce(A)
+    right0, QR = rightrankreduce(B)
+    G = metric(QL, QR, boundary, x, y)
+    U, S, V = metricoptimise(left0, right0, G; alg.kwargs...)
+    return U, S, V
+end
+
+struct HilbertSchmidt{TType<:AbstractTensorMap}
+    P::TType
+    Q::TType
+end
+
+struct Trace{TType<:AbstractTensorMap}
+    T::TType
+end
+
+# function metric(P::PEPO, boundary::AbstractBoundary) end
+# function metric(P1, P2, boundary::AbstractBoundary) end
+
+# Returns an initalised boundary. Use `calculate!` to calculate the boundary.
+# Returns an environment state 
+function initenvironment(boundarytype::AbstractEnvironment, P) end
