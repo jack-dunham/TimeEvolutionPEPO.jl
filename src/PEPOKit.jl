@@ -19,43 +19,47 @@ export cj, conjugate
 
 export σ0, σ1, σ2, σ3, σp, σm, pauli
 
-# TensorStyle
-export Generic, NotTensor
-export BondMatrix, MPS, MPO, PEPO, LeftEnv, RightEnv, TruncMetric
 # LatticeStyle
 export Infinite, Finite, Periodic, Open
 # Lattice
+export Lattice
 export OnLattice, OnUnitCell
 # Matrix product state
 export MatrixProductState
-export InfiniteMPS
+export MPS
 # Matrix product Operator
-export MatrixProductOperator
-export InfiniteMPO
-export MultilineInfiniteMPS
+export MPS, SingleMPS
 # Environments
-export LeftEnvironment, RightEnvironment
+export FixedPoints
 
 #generic 
 include("utils.jl")
 include("linalg.jl")
-include("tensorlattice.jl")
-#tensors
-include("mpo.jl")
-include("mps.jl")
-include("states/states.jl")
-include("environments.jl")
-include("transfermatrix.jl") # What is this for? Fixed points?
-# include("symmetrise.jl")
+include("abstractlatticelike.jl")
+include("lattice.jl")
+include("onlattice.jl")
+include("convergenceinfo.jl")
+# MPS
+include("mps/mps.jl")
+include("mps/gauge.jl")
+#
 
-#algorthims
-include("tensors/tensors.jl")
-include("truncation/truncation.jl")
+include("physics/trace.jl")
 
-include("gauge.jl")
+# CONTRACTION
+include("contraction/abstractcontraction.jl")
+## BOUNDARY ALGORITHMS
+include("contraction/boundaries/boundary.jl")
+### VUMPS
+include("contraction/boundaries/vumps/fixedpoints.jl")
+include("contraction/boundaries/vumps/vumps.jl")
+include("contraction/boundaries/vumps/transfermatrix.jl")
+### CTMRG
+include("contraction/boundaries/ctmrg/ctmrg.jl")
+include("contraction/boundaries/ctmrg/init.jl")
+include("contraction/boundaries/ctmrg/tensormacros.jl")
 
-#physics api
-include("physics/physics.jl")
+# include("truncation/truncation.jl")
 
 #models
 include("models/models.jl")
