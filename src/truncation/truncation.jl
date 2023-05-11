@@ -16,14 +16,22 @@ end
     EAT::Integer = 0
 end
 
+struct TruncationIsometries{T<:AbsTen{1,1}}
+    u::T
+    s::T
+    v::T
+end
+
 # UPDATE SCHEMES
 
 abstract type AbstractUpdateScheme end
 
+# LULT: Update according to a metric generated from the state pre-evolution
 @with_kw struct LULT <: AbstractUpdateScheme
     optscheme::AbstractOptimisationScheme = TensorOptimisation()
 end
 
+# LULT: Update according to a metric generated from the state post-evolution.
 @with_kw struct GULT <: AbstractUpdateScheme
     optscheme::IsometryOptimisation = IsometryOptimisation()
 end
@@ -48,6 +56,3 @@ end
     gauge::Bool = true
     ξ::Float64 = Inf
 end
-
-include("fet/fet.jl")
-include("clu/clu.jl")
