@@ -26,25 +26,6 @@ s is the bond matrix (i think)
 
 # Vectorised form
 
-function wtg!(U, S, V, Y::TruncationMetric; kwargs...)
-    nx, ny = size(Y)
-    rx = 1:nx
-    ry = 1:ny
-    for x in rx, y in ry
-        U[x, y], S[x, y], V[mod(x + 1, rx), y] = wtg(
-            U[x, y], S[x, y], V[mod(x + 1, rx), y], Y[x, y]; kwargs...
-        )
-    end
-    return U, S, V
-end
-function wtg(u, s, v, g; gauge=2)
-    if gauge == 0
-        return u, s, v
-    else
-        return _wtg(u, s, v, g; test=Bool(gauge - 1))
-    end
-end
-
 rescale!(S, ξ) = S .= rescale.(S, ξ)
 function rescale(s, ξ)
     sclm = diagm([exp(-(i - 1) / ξ) for i in 1:dim(codomain(s))])
@@ -53,29 +34,31 @@ function rescale(s, ξ)
     return s
 end
 
-function _wtg(
-    u::TensorMap{S,1,1}, # u[x] 
-    s::TensorMap{S,1,1}, # s[x]
-    v::TensorMap{S,1,1}, # v[x+1]
+wtg!(iso, metric, ::Val{0})) = iso, metric
+wtg!(iso, metric, ::Val{1})) = wtg!(iso.u,iso.s,iso.v,metric)
+function wtg!(
+    u0::TensorMap{S,1,1}, # u[x] 
+    s0::TensorMap{S,1,1}, # s[x]
+    v0::TensorMap{S,1,1}, # v[x+1]
     γ::TensorMap{S,2,2}; # γ[x]
     test=true,
 ) where {S<:IndexSpace}
     # who knows if this works
     if test == true
-        skip = wtg_test(u, s, v, γ)
+        skip = wtg_test(u0, s0, v0, γ)
         if skip[1] && skip[2]
             @info "Already in weighted trace gauge"
-            return u, s, v
+            return u0, s0, v0
         end
     end
 
-    u = u * sqrt(s)
-    v = sqrt(s) * v
+    u = u0 * sqrt(s0)
+    v = sqrt(s0) * v0
 
-    s_vals = [convert(Array, s)[i, i] for i in 1:dim(codomain(s))]
+    s_vals = [convert(Array, s0)[i, i] for i in 1:dim(codomain(s0))]
     s_min = minimum(abs.(s_vals))
 
-    s_min < 1e-14 ? (@info "Skipped gauge fixing"; return u, s, v) : nothing
+    s_min < 1e-14 ? (@info "Skipped gauge fixing"; return u0, s0, v0) : nothing
 
     # @tensoropt γi[-1 -2; -3 -4] :=
     #     γ[1 2 3 4; 5 6 7 8] * u[5 6; -3] * v[-1; 1 2] * (u')[-2; 3 4] * (v')[7 8; -4]
@@ -113,8 +96,8 @@ function _wtg(
     x = ul * 1 / sqrt(dl) * vl
     y = vrt * 1 / sqrt(dr) * ur'
 
-    un = u * x
-    vn = y * v
+    mul!(u0, u ,x)
+    mul!(v0, y, v)
 
     # Test if the metric is gauged correctly.
     if test == true
@@ -127,7 +110,7 @@ function _wtg(
         end
     end
 
-    return un, normalize(st), vn
+    return u0, copy!(s0, normalize(st)), v0
 
     #### this is an approach for complex space
     # eigr = eigh(γm; sortby = x -> -abs(x))
