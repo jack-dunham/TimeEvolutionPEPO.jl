@@ -51,9 +51,10 @@ include("contraction/abstractcontraction.jl")
 ## BOUNDARY ALGORITHMS
 include("contraction/boundaries/boundary.jl")
 ### VUMPS
+include("contraction/boundaries/vumps/tensormacros.jl")
+include("contraction/boundaries/vumps/transfermatrix.jl")
 include("contraction/boundaries/vumps/fixedpoints.jl")
 include("contraction/boundaries/vumps/vumps.jl")
-include("contraction/boundaries/vumps/transfermatrix.jl")
 ### CTMRG
 include("contraction/boundaries/ctmrg/ctmrg.jl")
 include("contraction/boundaries/ctmrg/init.jl")
