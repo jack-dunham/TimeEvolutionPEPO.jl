@@ -186,7 +186,7 @@ find_lattice(args::Tuple) = find_lattice(find_lattice(args[1]), Base.tail(args))
 find_lattice(x) = x
 find_lattice(::Tuple{}) = nothing
 find_lattice(a::AbstractLatticeLike, rest) = a
-# find_lattice(a::Base.Broadcast.Extruded{<:AbstractLatticeLike}, rest) = a.x #?
+find_lattice(a::Base.Broadcast.Extruded{<:AbstractLatticeLike}, rest) = a.x #?
 find_lattice(::Any, rest) = find_lattice(rest)
 
 function Base.hcat(
