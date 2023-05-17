@@ -1,46 +1,27 @@
-abstract type AbstractBulkTensor end
+abstract type AbstractBulkTensors end
 
-struct HilbertSchmidt{PType<:AbsTen{2,4}} <: AbstractBulkTensor
-    data::PType
+struct HilbertSchmidt{Lat,PType<:AbsTen{2,4}} <: AbstractBulkTensors
+    data::OnLattice{Lat,PType,Matrix{PType}}
 end
 
-struct Trace{PType<:AbsTen{2,4}} <: AbstractBulkTensor
-    data::PType
+struct Trace{Lat,PType<:AbsTen{2,4}} <: AbstractBulkTensors
+    data::OnLattice{Lat,PType,Matrix{PType}}
 end
 
-const ContractableTensor = Union{AbstractBulkTensor,AbsTen{0,4}}
-const ContractableTensors{L} = OnLattice{L,<:ContractableTensor}
+const ContractableTensor = Union{AbsTen{2,4},AbsTen{0,4}}
+const ContractableTensors = OnLattice{<:AbstractLattice,<:ContractableTensor}
 
-gettensor(bulk_tensor::AbstractBulkTensor) = bulk_tensor.data
+const ContractableObjects = Union{
+    AbstractBulkTensors,OnLattice{<:AbstractLattice,<:ContractableTensor}
+}
 
-function Base.convert(
-    ::Type{T}, bulk_tensor::AbstractBulkTensor
-) where {T<:AbstractTensorMap}
-    return convert(T, gettensor(bulk_tensor))
-end
-# TODO: potentially combine these, but would require type param in AsbtractBulkTensor
-function Base.convert(::Type{<:HilbertSchmidt{<:TType}}, tensor::AbsTen{2,4}) where {TType}
-    return HilbertSchmidt(convert(TType, tensor))
-end
-function Base.convert(::Type{<:Trace{<:TType}}, tensor::AbsTen{2,4}) where {TType}
-    return Trace(convert(TType, tensor))
-end
+gettensors(bulk_tensor::AbstractBulkTensors) = bulk_tensor.data
 
-function Base.similar(bulk_tensor::T) where {T<:AbstractBulkTensor}
-    return convert(T, similar(gettensor(bulk_tensor)))
-end
+detrace(trace::Trace) = contractphysical.(gettensors(trace))
+detrace(hilbert::HilbertSchmidt) = gettensors(hilbert)
+detrace(x) = x
 
-MacroTools.@forward AbstractBulkTensor.data TensorKit.codomain,
-TensorKit.domain,
-TensorKit.space
-
-contractphysical_maybe(bulk_tensor::Trace) = contractphysical(bulk_tensor)
-contractphysical_maybe(bulk_tensor::AbsTen{0,4}) = bulk_tensor
-contractphysical_maybe(bulk_tensor::AbsTen{2,4}) = bulk_tensor
-contractphysical_maybe(bulk_tensor::HilbertSchmidt) = convert(TensorMap, bulk_tensor)
-
-function contractphysical(traceobj::Trace)
-    tsrc = traceobj.data
+function contractphysical(tsrc::AbsTen{0,4})
     virtual_space = domain(tsrc)
     tdst = similar(tsrc, one(virtual_space), virtual_space)
     return contractphysical!(tdst, tsrc)
@@ -57,7 +38,7 @@ function contractphysical!(tdst::AbsTen{0,4}, tsrc::AbsTen{2,4})
     return tdst
 end
 
-function contractphysical_mergevirtual(traceobj::HilbertSchmidt)
+function contractphysical_mergevirtual(tsrc::AbsTen{2,4})
     t1 = traceobj.data
     t2 = t1'
     return contractphysical_mergevirtual(t1, t2)
@@ -73,17 +54,16 @@ function mergevirtual(t::AbstractTensorMap{S,0,8}) where {S}
     return TensorMap(t.data, one(S), *(dom...))
 end
 
-bondspace(tensor::HilbertSchmidt, i::Int) = domain(tensor)[i] * domain(tensor)[i]'
-bondspace(tensor::Union{Trace,AbsTen{0,4}}, i::Int) = domain(tensor)[i]
-bondspaces(tensor::ContractableTensor) = (bondspace(tensor, i) for i in 1:4)
+_bondspace(tensor::AbsTen{2,4}, i::Int) = domain(tensor)[i] * domain(tensor)[i]'
+_bondspace(tensor::AbsTen{0,4}, i::Int) = domain(tensor)[i]
+_bondspaces(tensor::ContractableTensor) = (bondspace(tensor, i) for i in 1:4)
 
-function bondspaces_onlattice(onlattice::ContractableTensors)
-    return (bondspace.(onlattice, i) for i in 1:4)
+function _bondspaces(onlattice::ContractableTensors)
+    return (_bondspace.(onlattice, i) for i in 1:4)
 end
 
 swapaxes(tensor::AbsTen{0,4}) = permute(tensor, (), (2, 1, 4, 3))
 swapaxes(tensor::AbsTen{2,4}) = permute(tensor, (1, 2), (4, 3, 6, 5))
-swapaxes(tensor::T) where {T<:AbstractBulkTensor} = convert(T, swapaxes(gettensor(tensor)))
 
 invertaxes(tensor::AbsTen{0,4}) = permute(tensor, (), (3, 4, 1, 2))
 invertaxes(tensor::AbsTen{2,4}) = permute(tensor, (1, 2), (5, 6, 3, 4))
