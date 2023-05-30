@@ -1,3 +1,4 @@
+
 # Case where a bond has been updated, and we wish to renormalize environment
 function renormalize!(environment, pepo, old_bond, ::Val{1})
 

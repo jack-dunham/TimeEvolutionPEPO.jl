@@ -1,18 +1,6 @@
-abstract type AbstractEnvironment end
+abstract type AbstractNeighbourhood end
 
-abstract type AbstractBoundary <: AbstractEnvironment end
-abstract type AbstractNeighbourhood <: AbstractEnvironment end
-
-struct VUMPS <: AbstractBoundary end
-struct CTMRG <: AbstractBoundary end
-struct FPCM <: AbstractBoundary end
-
-struct NTU <: AbstractNeighbourhood
-    T
-    B
-    LC
-    RC
-end
+const AbstractEnvironment = Union{AbstractBoundary,AbstractNeighbourhood}
 
 struct NNTU <: AbstractNeighbourhood end
 

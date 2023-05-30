@@ -53,20 +53,23 @@ end
     struct Bond
 """
 struct Bond
-    in::CartesianIndex{2}
-    out::CartesianIndex{2}
-    function Bond(in::CartesianIndex{2}, out::CartesianIndex{2})
-        if out > in
-            return new(in, out)
-        else
-            throw(
-                ArgumentError(
-                    "Outward site index $out must be greater than inward site index $in"
-                ),
-            )
-        end
-    end
+    left::CartesianIndex{2}
+    right::CartesianIndex{2}
+    # function Bond(left::CartesianIndex{2}, right::CartesianIndex{2})
+    #     if right > left
+    #         return new(left, right)
+    #     else
+    #         throw(
+    #             ArgumentError(
+    #                 "Right/up site index $right must be greater than left/down site index $left",
+    #             ),
+    #         )
+    #     end
+    # end
 end
+
+left(b::Bond) = b.left
+right(b::Bond) = b.right
 
 @doc raw"""
     getaxis(bond::Bond)
@@ -74,21 +77,23 @@ end
 Returns the axis that `bond` lies on in a lattice.
 """
 function getaxis(bond::Bond)
-    bond_diff = bond.out - bond.in
-    if bond_diff[1] == 1
+    bond_diff = bond.right - bond.left
+    if bond_diff[2] == 0
         return 1
-    elseif bond_diff[2] == 1
+    elseif bond_diff[1] == 0
         return 2
+    else
+        throw(ErrorException("Impossible `else` reached!, Bond diff: $bond_diff"))
     end
 end
 
 function nextbond(bond::Bond)
-    bond_diff = bond.out - bond.in
-    return Bond(bond.out, bond.out + bond_diff)
+    bond_diff = bond.right - bond.left
+    return Bond(bond.right, bond.right + bond_diff)
 end
 
 function Base.show(io::IO, ::MIME"text/plain", bond::Bond)
-    print("$(Tuple(bond.in)) ⟵⟶ $(Tuple(bond.out)) ")
+    print("$(Tuple(bond.left)) ⟵⟶ $(Tuple(bond.right)) ")
     return nothing
 end
 
@@ -100,10 +105,7 @@ function getsite(lattice::AbstractLatticeLike, i...)
 end
 
 function Base.getindex(lattice::AbstractLatticeLike, bond::Bond)
-    # Get the matrix of data such that we can ignore custom indexing
-    # and index matrix directly.
-    mat = getmatrix(lattice)
-    @inbounds rv = mat[bond.in], mat[bond.out]
+    @inbounds rv = lattice[bond.left], lattice[bond.right]
     return rv
 end
 @doc raw"""

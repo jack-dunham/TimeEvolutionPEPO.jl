@@ -93,29 +93,33 @@ function isometryinit(metric::AbstractOnLattice)
     leftright = isometryinit.(metric)
 
     left = getindex.(leftright, 1)
-    right = getindex.(leftright, 1)
+    right = getindex.(leftright, 2)
 
     return left, right
 end
 
 # Isometry update requires one to contruct initial guesses for L & R.
 function isometryinit(metric::AbsTen{2,2})
-    η_left = domain(metric)[1]
-    η_right = codomain(metric)[1]
+    η_left = domain(metric)[1]      # Upper left index
+    η_right = codomain(metric)[1]   # Upper right index
 
     left = id(η_left)
     right = id(η_right)
+
+    # left = TensorMap(rand, eltype(metric), η_left, η_left)
+    # right = TensorMap(rand, eltype(metric), η_right, η_right)
 
     return left, right
 end
 
 function metricoptimise(left, right, metric::AbstractOnLattice, trunc; kwargs...)
-    # TODO: better initialisation
+    T = promote_type(eltype(left), eltype(right), numbertype(metric))
+
     nx, ny = size(metric)
 
-    u = Matrix(undef, nx, ny)
-    v = Matrix(undef, nx, ny)
-    s = Matrix(undef, nx, ny)
+    u = Matrix{T}(undef, nx, ny)
+    v = Matrix{T}(undef, nx, ny)
+    s = Matrix{T}(undef, nx, ny)
 
     # TODO: mulithreading
     for y in axes(metric, 2)
@@ -128,34 +132,58 @@ function metricoptimise(left, right, metric::AbstractOnLattice, trunc; kwargs...
     return u, s, v
 end
 
+function new_costfunc(A, B, Y, LR)
+    AB = normalize(permute(A * B, (1, 2), ()))
+    LR = normalize(LR)
+    return norm(1 - scalar(AB' * Y * LR) - scalar(LR' * Y * AB) + scalar(AB' * Y * AB))
+end
+
 # Optimise the isometries `left` and `right` with respect to `metric`.
 function metricoptimise(left, right, metric::AbsTen{2,2}, trunc; kwargs...)
+    # normalize!(left)
+    # normalize!(right)
     # Convenience
     L = left
     R = right
 
-    LR = permute(L * R, (1, 2), ())
+    LR = normalize(permute(L * R, (1, 2), ()))
 
-    # But in the appropriate matrix form for the Ritz procedure. 
+    # Put in the appropriate matrix form for the Ritz procedure. 
     Y = permute(metric, (2, 4), (3, 1))
 
-    # Check if the metric is hermitian, If not, and use SU
+    # n = Y.data[1, 1]
+    # rmul!(Y, 1 / n)
+    # Check if the metric is hermitian, If not, use SU
+
+    F0 = scalar(LR' * Y * LR)
+
     hermiticity = norm(Y - Y')
 
-    if hermiticity > 1e-8
-        @info "Environment not hermitian: using SU"
-        u, s, v = tsvd(left * right; trunc=trunc)
+    htol = 1e-10
+
+    hermiticity > htol &&
+        @warn "Metric not hermitian! non-hermiticity:  $hermiticity, tolerance $htol"
+
+    @debug "Metric normalisation (F0): $F0"
+
+    if hermiticity > htol
+        @info "Metric not hermitian: using SU"
+        u, s, v, err = tsvd(left * right; trunc=trunc)
+        @info "Truncation error: $err"
         return u, s, v
     end
 
     # Obtain the normalisation constant.
-    F0 = scalar(LR' * Y * LR)
 
-    # Symmetrise and normalise the truncation metric.
+    #Symmetrise and normalise the truncation metric.
     Y = (0.5 * (Y + Y')) / F0
 
     # Construct the cost function to measure convergence.
-    cf = (Ma, Mb) -> costfunc(Ma, Mb, Y, left, right, F0)
+    # cf = (Ma, Mb) -> metric_costfunction(Ma, Mb, Y, left, right, 1)
+    cf = (x, y) -> new_costfunc(x, y, Y, LR)
+
+    F0 = scalar(LR' * Y * LR)
+    @debug "Minimal tolerance: $(cf(L , R)). Normalisation check: $F0"
 
     # Proceed with metric optimisation.
     u, s, v = optiso(cf, L, R, Y, trunc; kwargs...)
@@ -163,14 +191,16 @@ function metricoptimise(left, right, metric::AbsTen{2,2}, trunc; kwargs...)
     return u, s, v
 end
 
-function _costfunc(Ma, Mb, g, Ra, Rb)
-    left = (Ma * Mb - Ra * Rb)'
+function _metric_costfunction(Ma, Mb, g, Ra, Rb)
+    MM = normalize(Ma * Mb)
+    RR = normalize(Ra * Rb)
+    left = (MM - RR)'
     right = left'
     @tensor err = left[b; a] * g[a b; c d] * right[c; d]
 end
 
-function costfunc(Ma, Mb, g, Ra, Rb, F0)
-    return real(sqrt(_costfunc(Ma, Mb, g, Ra, Rb) / F0))
+function metric_costfunction(Ma, Mb, g, Ra, Rb, F0)
+    return real((_metric_costfunction(Ma, Mb, g, Ra, Rb) / F0))
 end
 
 function optiso(cf, left, right, metric, trunc; EAT=false, maxiter=100)
@@ -180,8 +210,11 @@ function optiso(cf, left, right, metric, trunc; EAT=false, maxiter=100)
     R = right
 
     # The following tensor will be useful...
-    LR = permute(L * R, (1, 2), ())
+    LR = normalize(permute(L * R, (1, 2), ()))
     Y_LR = Y * LR
+
+    u_su, s_su, v_su = tsvd(L * R; trunc=trunc)
+    @debug "Simple update error: $(cf(u_su * sqrt(s_su), sqrt(s_su) * v_su))"
 
     # Perform EAT if we want to.
     if EAT
@@ -190,11 +223,12 @@ function optiso(cf, left, right, metric, trunc; EAT=false, maxiter=100)
         Ma0, Mb0 = L, R
     end
 
-    # Calculate the initial tolerance
-    ϵ0 = cf(Ma0, Mb0)
-
     # Initialise isometries for optimisation.
     u0, s0, Mb0 = tsvd(Ma0 * Mb0; trunc=trunc)
+
+    ϵ0 = cf(u0 * sqrt(s0), sqrt(s0) * Mb0)
+    @debug "Initial (post optional EAT) error: $ϵ0"
+    # Calculate the initial tolerance
 
     # Alias for iteration.
     u, s, Mb = u0, s0, Mb0
@@ -207,7 +241,7 @@ function optiso(cf, left, right, metric, trunc; EAT=false, maxiter=100)
     δϵ = 1.0
     ϵ = ϵ0
     print("Optimising isometries: [")
-    while !(counter > maxiter || δϵ < 1e-10)
+    while !(counter > maxiter || δϵ < 1e-14)
         ϵ_old = ϵ
 
         # Optimise for Ma with Mb fixed.
@@ -232,9 +266,10 @@ function optiso(cf, left, right, metric, trunc; EAT=false, maxiter=100)
     end
     print("]\n")
 
+    @debug "Post-optimisation error: $ϵ"
     # Return new isometries for transformation to the WTG
     if ϵ0 < ϵ
-        @info "Isometries could not be improved from a tolerance of $ϵ0"
+        @info "Isometries could not be improved from a tolerance of $ϵ0 after $counter iterations"
         return u0, s0, Mb0
     else
         @info "Isometries optimised to a tolerance of: $ϵ from $ϵ0 after $counter iterations."
@@ -243,7 +278,7 @@ function optiso(cf, left, right, metric, trunc; EAT=false, maxiter=100)
 end
 
 function optsingleiso(id_Mb, Y, Y_LR)
-    temp = id_Mb' * Y
+    # temp = id_Mb' * Y
 
     g = id_Mb' * Y * id_Mb
     j = id_Mb' * Y_LR
@@ -256,10 +291,12 @@ function optsingleiso(id_Mb, Y, Y_LR)
     return permute(Ma_max, (1,), (2,)) # , abs(ϵ)
 end
 
-function eat(L, R, g, trunc)
-    L = TensorMap(L.data, codomain(L), fuse(*(domain(L)...)))
-    R = TensorMap(R.data, fuse(*(codomain(R)...)), domain(R))
-    @tensoropt G[1 2; 3 4] := L[3; 3] * R[4; 4] * g[1 2; 3 4] * (L')[1; 1] * (R')[2; 2]
+function eat(L, R, g, trunc; ptol=1e-8)
+    # L = TensorMap(L.data, codomain(L), fuse(*(domain(L)...)))
+    # R = TensorMap(R.data, fuse(*(codomain(R)...)), domain(R))
+
+    @tensoropt G[-1 -2; -3 -4] :=
+        L[3; -3] * R[-4; 4] * g[1 2; 3 4] * (L')[-1; 1] * (R')[2; -2]
 
     Ga, _, Gb = tsvd(G, (3, 1), (4, 2); trunc=truncdim(1))
 
@@ -274,12 +311,12 @@ function eat(L, R, g, trunc)
     Wa, λ, Wb = tsvd(sqrt(λa) * Ua * Ub * sqrt(λb); trunc=trunc)
 
     try
-        Ma = L * Ua' * 1 / sqrt(λa) * Wa * sqrt(λ)
-        Mb = sqrt(λ) * Wb * 1 / sqrt(λb) * Ub' * R
-        @info "EAT success"
+        Ma = L * Ua' * pinv(sqrt(λa); rtol=ptol) * Wa * sqrt(λ)
+        Mb = sqrt(λ) * Wb * pinv(sqrt(λb); rtol=ptol) * Ub' * R
+        @debug "EAT success"
         return Ma, Mb
     catch
-        @info "EAT failed"
+        @debug "EAT failed"
         return L, R
     end
 end
@@ -403,21 +440,21 @@ end
 # end
 
 # p(x) u(x) s(x) v(x+1) p(x + 1) u(x+1) ...
-function optimise_isometries(Y::TruncationMetric, truncspace)
-    nx, ny = size(Y)
-    rx = 1:nx
-    ry = 1:ny
-
-    u = Matrix(undef, nx, ny)
-    v = Matrix(undef, nx, ny)
-    s = Matrix(undef, nx, ny)
-
-    for x in rx, y in ry
-        u[x, y], s[x, y], v[mod(x + 1, rx), y] = optimise_isometries(Y[x, y], truncspace)
-        # u(x) <- u(x) * √s(x) 
-        # v(x + 1) <- √s(x) * v(x+1)
-        # u[x,y] = u[x,y] * sqrt(s[x,y])
-        # v[mod(x + 1,rx),y] = sqrt(s[x,y]) * v[mod(x + 1,rx),y] 
-    end
-    return u, s, v
-end
+# function optimise_isometries(Y::TruncationMetric, truncspace)
+#     nx, ny = size(Y)
+#     rx = 1:nx
+#     ry = 1:ny
+#
+#     u = Matrix(undef, nx, ny)
+#     v = Matrix(undef, nx, ny)
+#     s = Matrix(undef, nx, ny)
+#
+#     for x in rx, y in ry
+#         u[x, y], s[x, y], v[mod(x + 1, rx), y] = optimise_isometries(Y[x, y], truncspace)
+#         # u(x) <- u(x) * √s(x) 
+#         # v(x + 1) <- √s(x) * v(x+1)
+#         # u[x,y] = u[x,y] * sqrt(s[x,y])
+#         # v[mod(x + 1,rx),y] = sqrt(s[x,y]) * v[mod(x + 1,rx),y] 
+#     end
+#     return u, s, v
+# end

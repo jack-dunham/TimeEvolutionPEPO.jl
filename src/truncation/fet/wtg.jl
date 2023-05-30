@@ -34,8 +34,9 @@ function rescale(s, ξ)
     return s
 end
 
-wtg!(iso, metric, ::Val{0})) = iso, metric
-wtg!(iso, metric, ::Val{1})) = wtg!(iso.u,iso.s,iso.v,metric)
+wtg!(iso, metric, ::Val{0}) = iso, metric
+wtg!(iso, metric, ::Val{1}) = wtg!(iso.u, iso.s, iso.v, metric)
+
 function wtg!(
     u0::TensorMap{S,1,1}, # u[x] 
     s0::TensorMap{S,1,1}, # s[x]
@@ -96,12 +97,12 @@ function wtg!(
     x = ul * 1 / sqrt(dl) * vl
     y = vrt * 1 / sqrt(dr) * ur'
 
-    mul!(u0, u ,x)
+    mul!(u0, u, x)
     mul!(v0, y, v)
 
     # Test if the metric is gauged correctly.
     if test == true
-        left, right = wtg_test(un, st, vn, γ)
+        left, right = wtg_test(u0, st, v0, γ)
         if !left
             @warn "Left gauge condition was not met"
         end

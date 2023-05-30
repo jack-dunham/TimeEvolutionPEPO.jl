@@ -9,7 +9,7 @@ is of type `S`
 """
 struct Lattice{Nx,Ny,L,S<:IndexSpace} <: AbstractLattice{Nx,Ny,L,S}
     space::Matrix{S}
-    issymetric::Bool
+    issymmetric::Bool
 end
 function Lattice{Nx,Ny,B}(space::Matrix{S}, sym::Bool) where {Nx,Ny,B,S<:IndexSpace}
     return Lattice{Nx,Ny,B,S}(space, sym)
@@ -59,6 +59,8 @@ end
 struct TransposedLattice{Ny,Nx,L,S} <: AbstractLattice{Ny,Nx,L,S}
     parent::Lattice{Nx,Ny,L,S}
 end
+
+issymmetric(l::TransposedLattice) = issymmetric(l.parent)
 
 LinearAlgebra.transpose(l::Lattice) = TransposedLattice(l)
 LinearAlgebra.transpose(l::TransposedLattice) = l.parent
@@ -192,18 +194,32 @@ square lattice.
 """
 getbonds(L::AbstractLattice) = _getbonds(boundarystyle(L), L)
 
+# function _getbonds(::Periodic, L::AbstractLattice)
+#     Nx, Ny = size(L)
+#     horizontal = Matrix{Bond}(undef, Nx, Ny)
+#     vertical = Matrix{Bond}(undef, Ny, Nx)
+#     rx = 1:Nx
+#     ry = 1:Ny
+#     for y in ry
+#         for x in rx
+#             horizontal[x, y] = Bond(CartesianIndex(x, y), CartesianIndex(mod(x + 1, rx), y))
+#             # Why is this transposed?
+#             vertical[y, x] = Bond(CartesianIndex(x, y), CartesianIndex(x, mod(y + 1, ry)))
+#         end
+#     end
+#     return horizontal, vertical
+# end
+
 function _getbonds(::Periodic, L::AbstractLattice)
     Nx, Ny = size(L)
-    horizontal = Matrix{Bond}(undef, Nx, Ny)
-    vertical = Matrix{Bond}(undef, Ny, Nx)
     rx = 1:Nx
     ry = 1:Ny
-    for y in ry
-        for x in rx
-            horizontal[x, y] = Bond(CartesianIndex(x, y), CartesianIndex(mod(x + 1, rx), y))
-            # Why is this transposed?
-            vertical[y, x] = Bond(CartesianIndex(x, y), CartesianIndex(x, mod(y + 1, ry)))
-        end
-    end
-    return horizontal, vertical
+
+    incr = CartesianIndex((1, 0))
+
+    func = x -> Bond(x, CartesianIndex(mod.(Tuple(x + incr), (rx, ry))))
+
+    bonds = map(func, eachindex(L))
+
+    return bonds
 end

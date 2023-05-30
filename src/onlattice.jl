@@ -53,6 +53,7 @@ latticetype(::Type{<:AbstractOnLattice{L}}) where {L} = L
 ## Forward `Lattice` methods to `OnLattice`
 latticestyle(l::AbstractOnLattice) = latticestyle(lattice(l))
 boundarystyle(l::AbstractOnLattice) = boundarystyle(lattice(l))
+issymmetric(l::AbstractOnLattice) = issymmetric(lattice(l))
 
 ## Indexing and iteration
 # We index based on the underlying lattice. 
@@ -69,8 +70,8 @@ function Base.setindex!(M::AbstractOnLattice, v, i::Vararg{Int,2})
     return M
 end
 function Base.setindex!(M::AbstractOnLattice, v::NTuple{2}, bond::Bond)
-    getmatrix(M)[bond.in] = v[1]
-    getmatrix(M)[bond.out] = v[2]
+    M[bond.left] = v[1]
+    M[bond.right] = v[2]
     return M
 end
 function Base.iterate(M::AbstractOnLattice, state=1)
@@ -168,6 +169,17 @@ function Base.BroadcastStyle(::Type{LType}) where {LType<:AbstractLattice}
     return LatticeBroadcast{LType}()
 end
 
+function Base.BroadcastStyle(
+    l::LatticeBroadcast{<:Lattice}, ::LatticeBroadcast{<:TransposedLattice}
+)
+    return l
+end
+function Base.BroadcastStyle(
+    ::LatticeBroadcast{<:TransposedLattice}, l::LatticeBroadcast{<:Lattice}
+)
+    return l
+end
+
 function Base.similar(
     bc::Broadcast.Broadcasted{<:LatticeBroadcast{LType}}, ::Type{ElType}
 ) where {LType,ElType}
@@ -213,6 +225,7 @@ end
 #     return OnLattice(L, hcat(a.data, b.data))
 # end
 
+# lazy transpose
 LinearAlgebra.transpose(L::OnLattice) = OnLattice(transpose(lattice(L)), getmatrix(L))
 
 @doc raw"""
