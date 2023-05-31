@@ -1,73 +1,172 @@
-function trotterevolution!(pepo::PEPO; order::Int=2)
-    tau = tau / order
-    # Get the dynamical map from the liouvillian.
-    operator = dynamicalmap(liouvillian, tau)
-    environment = getenvironment(HilbertSchmidt(pepo), alg)
+struct SequentialUpdate end
+struct ParallelUpdate end
+
+function initevolution(
+    pepo::AbstractPEPO, map, updatescheme::SequentialUpdate=SequentialUpdate()
+)
+    function useful_f(x, l, r)
+        D = domain(x)
+        lη = domain(l)
+        rη = domain(r)
+        left = TensorMap(
+            undef,
+            promote_type(eltype(x), eltype(l)),
+            codomain(x),
+            fuse(D[1] * lη) * D[2] * D[3] * D[4],
+        )
+        right = TensorMap(
+            undef,
+            promote_type(eltype(x), eltype(r)),
+            codomain(x),
+            D[1] * D[2] * fuse(D[3] * rη)' * D[4],
+        )
+        return left, right
+    end
+
+    evolved = useful_f.(getstate(pepo), map.left, map.right)
+
+    first_bond = Ref(Bond(CartesianIndex(1, 1), CartesianIndex(2, 1)))
+
+    return LocallyEvolvingPEPO(pepo, evolved, first_bond, Ref(false))
+end
+function initevolution(
+    pepo::AbstractPEPO, map, updatescheme::ParallelUpdate=ParallelUpdate()
+)
+    function useful_f(x, l, r)
+        D = domain(x)
+        lη = domain(l)
+        rη = domain(r)
+        left = TensorMap(
+            undef,
+            promote_type(eltype(x), eltype(l)),
+            codomain(x),
+            fuse(D[1] * lη) * D[2] * fuse(D[3] * rη) * D[4],
+        )
+        return left, right
+    end
+
+    evolved = useful_f.(getstate(pepo), map.left, circshift(map.right, (1, 0)))
+
+    return GloballyEvolvingPEPO(pepo, evolved, Ref(false))
+end
+
+function trotterevolution!(
+    pepo::PEPO,
+    xmodel,
+    ymodel;
+    # alg::AbstractBoundaryAlgorithm=VUMPS(;
+    #     bonddim=5, verbosity=true, tol=1e-12, maxiter=200
+    # ),
+    alg=NeighbourhoodAlgorithm(),
+    updatescheme::SequentialUpdate=SequentialUpdate(),
+    numsteps=50,
+    timestep=0.1,
+    order::Int=2,
+    obsalg::AbstractBoundaryAlgorithm=VUMPS(; bonddim=5),
+    renorm::Symbol=:full,
+)
+    L = lattice(pepo)
+
+    tau = timestep / order
+
+    xpepo = pepo
+    ypepo = changeaxis(pepo)
+
+    # Get the trotter gates from the liouvillian
+    xmap = trottergates(L, xmodel, tau)
+    ymap = trottergates(L, ymodel, tau)
+
+    # Initialise pre-environments to iterate on each pepo.
+    xenv = initenvironment(HilbertSchmidt(xpepo), alg)
+    yenv = initenvironment(HilbertSchmidt(ypepo), alg)
+
+    # Enviroment for the obseverables
+    obsenv = initenvironment(Trace(pepo), obsalg)
+
+    # Calculate pre enviroments before first step
+    calculate!(xenv)
+    calculate!(yenv)
+
+    # Make pepo time-dependant
+    xpepo_td = initevolution(xpepo, xmap, updatescheme)
+    ypepo_td = initevolution(ypepo, ymap, updatescheme)
+
+    obs = Vector{Matrix{Float64}}()
 
     # Perform the trotter iteration.
-    for step in numsteps
-        trotterstep!(pepo, environment)
-        order == 1 && transpose!(pepo)
+    for step in 1:numsteps
+        println("Iteration: $step")
+        trotterstep!(xpepo_td, ypepo_td, xenv, yenv, xmap, ymap, Val(order))
 
-        # Renormalize environment according to the renormalization method:
-        # Minimal: Only when absolutely necessary,
-        # Fast: Minimal but with intermediate steps to improve environment,
-        # Full: After every bond update (most costly).
-        renormalize!(environment, pepo; renorm=2)
+        # Only if not doing full renormalization
+        if !(renorm == :full)
+            calculate!(xenv)
+            calculate!(yenv)
+        end
+
+        calculate!(obsenv)
+
+        oneloc = onelocal(pepo, obsenv; normalize=true)
+
+        magn = measure(oneloc, σ1)
+
+        push!(obs, (real.(magn)))
     end
-    return pepo
+
+    # mutation of xpepo_td and ypepo_td should have mutated pepo accordingly.
+    return obs
 end
 
 # One full cycle of the trotter evolution. That is, t -> t + τ
-function trotterstep!(environment, pepo::PEPO, ::Val{1})
-    updatestep!(pepo)
-    flipaxis!(pepo) # x -> y
+function trotterstep!(xpepo, ypepo, xenv, yenv, xmap, ymap, ::Val{1})
+    updatestep!(xpepo, xenv, xmap)
 
-    axisrenormalize!(environment, pepo; renorm=2)
+    # If possible, renormalize such that xenv -> yenv
+    #axisrenormalize!(yenv, xenv, xpepo)
+    changeaxis!(ypepo, xpepo) # x -> y
 
-    updatestep!(pepo)
-    flipaxis!(pepo) # y -> x
-    # renormalize!(environment, pepo)
+    # Update along the y-directions
+    updatestep!(ypepo, yenv, ymap)
 
-    return pepo
+    # Finally, write tensors back into xpepo
+    changeaxis!(xpepo, ypepo) # y -> x
+
+    return xpepo, ypepo
 end
-function trotterstep!(pepo::PEPO, ::Val{2})
-    # Update the PEPO
-    updatestep!(pepo)
-    flipaxis!(pepo) # x -> y
-    # Renormalization (either a fast renormalization, or a calculation of a new environment)
-    renormalize!(environment, pepo; renorm=1 + renormindex)
-    # Update again, but along a different axis.
-    updatestep!(pepo)
+# Second order trotter decomposition
+# exp(t/2 Lx) exp(t Ly) exp(t/2 Lx)
+function trotterstep!(xpepo, ypepo, xenv, yenv, xmap, ymap, ::Val{2})
+    updatestep!(xpepo, xenv, xmap)
 
-    reversed_bonds = reverse(bonds; dims=1)
+    #axisrenormalize!(yenv, xenv, xpepo)
+    changeaxis!(ypepo, xpepo)
 
-    updatestep!(pepo)
-    flipaxis!(pepo) # y -> x
-    updatestep!(pepo)
-    return pepo
-end
+    updatestep!(ypepo, yenv, ymap)
+    updatestep!(ypepo, yenv, ymap; reverse=true)
 
-function trotterloop end
+    #axisrenormalize!(xenv, yenv, ypepo)
+    changeaxis!(xpepo, ypepo)
 
-function trotterstep!(pepo::PEPO)
-    bonds = getbonds(pepo; reverse=istransposed(pepo))
-
-    _trotterstep!(pepo, bonds[1])
-
-    renormalize!(environment, pepo; renormalization=:full)
-    # Switch axis
-    transpose!(pepo)
-    _trotterstep!(pepo, bonds[2])
-
-    return pepo
+    updatestep!(xpepo, xenv, xmap; reverse=true)
+    return xpepo, ypepo
 end
 
-function _trotterstep!(pepo::PEPO, bonds) end
+function updatestep!(pepo, environment, map; kwargs...)
+    # Now we either do parallelupdate or sequentialupdate
+    sequentialupdate!(pepo, environment, map; kwargs...)
+    return pepo, environment
+end
+# function updatestep!(pepo, environment, map; kwargs...)
+#     # Now we either do parallelupdate or sequentialupdate
+#     parallelupdateupdate!(pepo, environment, map; kwargs...)
+#     return pepo, environment
+# end
 
-function parallelupdate!(pepo::PEPO, environment)
+function parallelupdate!(pepo::GloballyEvolvingPEPO, operator, environment)
     # Evolve, all sites
-    evolve!(pepo, operator)
+    pepo = evolve!(pepo, operator)
+
+    calculate!(environment)
 
     # Get isometries for each bond
     iso = optimise(pepo, environment)
@@ -78,49 +177,72 @@ function parallelupdate!(pepo::PEPO, environment)
     return pepo
 end
 
-function sequentialupdate!(pepo::PEPO, environment, axisbonds)
+# Requires atleast a 2x2 unit cell. I think?
+function sequentialupdate!(
+    pepo::LocallyEvolvingPEPO, environment, map; reverse=false, renorm=:full
+)
+    # if size(getstate(pepo)) < (2, 2)
+    #     throw(
+    #         ArgumentError(
+    #             "Sequential update only supported for lattice sizes of at least (2,2). Lattice sized provided: $(size(pepo))",
+    #         ),
+    #     )
+    # end
+
+    bonds = getbonds(lattice(pepo))
+
+    if reverse
+        axisbonds = Base.reverse(bonds)
+    else
+        axisbonds = bonds
+    end
+
     for col in eachcol(axisbonds)
         for bond in col
             # Update the states lying on the bond
-            updatebond!(pepo, environment, bond)
+            updatebond!(pepo, environment, map, bond)
 
-            # After updating a bond, we can renormalize the environment
-            renormalize!(environment, pepo, bond)
+            # Quick and dirty normalization for algorithm stabilty. Does not ensure tr(ρ) = 1
+            normalize!.(getstate(pepo))
+
+            calculate!(environment)
+
+            #renormalize!(environment, pepo; renorm=renorm)
         end
-        if issymmetric(pepo)
-            # update remaining cols
-            break
-        end
+        # if issymmetric(lattice(pepo))
+        #     # update remaining cols
+        #     break
+        # end
     end
     return pepo, environment
 end
 
-# Requires atleast a 2x2 unit cell
-function updatebond!(pepo, environment, bond; kwargs...)
-
+function updatebond!(pepo::LocallyEvolvingPEPO, environment, operator, bond; kwargs...)
     # Evolve the sites on the bond given by `bond` according to `operator`.
     evolve!(pepo, operator, bond)
 
     # Find the optimial truncation isometries.
-    iso = optimise(pepo, environment, bond; kwargs...)
+    isometries = optimise(pepo, environment, bond; kwargs...)
 
-    # Truncate the the bond `bond` according to isometries `iso`.
-    truncate!(pepo, iso, bond)
+    # Truncate the pepo according to iso
+    truncate!(pepo, isometries)
 
     return pepo
 end
 
 # Vectorised 
-function optimise(pepo, environment; kwargs...)
-    axisbonds = getbonds(pepo)[1]
-    iso = optimise.(pepo, environment, axisbonds; kwargs...)
+function optimise(pepo_evolved, environment; kwargs...)
+    axisbonds = getbonds(pepo_evolved)[1]
+
+    iso = optimise.(pepo_evolved, environment, axisbonds; kwargs...)
     return iso
 end
 
 # Scalar
-function optimise(pepo, environment, bond::Bond; gauge=true, alg=IsometryOptimisation())
+function optimise(pepo, environment, bond::Bond; xi=Inf, gauge=1, alg=TensorOptimisation())
     # Get the isometries and the truncation metric generated by `alg`.
-    iso, metric = alg(pepo, environment, bond)
+    # @info "Optimising along: $bond"
+    iso, metric = alg(pepo, environment.tensors, bond)
     wtg!(iso, metric, Val(gauge))
     if xi < Inf
         copy!(iso.s, rescale(iso.s, xi))
@@ -129,56 +251,51 @@ function optimise(pepo, environment, bond::Bond; gauge=true, alg=IsometryOptimis
     return iso
 end
 
-# Vectorised truncation
-function truncate!(pepo::PEPO, iso)
-    # Absorb weights into the isometries `u`.
-    u = iso.u .* sqrt.(iso.s)
-
-    # Do the same, but let x -> x - 1 for the left isometries `v`.
-    v = circshift(sqrt.(iso.s), (-1, 0)) .* circshift(iso.v, (-1, 0))
-
-    # Truncate all bonds simultaneously.
-    return pepo .= _truncate.(pepo, u, v)
-end
-
-# Scalar truncation
-function truncate!(pepo::PEPO, iso::TruncationIsometries, bond::Bond)
-    l = bond.in
-    r = bond.out
-
-    # Truncate the left site with an isometry on the right bond
-    pepo[l] = _truncate(pepo[l], iso.u * sqrt(iso.s))
-    # Truncate the right site with an isometry on the left bond
-    pepo[r] = _truncate(iso.v * sqrt(iso.s), pepo[r])
-
-    # Set the weight for the bond to `s`
-    setweight!(pepo, s, bond)
+function evolve!(pepo::LocallyEvolvingPEPO, operator, bond)
+    # Apply the trotter gate, updating the evolved tensors on `bond`
+    setcurrentbond!(pepo, bond)
+    applytrotter!(pepo, operator, bond)
+    # Set the current bond of the pepo to `bond`
+    setisevolved!(pepo, true)
 
     return pepo
 end
 
-function _truncate(q::AbsTen{3,3}, u::AbsTen{1,1}, v::AbsTen{1,1})
-    p1 = _truncate(q, u)
-    p2 = _truncate(v, p1)
-    return p2
-end
-function _truncate(q::AbsTen{3,3}, u::AbsTen{1,1})
-    @tensoropt p[w s k; e n b] := q[w s k; ee n b] * u[ee; e]
-    return p
-end
-function _truncate(v::AbsTen{1,1}, q::AbsTen{3,3})
-    @tensoropt p[w s k; e n b] := v[w; ww]q[ww s k; e n b]
-    return p
+function evolve!(pepo::GloballyEvolvingPEPO, operator)
+    applybothtrotter!(pepo, operator)
+    return setisevolved!(pepo, true)
 end
 
-function evolve!(pepo, operator, bond)
-    l = bond.in
-    r = bond.out
+function applybothtrotter!(pepo::GloballyEvolvingPEPO, operator)
+    setisevolved!(pepo, false)
 
-    pepo[l], pepo[r] = applytrotter(pepo[l], pepo[r], operator[bond])
+    pin = getstate(pepo)
+    pev = getevolved(pepo)
+    @tensoropt begin
+        p_out[ok ob; e r s w l n] :=
+            op_r[ok ob ik ib; l] * pin[ik ib; e s w n] * op_l[ook oob ok ob; r]
+    end
+    mergeinto!(pev, pin)
+    return pepo
+end
 
-    # Desired implementation
-    # pepo[bond] = applytrotter(pepo, operator, bond)
+function applytrotter!(pepo::LocallyEvolvingPEPO, operator, bond)
+    # Get the current left and right pepo tensors
+    setisevolved!(pepo, false)
+
+    p_l, p_r = pepo[bond]
+    op_l, op_r = operator[bond]
+
+    # Get the evolved pepo tensors such that we can write into them
+    pe_l, pe_r = evolvedpair(pepo)
+
+    @tensoropt begin
+        q_l[ok ob; e x s w n] := op_l[ok ob ik ib; x] * p_l[ik ib; e s w n]
+        q_r[ok ob; e s w x n] := op_r[ok ob ik ib; x] * p_r[ik ib; e s w n]
+    end
+
+    mergeinto!(pe_l, q_l)
+    mergeinto!(pe_r, q_r)
 
     return pepo
 end

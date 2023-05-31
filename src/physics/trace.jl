@@ -4,9 +4,15 @@ struct HilbertSchmidt{Lat,PType<:AbsTen{2,4}} <: AbstractBulkTensors
     data::OnLattice{Lat,PType,Matrix{PType}}
 end
 
+HilbertSchmidt(p::AbstractPEPO) = HilbertSchmidt(getstate(p))
+HilbertSchmidt(p::GloballyEvolvingPEPO) = HilbertSchmidt(getcurrentstate(p))
+
 struct Trace{Lat,PType<:AbsTen{2,4}} <: AbstractBulkTensors
     data::OnLattice{Lat,PType,Matrix{PType}}
 end
+
+Trace(p::AbstractPEPO) = Trace(getstate(p))
+Trace(p::GloballyEvolvingPEPO) = Trace(getcurrentstate(p))
 
 const ContractableTensor = Union{AbsTen{2,4},AbsTen{0,4}}
 const ContractableTensors = OnLattice{<:AbstractLattice,<:ContractableTensor}
@@ -21,7 +27,7 @@ detrace(trace::Trace) = contractphysical.(gettensors(trace))
 detrace(hilbert::HilbertSchmidt) = gettensors(hilbert)
 detrace(x) = x
 
-function contractphysical(tsrc::AbsTen{0,4})
+function contractphysical(tsrc::AbsTen{2,4})
     virtual_space = domain(tsrc)
     tdst = similar(tsrc, one(virtual_space), virtual_space)
     return contractphysical!(tdst, tsrc)
@@ -34,7 +40,7 @@ function contractphysical(tsrc_1::AbsTen{2,4}, tsrc_2::AbsTen{4,2})
     return out
 end
 function contractphysical!(tdst::AbsTen{0,4}, tsrc::AbsTen{2,4})
-    @tensoropt tdst[1 2 3 4] = traceobj[x x; 1 2 3 4]
+    @tensoropt tdst[1 2 3 4] = tsrc[x x; 1 2 3 4]
     return tdst
 end
 

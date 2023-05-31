@@ -539,14 +539,14 @@ function (alg::TensorOptimisation)(A, B, boundary, x, y)
     return U, S, V
 end
 
-struct HilbertSchmidt{TType<:AbstractTensorMap}
-    P::TType
-    Q::TType
-end
-
-struct Trace{TType<:AbstractTensorMap}
-    T::TType
-end
+# struct HilbertSchmidt{TType<:AbstractTensorMap}
+#     P::TType
+#     Q::TType
+# end
+#
+# struct Trace{TType<:AbstractTensorMap}
+#     T::TType
+# end
 
 # function metric(P::PEPO, boundary::AbstractBoundary) end
 # function metric(P1, P2, boundary::AbstractBoundary) end
