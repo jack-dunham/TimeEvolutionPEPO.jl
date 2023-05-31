@@ -4,6 +4,7 @@ authors = ["jack-dunham <ucapunh@ucl.ac.uk>"]
 version = "0.1.0"
 
 [deps]
+CircularArrays = "7a955b69-7140-5f4e-a0ed-f168c5e2e749"
 DataStructures = "864edb3b-99cc-5e75-8d2d-829cb0a9cfe8"
 JLD2 = "033835bb-8acc-5ee8-8aae-3f567f8a3819"
 KrylovKit = "0b1a1467-8014-51b9-945f-bf0ae24f4b77"

@@ -1,8 +1,13 @@
 struct SequentialUpdate end
 struct ParallelUpdate end
 
+
+function initevolution(pepo, map, updatescheme = SequentialUpdate())
+  return initevolution(pepo, map, updatescheme)
+end
+
 function initevolution(
-    pepo::AbstractPEPO, map, updatescheme::SequentialUpdate=SequentialUpdate()
+    pepo::AbstractPEPO, map, updatescheme::SequentialUpdate
 )
     function useful_f(x, l, r)
         D = domain(x)
@@ -29,8 +34,9 @@ function initevolution(
 
     return LocallyEvolvingPEPO(pepo, evolved, first_bond, Ref(false))
 end
+
 function initevolution(
-    pepo::AbstractPEPO, map, updatescheme::ParallelUpdate=ParallelUpdate()
+    pepo::AbstractPEPO, map, updatescheme::ParallelUpdate
 )
     function useful_f(x, l, r)
         D = domain(x)

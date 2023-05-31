@@ -55,6 +55,7 @@ include("physics/liouvillian.jl")
 include("contraction/abstractcontraction.jl")
 ## BOUNDARY ALGORITHMS
 include("contraction/boundaries/boundary.jl")
+include("truncation/truncation.jl")
 include("pepo.jl")
 ### VUMPS
 include("contraction/boundaries/vumps/tensormacros.jl")
@@ -66,11 +67,9 @@ include("contraction/boundaries/ctmrg/ctmrg.jl")
 include("contraction/boundaries/ctmrg/init.jl")
 include("contraction/boundaries/ctmrg/tensormacros.jl")
 
-include("truncation/truncation.jl")
 include("truncation/abstractmetric.jl")
 include("truncation/isometries.jl")
-include("truncation/fet/isometries.jl")
-include("truncation/fet/wtg.jl")
+include("truncation/wtg.jl")
 # include("truncation/truncation.jl")
 include("truncation/clu/clu.jl")
 

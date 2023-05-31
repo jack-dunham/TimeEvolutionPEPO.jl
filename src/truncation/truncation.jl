@@ -1,8 +1,10 @@
+# Either a AbstractBoundary or an AbstractNeighbourhood
+abstract type AbstractEnvironment end
+
 # SU, FET, NTU
 abstract type AbstractTruncationScheme end
 
 # OPTIMISATION SCHEMES
-
 abstract type AbstractOptimisationScheme end
 
 @with_kw struct IsometryOptimisation <: AbstractOptimisationScheme
@@ -56,6 +58,14 @@ end
     ξ::Float64 = Inf
 end
 
+struct SimpleUpdateState end
+
+initenvironment(pepo, fet::FET) = initenvironment(HilbertSchmidt(pepo), fet.alg)
+function initenvironment(pepo, ::NTU; kwargs...)
+    return ntu_initenvironment(HilbertSchmidt(pepo); kwargs...)
+end
+initenvironment(pepo, ::SU) = SimpleUpdateState()
+
 @doc raw"""
     metric(pepo::LocallyEvolvingPEPO, environment::AbstractEnvironment)
     metric(pepo::GloballyEvolvingPEPO, environment::AbstractEnvironment)
@@ -64,7 +74,7 @@ Construct tensors corresponding to the truncation metric from `environmnet`. The
 truncation around `currentbond(pepo)`. The second method returns metrics for all bonds on the lattice.
 
 """
-function metric end
+function metric(pepo::AbstractEnvolvingPEPO, environment::AbstractEnvironment) end
 
 function truncate!(pepo::AbstractEvolvingPEPO, iso::TruncationIsometries)
     truncate!(pepo, iso)

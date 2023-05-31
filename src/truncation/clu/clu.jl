@@ -1,4 +1,4 @@
-abstract type AbstractNeighbourhood end
+abstract type AbstractNeighbourhood <: AbstractEnvironment end
 
 struct NearestNeighbours{L,TType<:AbsTen{2,2},CType<:AbsTen{1,1}} <: AbstractNeighbourhood
     T::OnLattice{L,TType,Matrix{TType}}
@@ -18,20 +18,17 @@ function Base.getindex(ntu::NearestNeighbours, bond::Bond)
     return t, b, lc, rc
 end
 
-struct NeighbourhoodAlgorithm end
-
-struct NeighbourhoodState{NN<:NearestNeighbours,MType<:ContractableTensors}
+struct NeighbourhoodState{NN<:NearestNeighbours,MType<:ContractableObjects}
     tensors::NN
     bulk::MType
-    alg::NeighbourhoodAlgorithm
 end
 
-function initenvironment(bulk::HilbertSchmidt, alg::NeighbourhoodAlgorithm; kwargs...)
-    ntu = inittensors(detrace(bulk); kwargs...)
-    return NeighbourhoodState(ntu, detrace(bulk), alg)
+function ntu_initenvironment(bulk::HilbertSchmidt; kwargs...)
+    ntu = ntu_inittensors(detrace(bulk); kwargs...)
+    return NeighbourhoodState(ntu, bulk)
 end
 
-function inittensors(bulk; f=undef)
+function ntu_inittensors(bulk; f=undef)
     el = numbertype(bulk)
 
     cod_l = codomain.(circshift(adjoint.(bulk), (0, 0)))
@@ -49,7 +46,7 @@ function inittensors(bulk; f=undef)
 end
 
 function calculate!(state::NeighbourhoodState)
-    return ntuboundary!(state.tensors, state.bulk)
+    return ntuboundary!(state.tensors, detrace(state.bulk))
 end
 
 function ntuboundary!(ntu, bulk)
@@ -62,7 +59,7 @@ function ntuboundary!(ntu, bulk)
     for y in axes(P, 2)
         for x in axes(P, 1)
             if y == 1 || !issym
-                @debug "Calculating: y = $y, issym = $issym "
+                #@debug "Calculating: y = $y, issym = $issym "
 
                 ntu_top!(T[x, y], P[x, y - 1], P[x + 1, y - 1])
                 ntu_bot!(B[x, y], P[x, y + 1], P[x + 1, y + 1])
@@ -70,7 +67,7 @@ function ntuboundary!(ntu, bulk)
                 ntu_rightcap!(RC[x, y], P[x + 2, y])
 
             elseif issym && y != 1
-                @debug "Copying: y = $y, issym = $issym "
+                #@debug "Copying: y = $y, issym = $issym "
 
                 copy!(T[x, y], T[x + y - 1, y])
                 copy!(B[x, y], B[x + y - 1, y])
