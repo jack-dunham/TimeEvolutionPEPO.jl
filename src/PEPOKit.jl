@@ -8,7 +8,9 @@ using KrylovKit
 using MacroTools
 using DataStructures: DefaultOrderedDict
 using TrotterMacros
-using Parameters
+using InfiniteTensorContractions
+
+const ITC = InfiniteTensorContractions
 
 import Base.*
 
