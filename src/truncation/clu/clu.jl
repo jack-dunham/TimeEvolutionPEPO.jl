@@ -1,16 +1,16 @@
-abstract type AbstractNeighbourhood <: AbstractEnvironment end
+abstract type AbstractNeighbourhood end
 
-struct NearestNeighbours{L,TType<:AbsTen{2,2},CType<:AbsTen{1,1}} <: AbstractNeighbourhood
-    T::OnLattice{L,TType,Matrix{TType}}
-    B::OnLattice{L,TType,Matrix{TType}}
-    LC::OnLattice{L,CType,Matrix{CType}}
-    RC::OnLattice{L,CType,Matrix{CType}}
+struct NTUTensors{L,TType<:AbsTen{2,2},CType<:AbsTen{1,1}} <: AbstractNeighbourhood
+    T::Lattice{L,TType,Matrix{TType}}
+    B::Lattice{L,TType,Matrix{TType}}
+    LC::Lattice{L,CType,Matrix{CType}}
+    RC::Lattice{L,CType,Matrix{CType}}
 end
 
-unpack(ntu::NearestNeighbours) = ntu.T, ntu.B, ntu.LC, ntu.RC
+unpack(ntu::NTUTensors) = ntu.T, ntu.B, ntu.LC, ntu.RC
 
-function Base.getindex(ntu::NearestNeighbours, bond::Bond)
-    l = left(bond)
+function Base.getindex(ntu::NTUTensors, bond::Bond)
+    l = bond.left
     t = ntu.T[l]
     b = ntu.B[l]
     lc = ntu.LC[l]
@@ -18,23 +18,26 @@ function Base.getindex(ntu::NearestNeighbours, bond::Bond)
     return t, b, lc, rc
 end
 
-struct NeighbourhoodState{NN<:NearestNeighbours,MType<:ContractableObjects}
+struct NeighbourhoodState{NN<:NTUTensors,MType<:ITC.AbstractNetwork}
     tensors::NN
-    bulk::MType
+    network::MType
 end
 
-function ntu_initenvironment(bulk::HilbertSchmidt; kwargs...)
-    ntu = ntu_inittensors(detrace(bulk); kwargs...)
-    return NeighbourhoodState(ntu, bulk)
+function ntu_initenvironment(network::HilbertSchmidt; kwargs...)
+    ntu = ntu_inittensors(network; kwargs...)
+    return NeighbourhoodState(ntu, network)
 end
 
-function ntu_inittensors(bulk; f=undef)
-    el = numbertype(bulk)
+function ntu_inittensors(network; f=undef)
+    el = ITC.numbertype(network)
 
-    cod_l = codomain.(circshift(adjoint.(bulk), (0, 0)))
-    cod_r = codomain.(circshift(adjoint.(bulk), (-1, 0)))
-    dom_l = domain.(circshift(bulk, (0, 0)))
-    dom_r = domain.(circshift(bulk, (-1, 0)))
+    network_top = getfield.(network, :top)
+    network_bot = getfield.(network, :bot)
+
+    cod_l = codomain.(circshift(adjoint.(network_bot), (0, 0)))
+    cod_r = codomain.(circshift(adjoint.(network_bot), (-1, 0)))
+    dom_l = domain.(circshift(network_top, (0, 0)))
+    dom_r = domain.(circshift(network_top, (-1, 0)))
 
     agi = (x, y) -> adjoint(getindex(x, y))
 
@@ -42,19 +45,20 @@ function ntu_inittensors(bulk; f=undef)
     B = @. TensorMap(f, el, agi(cod_r, 2) * agi(cod_l, 2), agi(dom_r, 2) * agi(dom_l, 2))
     LC = @. TensorMap(f, el, agi(cod_l, 3), agi(dom_l, 3))
     RC = @. TensorMap(f, el, agi(cod_r, 1), agi(dom_r, 1))
-    return NearestNeighbours(T, B, LC, RC)
+
+    return NTUTensors(T, B, LC, RC)
 end
 
-function calculate!(state::NeighbourhoodState)
-    return ntuboundary!(state.tensors, detrace(state.bulk))
+function ITC.calculate!(state::NeighbourhoodState)
+    return ntuboundary!(state.tensors, state.network)
 end
 
-function ntuboundary!(ntu, bulk)
+function ntuboundary!(ntu, network)
     T, B, LC, RC = unpack(ntu)
 
-    issym = issymmetric(bulk)
+    issym = issymmetric(network.data)
 
-    P = bulk
+    P = network
 
     for y in axes(P, 2)
         for x in axes(P, 1)
@@ -82,7 +86,7 @@ function ntuboundary!(ntu, bulk)
     return ntu
 end
 
-function metric(pepo, boundary::NearestNeighbours)
+function metric(pepo, boundary::NTUTensors)
     T = boundary.T
     B = boundary.B
     LC = boundary.LC
@@ -90,9 +94,8 @@ function metric(pepo, boundary::NearestNeighbours)
     return ntu_M.(pepo, circshift(pepo, (-1, 0)), T, B, LC, RC)
 end
 
-function metric(pepo, ntu::NearestNeighbours, bond::Bond)
-    pl, pr = pepo[bond]
-    return ntu_M(pl, pr, ntu[bond]...)
+function _metric(left, right, ntu::NTUTensors, bond::Bond)
+    return ntu_M(left, right, ntu[bond]...)
 end
 
 function _ntuboundary(A, B, style::AbstractUpdateScheme=GULT())
@@ -174,10 +177,11 @@ end
 # end
 
 # Function of A
-function ntu_leftcap!(L, B::AbsTen{2,4}, ::GULT=GULT())
+ntu_leftcap!(L, B::TensorPair, style::GULT=GULT()) = ntu_leftcap!(L, B.top, B.bot, style)
+function ntu_leftcap!(L, Bt::AbsTen{2,4}, Bb::AbsTen{2,4}, ::GULT=GULT())
     @tensoropt (
         D2 => D, D4 => D, r1u => 16 * D, r1d => 16 * D, r3 => 16 * D, k => 2, b => 2
-    ) L[r1d; r1u] = B[k b; r1u D2 r3 D4] * (B')[r1d D2 r3 D4; k b]
+    ) L[r1d; r1u] = Bt[k b; r1u D2 r3 D4] * (Bb')[r1d D2 r3 D4; k b]
     return L
 end
 function ntu_rightcap!(R, A::AbsTen{2,4}, style::AbstractUpdateScheme=GULT())
@@ -185,7 +189,8 @@ function ntu_rightcap!(R, A::AbsTen{2,4}, style::AbstractUpdateScheme=GULT())
 end
 
 # Function of B
-function ntu_TL(B::AbsTen{2,4}, ::GULT=GULT())
+ntu_TL(B::ITC.TensorPair, style::GULT=GULT()) = ntu_TL(B.top, B.bot, style)
+function ntu_TL(Bt::AbsTen{2,4}, Bb::AbsTen{2,4}, style::GULT=GULT())
     @tensoropt (
         D2u => D,
         D2d => D,
@@ -195,7 +200,7 @@ function ntu_TL(B::AbsTen{2,4}, ::GULT=GULT())
         r3 => 16 * D,
         k => 2,
         b => 2,
-    ) TL[r1d D2d; r1u D2u] := B[k b; r1u D2u r3 D4] * (B')[r1d D2d r3 D4; k b]
+    ) TL[r1d D2d; r1u D2u] := Bt[k b; r1u D2u r3 D4] * (Bb')[r1d D2d r3 D4; k b]
     return TL
 end
 function ntu_TR(A::AbsTen{2,4}, style::AbstractUpdateScheme=GULT())

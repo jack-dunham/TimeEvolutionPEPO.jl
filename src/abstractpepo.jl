@@ -1,8 +1,8 @@
 abstract type AbstractPEPO end
 
-struct Weights{L,CType<:AbsTen{1,1}}
-    horizontal::OnLattice{L,CType,Matrix{CType}}
-    vertical::OnLattice{L,CType,Matrix{CType}}
+struct Weights{G,CType<:AbsTen{1,1}}
+    horizontal::Lattice{G,CType,Matrix{CType}}
+    vertical::Lattice{G,CType,Matrix{CType}}
 end
 
 function Base.getindex(weights::Weights, bond::Bond)
@@ -21,45 +21,46 @@ function Base.getindex(weights::Weights, bond::Bond)
 end
 
 function changeaxis(weights::Weights)
-    return Weights(transpose(weights.vertical), transpose(weights.horizontal))
+    return Weights(permutedims(weights.vertical), permutedims(weights.horizontal))
 end
 
-# Is transposed is a quasi-lazy way of swapping primary axis that does not 
-# construct a new PEPO object, or change dims of data. Instead we just transpose the virtual 
-# pepo bonds and set `istransposed` equal to `true`. Note the distinction to actually transpose
-# the lattice.
-struct PEPO{L,PType<:AbsTen{2,4},CType} <: AbstractPEPO
-    state::OnLattice{L,PType,Matrix{PType}}
-    weights::Weights{L,CType}
-    istransposed::Ref{Bool}
+function tolerance!(weights::W, new_weights::W, tau::Float64) where {W<:Weights}
+    h = _tolerance!.(weights.horizontal, new_weights.horizontal, tau)
+    v = _tolerance!.(weights.vertical, new_weights.vertical, tau)
+    return max(h..., v...)
+end
+function _tolerance!(ow, nw, tau::Float64)
+    rv = norm(ow - nw) / (tau * norm(nw) * dim(codomain(nw)))
+    copy!(ow, nw)
+    return rv
 end
 
-lattice(p::AbstractPEPO) = lattice(getstate(p))
+struct PEPO{G,PType<:AbsTen{2,4},CType} <: AbstractPEPO
+    state::Lattice{G,PType,Matrix{PType}}
+    weights::Weights{G,CType}
+end
 
-const TransposedPEPO{L<:TransposedLattice} = PEPO{L}
+ITC.numbertype(pepo::AbstractPEPO) = ITC.numbertype(getstate(pepo))
 
+getstate(pepo::PEPO) = pepo.state
+getweights(pepo::PEPO) = pepo.weights
+
+getweights(pepo::PEPO, bond) = getweights(pepo)[bond]
 Base.getindex(p::PEPO, bond) = getstate(p)[bond]
+
+physicalspace(pepo::AbstractPEPO) = getindex.(codomain.(getstate(pepo)), 1)
 
 function changeaxis(pepo::AbstractPEPO)
     pepo_permuted = permute.(getstate(pepo), Ref((1, 2)), Ref((4, 3, 6, 5)))
-    return PEPO(transpose(pepo_permuted), changeaxis(getweights(pepo)), Ref(true))
+    return PEPO(permutedims(pepo_permuted), changeaxis(getweights(pepo)))
 end
+
 function changeaxis!(pepo_permuted::AbstractPEPO, pepo::AbstractPEPO)
     permute!.(
-        getstate(pepo_permuted), transpose(getstate(pepo)), Ref((1, 2)), Ref((4, 3, 6, 5))
+        getstate(pepo_permuted), permutedims(getstate(pepo)), Ref((1, 2)), Ref((4, 3, 6, 5))
     )
     return pepo_permuted
 end
-
-istransposed(pepo::PEPO) = pepo.istransposed[]
-
-_flipaxis(istransposed::Bool, axis::Int) = mod(istransposed + axis, 1:2)
-_flipaxis(istransposed::Bool, axis::Symbol) = axis
-
-getstate(pepo::PEPO) = pepo.state
-
-getweights(pepo::PEPO) = pepo.weights
-getweights(pepo::PEPO, bond) = getweights(pepo)[bond]
 
 function setweights!(pepo::AbstractPEPO, s, bond::Bond)
     @debug "$(typeof(getweights(pepo, bond)))"
@@ -67,14 +68,9 @@ function setweights!(pepo::AbstractPEPO, s, bond::Bond)
     return pepo
 end
 
-getbonds(pepo::PEPO) = getbonds(getstate(P))
+getbonds(pepo::AbstractPEPO) = getbonds(getstate(pepo))
 
-function Base.permutedims!(p::AbsTen{3,3}, perm::NTuple{6,Int})
-    p.tensor = _permute(p.tensor, perm)
-    return p
-end
-
-function bloch(a::Vector)
+function bloch(a::Base.AbstractVecOrTuple)
     σ = pauli
     mat = σ[4]
     for j in 1:3
@@ -83,7 +79,7 @@ function bloch(a::Vector)
     return 1 / 2 * mat
 end
 
-function pepodata(a::Vector, Dw::Int, Ds::Int, De::Int, Dn::Int)
+function pepodata(a::Base.AbstractVecOrTuple, Dw::Int, Ds::Int, De::Int, Dn::Int)
     m = bloch(a)
 
     tw = zeros(ComplexF64, Dw, 2, 2) # out, in
@@ -99,18 +95,31 @@ function pepodata(a::Vector, Dw::Int, Ds::Int, De::Int, Dn::Int)
     return p
 end
 
+struct IdentityState end
+
 function PEPO(
-    lattice, a::Base.AbstractVecOrTuple, eastbond::S, southbond::S=eastbond
+    a::Union{Base.AbstractVecOrTuple,IdentityState},
+    i1::Int,
+    i2::Int,
+    physbond::S,
+    eastbond::S,
+    southbond::S=eastbond,
 ) where {S<:IndexSpace}
-    return PEPO(lattice, a, fill(eastbond, lattice), fill(southbond, lattice))
+    return PEPO(
+        a, fill(physbond, (i1, i2)), fill(eastbond, (i1, i2)), fill(southbond, (i1, i1))
+    )
 end
 
 function PEPO(
-    lattice::AbstractLattice,
     a::Base.AbstractVecOrTuple,
-    eastbond::AbstractOnLattice,
-    southbond::AbstractOnLattice,
+    physbond::AbstractMatrix,
+    eastbond::AbstractMatrix,
+    southbond::AbstractMatrix=eastbond;
+    issymmetric=false,
 )
+    a = normalize([a...])
+    phys = Lattice(physbond, issymmetric)
+
     bond_w = circshift(eastbond, (1, 0))
     bond_e = eastbond
     bond_s = southbond
@@ -119,21 +128,43 @@ function PEPO(
     p_data = pepodata.(Ref(a), dim.(bond_e), dim.(bond_s), dim.(bond_w), dim.(bond_n))
 
     tensors = @. TensorMap(
-        p_data,
-        lattice * adjoint(lattice),
-        bond_e * bond_s * adjoint(bond_w) * adjoint(bond_n),
+        p_data, phys * adjoint(phys), bond_e * bond_s * adjoint(bond_w) * adjoint(bond_n)
+    )
+
+    return PEPO(tensors)
+end
+function PEPO(
+    a::IdentityState,
+    physbond::AbstractMatrix,
+    eastbond::AbstractMatrix,
+    southbond::AbstractMatrix=eastbond;
+    issymmetric=false,
+)
+    phys = Lattice(physbond, issymmetric)
+
+    bond_w = circshift(eastbond, (1, 0))
+    bond_e = eastbond
+    bond_s = southbond
+    bond_n = circshift(southbond, (0, 1))
+
+    p_data =
+        2 *
+        pepodata.(Ref([0, 0, 0]), dim.(bond_e), dim.(bond_s), dim.(bond_w), dim.(bond_n))
+
+    tensors = @. TensorMap(
+        p_data, phys * adjoint(phys), bond_e * bond_s * adjoint(bond_w) * adjoint(bond_n)
     )
 
     return PEPO(tensors)
 end
 
-function PEPO(tensors::AbstractOnLattice{<:AbstractLattice,<:AbsTen{2,4}})
+function PEPO(tensors::AbstractLattice{G,<:AbsTen{2,4}}) where {G}
     horizontal_weights = @. id(getindex(domain(tensors), 1))
     vertical_weights = @. id(getindex(domain(tensors), 2))
 
     weights = Weights(horizontal_weights, vertical_weights)
 
-    return PEPO(tensors, weights, Ref(false))
+    return PEPO(tensors, weights)
 end
 
 merge_pepobond(p::AbsTen{2,5}, dir::Symbol) = merge_pepobond(p, _DIR_TO_DOMIND[dir])
@@ -159,47 +190,51 @@ function mergeinto!(p_merged, p)
     return p_merged
 end
 
-### Evolving PEPO's, used to pre-allocate the arrays that will store the intermediate stage
+### Updatable PEPO's, used to pre-allocate the arrays that will store the intermediate stage
 # where the pepo is evolved
 
-abstract type AbstractEvolvingPEPO <: AbstractPEPO end
+abstract type AbstractUpdatablePEPO <: AbstractPEPO end
 
 # Get the underlying PEPO.
-getparent(p::AbstractEvolvingPEPO) = p.parent
+getparent(p::AbstractUpdatablePEPO) = p.parent
 
-# Get the tensors of the underlying PEPO structure
-getstate(p::AbstractEvolvingPEPO) = getstate(p.parent)
+# Get the tensors of the underlying parent PEPO structure
+getstate(p::AbstractUpdatablePEPO) = getstate(p.parent)
 
 # Get the evolved state of the PEPO. May or may not be up to date.
-getevolved(p::AbstractEvolvingPEPO) = p.evolved_tensors
+getevolved(p::AbstractUpdatablePEPO) = p.evolved_tensors
 
 # Check if PEPO is in an evolved state (i.e. if `getevolved` outputs the current state.)
-isevolved(p::AbstractEvolvingPEPO) = p.isevolved[]
+isevolved(p::AbstractUpdatablePEPO) = p.isevolved[]
 
 # Set evolved state.
-setisevolved!(p::AbstractEvolvingPEPO, bool::Bool) = p.isevolved.x = bool
+setisevolved!(p::AbstractUpdatablePEPO, bool::Bool) = p.isevolved.x = bool
 
-_getindex(p::AbstractEvolvingPEPO, bond::Bond, ::Val{false}) = getindex(getstate(p), bond)
+_getindex(p::AbstractUpdatablePEPO, bond::Bond, ::Val{false}) = getindex(getstate(p), bond)
 
-Base.getindex(p::AbstractEvolvingPEPO, bond::Bond) = _getindex(p, bond, Val(isevolved(p)))
+Base.getindex(p::AbstractUpdatablePEPO, bond::Bond) = _getindex(p, bond, Val(isevolved(p)))
 
-getweights(pepo::AbstractEvolvingPEPO, args...) = getweights(getparent(pepo), args...)
+getweights(pepo::AbstractUpdatablePEPO, args...) = getweights(getparent(pepo), args...)
 
-struct LocallyEvolvingPEPO{L,PType,CType} <: AbstractEvolvingPEPO
-    parent::PEPO{L,PType,CType}
-    evolved_tensors::OnLattice{L,Tuple{PType,PType},Matrix{Tuple{PType,PType}}}
+struct LocalUpdatablePEPO{G,PType,CType} <: AbstractUpdatablePEPO
+    parent::PEPO{G,PType,CType}
+    evolved_tensors::Lattice{G,Tuple{PType,PType},Matrix{Tuple{PType,PType}}}
     bond::Ref{Bond}
     isevolved::Ref{Bool}
 end
 
-currentbond(p::LocallyEvolvingPEPO) = p.bond[]
-setcurrentbond!(p::LocallyEvolvingPEPO, bond::Bond) = p.bond.x = bond
-function evolvedpair(p::LocallyEvolvingPEPO)
-    leftpair, rightpair = getevolved(p)[currentbond(p)]
-    return leftpair[1], rightpair[2]
+currentbond(p::LocalUpdatablePEPO) = p.bond.x::Bond
+function setcurrentbond!(p::LocalUpdatablePEPO, bond::Bond)
+    p.bond.x = bond
+    return p
 end
 
-function _getindex(pe::LocallyEvolvingPEPO, bond::Bond, ::Val{true})
+function evolvedpair(p::LocalUpdatablePEPO{G,PType}) where {G,PType}
+    leftpair, rightpair = getevolved(p)[currentbond(p)]
+    return leftpair[1]::PType, rightpair[2]::PType
+end
+
+function _getindex(pe::LocalUpdatablePEPO, bond::Bond, ::Val{true})
     updated_bond = currentbond(pe)
 
     new_left, new_right = evolvedpair(pe)
@@ -217,19 +252,27 @@ function _getindex(pe::LocallyEvolvingPEPO, bond::Bond, ::Val{true})
     return rv_left, rv_right
 end
 
-struct GloballyEvolvingPEPO{L,PType,CType} <: AbstractEvolvingPEPO
-    parent::PEPO{L,PType,CType}
-    evolved_tensors::OnLattice{L,PType,Matrix{PType}}
+struct GlobalUpdatablePEPO{G,PType,CType} <: AbstractUpdatablePEPO
+    parent::PEPO{G,PType,CType}
+    evolved_tensors::Lattice{G,PType,Matrix{PType}}
     isevolved::Ref{Bool}
 end
 
+#? intermediate tensors
+
 # GloballyEvolvingPEPO(pepo::PEPO) = GloballyEvolvingPEPO(pepo, deepcopy(getstate(pepo)))
 
-getcurrentstate(p::GloballyEvolvingPEPO) = _getcurrentstate(p, Val(isevolved(p)))
+getcurrentstate(p::GlobalUpdatablePEPO) = _getcurrentstate(p, Val(isevolved(p)))
 _getcurrentstate(p, ::Val{true}) = getevolved(p)
 _getcurrentstate(p, ::Val{false}) = getstate(p)
 
-_getindex(p::GloballyEvolvingPEPO, bond::Bond, ::Val{true}) = getindex(getevolved(p), bond)
+_getindex(p::GlobalUpdatablePEPO, bond::Bond, ::Val{true}) = getindex(getevolved(p), bond)
+
+struct TimeDependantPEPO{P<:AbstractUpdatablePEPO}
+    x::P
+    y::P
+end
+#=
 
 function minimalcanonicalform!(tensor::AbsTen{2,4}; tol=1e-5, maxiter=1000)
     hor = id(domain(tensor)[1])
@@ -241,7 +284,7 @@ function minimalcanonicalform!(tensor::AbsTen{2,4}; tol=1e-5, maxiter=1000)
         @tensor begin
             p_h1[e1; e2] := ketbra[e1 s w n; e2 s w n]
             p_h2[w1; w2] := ketbra[e s w1 n; e s w2 n]
-            # 
+            #
             p_v1[s1; s2] := ketbra[e s1 w n; e s2 w n]
             p_v2[n1; n2] := ketbra[e s w n1; e s w n2]
         end
@@ -267,3 +310,4 @@ function mcfgauge!(p_out, p_in, g1, g2) #hor, ver
         p_in[k b; ee ss ww nn] * g1[ee; e] * g2[ss; s] * g1i[ww; w] * g2i[nn; n]
     return p_out
 end
+=#

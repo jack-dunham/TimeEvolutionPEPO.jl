@@ -34,8 +34,8 @@ function rescale(s, ξ)
     return s
 end
 
-wtg!(iso, metric, ::Val{0}) = iso, metric
-wtg!(iso, metric, ::Val{1}) = wtg!(iso.u, iso.s, iso.v, metric)
+wtg!(iso, metric, ::Val{false}) = iso, metric
+wtg!(iso, metric, ::Val{true}) = wtg!(iso.u, iso.s, iso.v, metric)
 
 function wtg!(
     u0::TensorMap{S,1,1}, # u[x] 

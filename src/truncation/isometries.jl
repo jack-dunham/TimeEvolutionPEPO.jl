@@ -1,12 +1,13 @@
-function (alg::IsometryOptimisation)(pepo::AbstractPEPO, environment::AbstractEnvironment)
-    bonds = getbonds(pepo)
-    return alg.(pepo, environment, bonds)
-end
+# function (alg::IsometryOptimisation)(pepo::AbstractPEPO, environment::AbstractEnvironment)
+#     bonds = getbonds(pepo)
+#     return alg.(pepo, environment, bonds)
+# end
 function (alg::IsometryOptimisation)(pepo, environment, bond)
     D = domain.(getstate(pepo), 1)[left(bond)]
 
     tmetric = metric(pepo, environment, bond)
     left0, right0 = isometryinit(tmetric)
+
     u, s_f64, v = metricoptimise(left0, right0, tmetric, truncspace(D))
 
     s = similar(s_f64, eltype(u))
@@ -20,28 +21,227 @@ end
 function (alg::TensorOptimisation)(pepo::AbstractPEPO, environment, bond)
     D = domain.(getstate(pepo), 1)[left(bond)]
 
-    p_left, p_right = pepo[bond]
+    left0, right0 = rankreduce!(pepo)
 
-    left0 = _leftrankreduce!(p_left)
-    right0 = _rightrankreduce!(p_right)
-
-    tmetric = metric(pepo, environment, bond)
+    tmetric = metric(pepo, environment.tensors, bond)
 
     u, s_f64, v = metricoptimise(left0, right0, tmetric, truncspace(D))
 
-    s = similar(s_f64, numbertype(pepo))
+    s = similar(s_f64, ITC.numbertype(pepo))
 
     copy!(s, s_f64)
 
     return TruncationIsometries(u, s, v), tmetric
 end
 
-function _leftrankreduce!(p::AbsTen{2,4})
+function isometries(pepo, environment; kwargs...)
+    axisbonds = getbonds(pepo)[1]
+    iso = isometries.(pepo, environment, axisbonds; kwargs...)
+    return iso
+end
+
+function isometries(pepo, ::SimpleUpdateState, bond, truncalg::SU)
+    D = domain.(getstate(pepo), 1)[bond.left]
+
+    left, right = rankreduce!(pepo)
+
+    u, s_f64, v = tsvd(left * right; trunc=truncspace(D))
+
+    s = similar(s_f64, ITC.numbertype(pepo))
+
+    copy!(s, s_f64)
+
+    return TruncationIsometries(u, s, v)
+end
+
+function isometries(pepo, environment, bond; truncalg=FET()::Union{FET,NTU})
+    xi = truncalg.ξ
+    gauge = truncalg.gauge
+
+    # opt = truncalg.opt
+    opt = TensorOptimisation()
+
+    iso, metric = opt(pepo, environment, bond)
+
+    wtg!(iso, metric, Val(gauge))
+    if xi < Inf
+        copy!(iso.s, rescale(iso.s, xi))
+        wtg!(iso, metric, Val(gauge))
+    end
+
+    return iso
+end
+
+# function isometries(pepo, environment, bond; truncalg=NTU()::NTU)
+#     xi = truncalg.ξ
+#     gauge = truncalg.gauge
+#
+#     D = domain.(getstate(pepo), 1)[bond.left]
+#
+#     left0, right0 = rankreduce!(pepo)
+#     # opt = truncalg.opt
+#     iso = cgoptimize(
+#         left0, right0, pepo, bond, truncspace(D), Val(dim(codomain(left0))), Val(dim(D))
+#     )
+#
+#     # wtg!(iso, metric, Val(gauge))
+#     # if xi < Inf
+#     #     copy!(iso.s, rescale(iso.s, xi))
+#     #     wtg!(iso, metric, Val(gauge))
+#     # end
+#
+#     return iso
+# end
+# function rankreduce!(pepo::AbstractPEPO, bond)
+#     left_site, right_site = pepo[bond]
+#     left = leftrankreduce!(left_site)
+#     right = rightrankreduce!(right_site)
+#     return left, right
+# end
+
+# For 1x1 unitcell only
+function _quicktruncate!(pepo::GlobalUpdatablePEPO, environment)
+    bond = getbonds(pepo)[1, 1]
+    site = getevolved(pepo)[1, 1]
+
+    left_site = copy(site)
+    right_site = copy(site)
+
+    # left0, right0 = _rankreduce!(left_site, right_site)
+
+    tmetric = _metric(site, site, environment.tensors, bond)
+    left0, right0 = isometryinit(tmetric)
+
+    d = domain.(getstate(pepo), 1)[bond.left]
+
+    u, s_f64, v = metricoptimise(left0, right0, tmetric, truncspace(d); rankreduced=false)
+
+    s = similar(s_f64, eltype(u))
+
+    copy!(s, s_f64)
+
+    @info "" normalize(s)
+
+    iso = TruncationIsometries(u, s, v)
+
+    truncate!(pepo, iso)
+
+    return pepo
+end
+
+function quicktruncate!(pepo::GlobalUpdatablePEPO, env)
+    site = getevolved(pepo)
+
+    inter_pepo = similar(getevolved(pepo), (2, 1))
+
+    inter_pepo[1, 1] = copy(site[1, 1])
+    inter_pepo[2, 1] = copy(site[1, 1])
+
+    env = renormalize(HilbertSchmidt(inter_pepo, inter_pepo), env)
+
+    bonds = getbonds(inter_pepo)
+    for col in eachcol(bonds)
+        for bond in col
+            a_site, b_site = inter_pepo[bond]
+
+            left0, right0 = _rankreduce!(a_site, b_site)
+            tmetric = _metric(a_site, b_site, env.tensors, bond)
+
+            d = domain.(getstate(pepo), 1)[bond.left]
+
+            u, s_f64, v = metricoptimise(left0, right0, tmetric, truncspace(d))
+
+            s = similar(s_f64, eltype(u))
+
+            copy!(s, s_f64)
+
+            @info "" normalize(s)
+
+            iso = TruncationIsometries(u, s, v)
+
+            inter_pepo[1, 1] = partialtruncate(a_site, iso)
+            inter_pepo[2, 1] = partialtruncate(iso, b_site)
+
+            env = renormalize(HilbertSchmidt(inter_pepo, inter_pepo), env)
+        end
+    end
+
+    copy!.(getstate(pepo), Ref(inter_pepo[1, 1]))
+
+    return pepo
+end
+
+function sequentialtruncate(pepo::GlobalUpdatablePEPO, env; xi=Inf, gauge=true)
+    bonds = getbonds(pepo)
+    lx, _ = size(bonds)
+
+    if lx == 1
+        quicktruncate!(pepo, env)
+    else
+        inter_state = copy(getevolved(pepo))
+
+        env = renormalize(HilbertSchmidt(inter_state, inter_state), env)
+
+        for col in eachcol(bonds)
+            for bond in col
+                left_site, right_site = inter_state[bond]
+
+                ### put this in a function
+                left0, right0 = _rankreduce!(left_site, right_site)
+
+                tmetric = _metric(left_site, right_site, env.tensors, bond)
+
+                D = domain.(getstate(pepo), 1)[bond.left]
+
+                u, s_f64, v = metricoptimise(left0, right0, tmetric, truncspace(D))
+
+                s = similar(s_f64, ITC.numbertype(pepo))
+
+                copy!(s, s_f64)
+
+                iso = TruncationIsometries(u, s, v)
+
+                # wtg!(iso, tmetric, Val(gauge))
+                if xi < Inf
+                    copy!(iso.s, rescale(iso.s, xi))
+                    # wtg!(iso, tmetric, Val(gauge))
+                end
+                ##
+
+                setweights!(pepo, normalize(iso.s), bond)
+
+                #  = A = ->  = A -
+                inter_state[bond.left] = partialtruncate(left_site, iso)
+                #  = B = ->  - B =
+                inter_state[bond.right] = partialtruncate(iso, right_site)
+
+                # Tensors have changed bond dimensions so need to construct new env
+                env = renormalize(HilbertSchmidt(inter_state, inter_state), env)
+            end
+        end
+        # Recalculate the enviroment (intermediate renormalization step)
+        copy!.(getstate(pepo), inter_state)
+    end
+    return pepo
+end
+
+function rankreduce!(pepo::LocalUpdatablePEPO)
+    return _rankreduce!(evolvedpair(pepo)[1], evolvedpair(pepo)[2])
+end
+rankreduce!(mat::AbstractLattice, bond) = _rankreduce!(mat[bond]...)
+
+function _rankreduce!(left_site, right_site)
+    left = leftrankreduce!(left_site)
+    right = rightrankreduce!(right_site)
+    return left, right
+end
+
+function leftrankreduce!(p::AbsTen{2,4})
     Q, R = leftorth(p, (1, 2, 4, 5, 6), (3,))
     permute!(p, Q, (1, 2), (6, 3, 4, 5))
     return R
 end
-function _rightrankreduce!(p::AbsTen{2,4})
+function rightrankreduce!(p::AbsTen{2,4})
     L, Q = rightorth(p, (5,), (1, 2, 3, 4, 6))
     permute!(p, Q, (2, 3), (4, 5, 1, 6))
     return L
@@ -51,7 +251,7 @@ function constructG(L, g, R)
     @tensoropt G[1 2; 3 4] := L[3; 3] * R[4; 4] * g[1 2; 3 4] * (L')[1; 1] * (R')[2; 2]
 end
 
-function isometryinit(metric::AbstractOnLattice)
+function isometryinit(metric::AbstractLattice)
     leftright = isometryinit.(metric)
 
     left = getindex.(leftright, 1)
@@ -74,7 +274,7 @@ function isometryinit(metric::AbsTen{2,2})
     return left, right
 end
 
-function metricoptimise(left, right, metric::AbstractOnLattice, trunc; kwargs...)
+function metricoptimise(left, right, metric::AbstractLattice, trunc; kwargs...)
     T = promote_type(eltype(left), eltype(right), numbertype(metric))
 
     nx, ny = size(metric)
@@ -101,14 +301,25 @@ function new_costfunc(A, B, Y, LR)
 end
 
 # Optimise the isometries `left` and `right` with respect to `metric`.
-function metricoptimise(left, right, metric::AbsTen{2,2}, trunc; kwargs...)
+function metricoptimise(
+    left, right, metric::AbsTen{2,2}, trunc; rankreduced=true, kwargs...
+)
+
     # normalize!(left)
     # normalize!(right)
     # Convenience
     L = left
     R = right
 
-    LR = normalize(permute(L * R, (1, 2), ()))
+    if rankreduced
+        left0 = left
+        right0 = right
+    else
+        left0 = normalize(one(left))
+        right0 = normalize(one(right))
+    end
+
+    LR0 = normalize(permute(left0 * right0, (1, 2), ()))
 
     # Put in the appropriate matrix form for the Ritz procedure. 
     Y = permute(metric, (2, 4), (3, 1))
@@ -117,7 +328,7 @@ function metricoptimise(left, right, metric::AbsTen{2,2}, trunc; kwargs...)
     # rmul!(Y, 1 / n)
     # Check if the metric is hermitian, If not, use SU
 
-    F0 = scalar(LR' * Y * LR)
+    F0 = scalar(LR0' * Y * LR0)
 
     hermiticity = norm(Y - Y')
 
@@ -142,13 +353,13 @@ function metricoptimise(left, right, metric::AbsTen{2,2}, trunc; kwargs...)
 
     # Construct the cost function to measure convergence.
     # cf = (Ma, Mb) -> metric_costfunction(Ma, Mb, Y, left, right, 1)
-    cf = (x, y) -> new_costfunc(x, y, Y, LR)
+    cf = (x, y) -> new_costfunc(x, y, Y, LR0)
 
-    F0 = scalar(LR' * Y * LR)
-    @debug "Minimal tolerance: $(cf(L , R)). Normalisation check: $F0"
+    F0 = scalar(LR0' * Y * LR0)
+    @debug "Minimal tolerance: $(cf(left , right)). Normalisation check: $F0"
 
     # Proceed with metric optimisation.
-    u, s, v = optiso(cf, L, R, Y, trunc; kwargs...)
+    u, s, v = optiso(cf, left, right, Y, trunc, left0, right0; kwargs...)
 
     return u, s, v
 end
@@ -165,17 +376,19 @@ function metric_costfunction(Ma, Mb, g, Ra, Rb, F0)
     return real((_metric_costfunction(Ma, Mb, g, Ra, Rb) / F0))
 end
 
-function optiso(cf, left, right, metric, trunc; EAT=false, maxiter=100)
+function optiso(
+    cf, left, right, metric, trunc, left0=left, right0=right; EAT=false, maxiter=100
+)
     # Convenience
     Y = metric
     L = left
     R = right
 
     # The following tensor will be useful...
-    LR = normalize(permute(L * R, (1, 2), ()))
-    Y_LR = Y * LR
+    LR0 = normalize(permute(left0 * right0, (1, 2), ()))
+    Y_LR = Y * LR0
 
-    u_su, s_su, v_su = tsvd(L * R; trunc=trunc)
+    u_su, s_su, v_su = tsvd(left0 * right0; trunc=trunc)
     @debug "Simple update error: $(cf(u_su * sqrt(s_su), sqrt(s_su) * v_su))"
 
     # Perform EAT if we want to.
@@ -203,7 +416,9 @@ function optiso(cf, left, right, metric, trunc; EAT=false, maxiter=100)
     δϵ = 1.0
     ϵ = ϵ0
     print("Optimising isometries: [")
-    while !(counter > maxiter || δϵ < 1e-14)
+    while !(counter > maxiter || δϵ < 10 * eps())
+        s_old = s
+
         ϵ_old = ϵ
 
         # Optimise for Ma with Mb fixed.
@@ -216,7 +431,9 @@ function optiso(cf, left, right, metric, trunc; EAT=false, maxiter=100)
         Mb_max = optsingleiso(Ma ⊗ id_b, Y, Y_LR)
         u, s, Mb = tsvd(Ma * Mb_max; trunc=trunc)
 
-        # Calculate truncation error.
+        # calculate convergence measure
+        ϵ = norm(s - s_old)
+        # Calculate truncation error (this is slow)
         ϵ = cf(u * sqrt(s), sqrt(s) * Mb)
 
         # Calculate convergence measure.
@@ -228,6 +445,7 @@ function optiso(cf, left, right, metric, trunc; EAT=false, maxiter=100)
     end
     print("]\n")
 
+    ϵ = cf(u * sqrt(s), sqrt(s) * Mb)
     @debug "Post-optimisation error: $ϵ"
     # Return new isometries for transformation to the WTG
     if ϵ0 < ϵ
@@ -242,10 +460,14 @@ end
 function optsingleiso(id_Mb, Y, Y_LR)
     # temp = id_Mb' * Y
 
+    # slow bit
     g = id_Mb' * Y * id_Mb
+    #
     j = id_Mb' * Y_LR
 
-    Ma_max = pinv(g; rtol=1e-10) * j
+    # println(g)
+
+    Ma_max = pinv(g; rtol=1e-7) * j
 
     # ϵ_j = scalar(Ma_max' * j)
     # ϵ = scalar(Ma_max' * g * Ma_max) - ϵ_j - ϵ_j' + ϵ0

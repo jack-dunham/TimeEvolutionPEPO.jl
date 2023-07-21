@@ -1,93 +1,222 @@
-@with_kw struct TEBD
-    state::PEPO
-    model
-    initial_state::PEPO = state
-    timestep::Number = 0.01
-    numsteps::Integer = 100
-    tol::AbstractFloat = 0
-    order::Integer = 1
-    truncalg::AbstractTruncationScheme = FET()
-    info::ConvergenceInfo = ConvergenceInfo()
-    outfile::String = "outfile.jld2"
-    outdir::String = ""
+abstract type AbstractTimeEvolution end
+
+# TODO We only need one Model struct. Change this soon.
+struct Simulation{T<:AbstractTimeEvolution,P<:AbstractPEPO,V,M<:AbstractModel}
+    state::P
+    initial_state::P
+    model::M
+    alg::T
+    output::V
+    info::ConvergenceInfo
 end
 
+@kwdef struct TEBD{TAlg<:AbstractTruncationScheme} <: AbstractTimeEvolution
+    timestep::Float64 = 0.01
+    numsteps::Int = 100
+    breaktol::Float64 = 0.0
+    order::Int = 2
+    truncalg::TAlg = SU()
+    verbose::Bool = true
+end
 # Sruct MPOWII
-@with_kw struct WII
-    state::PEPO
-    model
-    initial_state::PEPO = state
-    timestep::Number = 0.01
-    numsteps::Integer = 100
-    tol::AbstractFloat = 0
-    order::Integer = 1
-    truncalg::AbstractTruncationScheme = SU()
-    info::ConvergenceInfo = ConvergenceInfo()
-    outfile::String = "outfile.jld2"
-    outdir::String = ""
+@kwdef struct WII{TAlg<:AbstractTruncationScheme} <: AbstractTimeEvolution
+    timestep::Float64 = 0.01
+    numsteps::Int = 100
+    breaktol::Float64 = 0.0
+    order::Int = 2
+    truncalg::TAlg = SU()
+    verbose::Bool = true
 end
 
-function simulate!(tebd::TEBD)
-    xmodel, ymodel = tebd.model.data_x, tebd.model.data_y
+function initialize(
+    model, initial_state, space, eastbond, southbond=eastbond; alg=TEBD(), output=nothing
+)
+    pepo = PEPO(initial_state, space, eastbond, southbond)
 
-    truncalg = tebd.truncalg
-    state = tebd.state
+    return Simulation(pepo, deepcopy(pepo), model, alg, output, ConvergenceInfo())
+end
 
-    timestep = tebd.timestep
+function Base.show(io::IO, sim::Simulation)
+    return show(sim.alg)
+    # print("timestep: "); dump(tebd.timestep);
+    # print("numsteps: "); dump(tebd.numsteps);
+    # print("breaktol: "); dump(tebd.breaktol);
+    # print("order: "); dump(tebd.order);
+    # print(" adasd"); dump(tebd.truncalg);
+end
+
+const LocalTimeDependantPEPO{P<:LocalUpdatablePEPO} = TimeDependantPEPO{P}
+const GlobalTimeDependantPEPO{P<:GlobalUpdatablePEPO} = TimeDependantPEPO{P}
+
+function initenvironment(network::Trace, alg::AbstractBoundaryAlgorithm; kwargs...)
+    return ITC.initialize(network, alg; kwargs...)
+end
+
+"""
+    simulate(sim::Simulation)
+    simulate(hook::Function, sim::Simulation)
+
+Equivalent to `simulate!(hook, deepcopy(sim))`. 
+"""
+simulate(sim::Simulation) = simulate(identity, sim)
+simulate(hook, sim::Simulation) = simulate!(hook, deepcopy(sim))
+
+simulate!(sim::Simulation) = simulate!(identity, sim)
+function simulate!(hook, sim::Simulation)
+    # @info "Running simulation of model: $tebd.model"
+
+    tebd = sim.alg
+
+    simulate!(hook, sim, Val(tebd.order))
+
+    return sim
+end
+
+function simulate!(hook, sim, order::Val{N}) where {N}
+    tebd = sim.alg
+    pepo = sim.state
+    model = sim.model
+
+    info = sim.info
+
+    alg = tebd.truncalg
     numsteps = tebd.numsteps
-    tol = tebd.tol
-    order = tebd.order
+    timestep = tebd.timestep
+    breaktol = tebd.breaktol
 
-    trotterevolution!(
-        state,
-        xmodel,
-        ymodel;
-        alg=truncalg,
-        numsteps=numsteps,
-        timestep=timestep,
-        order=order,
-    )
-    return nothing
+    tau = timestep / N
+
+    space = physicalspace(pepo)::AbstractLattice
+
+    # Get the dynamical map from the model
+    dynamical_map = dynamicalmap(model, space, tau)
+
+    # Make PEPO time-dependant so we can evolve it.
+    td_pepo = initevolution(pepo, dynamical_map, updatescheme(alg))
+
+    # Initialise the environments
+    envs = environments(td_pepo, alg)
+
+    # Calculate the environments from the initial guess
+    if isa(alg.updatescheme, LULT)
+        environments!(envs)
+    else
+        nothing
+    end
+
+    numiter = 0
+    tol = Inf
+
+    # Need to copy the weights otherwise they will mutate
+    prev_weights = deepcopy(getweights(pepo))
+
+    while numiter < numsteps && tol ≥ breaktol
+        timestep!(td_pepo, envs, dynamical_map, order; truncalg=alg)
+
+        # If we are doing full renorm at each step, we don't need to recalc
+        # if isa(alg, SU) #|| alg.renorm === :full
+        #     nothing
+        # else
+        #     calculate!(envs)
+        # end
+
+        environments!(envs)
+
+        # Calculate the difference in pepo singular values between timesteps
+        tol = tolerance!(prev_weights, getweights(pepo), timestep)
+
+        numiter += 1
+
+        tebd.verbose && @info "Steady state convergence: $tol after $numiter iterations."
+
+        info.error = tol
+        info.iterations = numiter
+
+        # User specified function for post-step processing
+        hook(sim)
+    end
+    return sim
 end
 
-function testthermal()
+function testthermal(D)
     s2 = ℂ^2
-
-    L = Lattice{2,2,Infinite}([s2 s2; s2 s2])
-    # L = Lattice{3,3,Infinite}([s2 s2 s2; s2 s2 s2; s2 s2 s2])
-
-    pepo = PEPO(L, [0, 0, 0], ℂ^2)
-
-    rmul!.(getstate(pepo), 0.5)
+    Ds = ℂ^D
 
     Z = Matrix{ComplexF64}([1 0; 0 -1])
     ZZ = kron(Z, Z)
 
     βc = log(1 + sqrt(2)) / 2
 
-    model = -1 / 2 * βc * ((kron(ZZ, one(ZZ)) + kron(one(ZZ), ZZ)))
+    data = -1 / 2 * βc * ((kron(ZZ, one(ZZ)) + kron(one(ZZ), ZZ)))
 
-    out = trotterevolution!(pepo, fill(model, L), fill(model, L))
+    model = Model(data, data)
 
-    return out
+    talg = SU()
+    # talg = FET(; alg=VUMPS(; bonddim=4))
+
+    sim = initialize(
+        model,
+        [0, 0, 0],
+        fill(s2, 2, 2),
+        fill(Ds, 2, 2);
+        output=[],
+        alg=TEBD(; timestep=0.02, numsteps=100, truncalg=talg),
+    )
+
+    rmul!.(getstate(sim.state), 0.5)
+
+    simulate!(measurehook!, sim)
+
+    return sim.output
+end
+function measurehook!(sim::Simulation)
+    # if sim.info.iterations < 1
+    #     return sim
+    # end
+
+    pepo = sim.state
+
+    obs_alg = VUMPS(; maxiter=100, bonddim=16)
+
+    obs_env = initenvironment(trace(pepo), obs_alg)
+
+    ITC.calculate!(obs_env)
+
+    one_local = onelocal(pepo, obs_env; normalize=true)
+
+    magn = measure(one_local, σ1)
+
+    push!(sim.output, magn.data[1, 1])
+
+    return sim
+end
+function errorhook!(sim::Simulation)
+    push!(sim.output, sim.info.error)
+
+    return sim
 end
 
 function testising()
     s2 = ℂ^2
+    Ds = ℂ^2
 
-    # L = Lattice{1,1,Infinite}([s2;;])
-    L = Lattice{2,2,Infinite}([s2 s2; s2 s2], false)
-    # L = Lattice{3,3,Infinite}([s2 s2 s2; s2 s2 s2; s2 s2 s2])
+    model = PEPOKit.Models.ising(; J=1.0, h=0.2)
 
-    pepo = PEPO(L, [0, 0, -1], ℂ^6)
+    # talg = SU()
+    talg = FET(; alg=VUMPS(; bonddim=4))
 
-    Z = Matrix{ComplexF64}([1 0; 0 -1])
+    sim = initialize(
+        model,
+        [0, 0, 1],
+        fill(s2, 2, 2),
+        fill(Ds, 2, 2);
+        output=[],
+        alg=TEBD(; timestep=0.2, numsteps=200, truncalg=talg),
+    )
 
-    mx, my = @infliouvillian 0.250 * Z[i] * Z[i + 1] 1 / 4 * (Y[i] - im * Z[i])
+    simulate!(errorhook!, sim)
 
-    out = trotterevolution!(pepo, fill(mx, L), fill(my, L))
-
-    return out
+    return sim
 end
 
 function testxyz()
@@ -106,8 +235,9 @@ function testxyz()
     Jz = 1.0
     Γ = 0.25
 
-    mx, my = @infliouvillian Jx * X[i] * X[i +1] + Jy * Y[i] * Y[i + 1] + Jz * Z[i] * Z[i + 1] Γ *
-        M[i]
+    mx, my = @infliouvillian Jx * X[i] * X[i +1] +
+        Jy * Y[i] * Y[i + 1] +
+        Jz * Z[i] * Z[i + 1] Γ * M[i]
 
     out = trotterevolution!(pepo, fill(mx, L), fill(my, L))
 

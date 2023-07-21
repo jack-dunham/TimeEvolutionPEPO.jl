@@ -523,6 +523,7 @@ function paralleloptimise(PE, boundary, alg::IsometryOptimisation)
     return alg()
 end
 
+
 function (alg::IsometryOptimisation)(args...)
     G = metric(args)
     left0, right0 = isometryinit(G)

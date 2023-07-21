@@ -1,31 +1,33 @@
-abstract type AbstractBulkTensors end
+abstract type AbstractBulk{G,ElType,A} <: ITC.AbstractNetwork{G,ElType,A} end
 
-struct HilbertSchmidt{Lat,PType<:AbsTen{2,4}} <: AbstractBulkTensors
-    data::OnLattice{Lat,PType,Matrix{PType}}
+ITC.getdata(t::AbstractBulk) = t.data
+
+Base.similar(bulk::AbstractBulk, ::Type{T}) where {T} = similar(ITC.getdata(bulk), T)
+
+struct HilbertSchmidt{G,PType,A<:Matrix{PType}} <: AbstractBulk{G,PType,A}
+    data::Lattice{G,PType,A}
 end
 
-HilbertSchmidt(p::AbstractPEPO) = HilbertSchmidt(getstate(p))
-HilbertSchmidt(p::GloballyEvolvingPEPO) = HilbertSchmidt(getcurrentstate(p))
+HilbertSchmidt(p::AbstractLattice{G,T}) where {G,T<:TensorMap} = HilbertSchmidt(p, p)
 
-struct Trace{Lat,PType<:AbsTen{2,4}} <: AbstractBulkTensors
-    data::OnLattice{Lat,PType,Matrix{PType}}
+function HilbertSchmidt(
+    p1::AbstractLattice{G,T}, p2::AbstractLattice{G,T}
+) where {G,T<:TensorMap}
+    return HilbertSchmidt(TensorPair.(p1, p2))
 end
 
-Trace(p::AbstractPEPO) = Trace(getstate(p))
-Trace(p::GloballyEvolvingPEPO) = Trace(getcurrentstate(p))
+hilbertschmidt(p::AbstractPEPO) = HilbertSchmidt(TensorPair.(getstate(p), getstate(p)))
+function hilbertschmidt(p::GlobalUpdatablePEPO)
+    return HilbertSchmidt(TensorPair.(getevolved(p), getevolved(p)))
+end
+hilbertschmidt(p::TimeDependantPEPO) = hilbertschmidt(p.x), hilbertschmidt(p.y)
 
-const ContractableTensor = Union{AbsTen{2,4},AbsTen{0,4}}
-const ContractableTensors = OnLattice{<:AbstractLattice,<:ContractableTensor}
+struct Trace{G,PType<:AbsTen{0,4},A<:Matrix{PType}} <: AbstractBulk{G,PType,A}
+    data::Lattice{G,PType,A}
+end
 
-const ContractableObjects = Union{
-    AbstractBulkTensors,OnLattice{<:AbstractLattice,<:ContractableTensor}
-}
-
-gettensors(bulk_tensor::AbstractBulkTensors) = bulk_tensor.data
-
-detrace(trace::Trace) = contractphysical.(gettensors(trace))
-detrace(hilbert::HilbertSchmidt) = gettensors(hilbert)
-detrace(x) = x
+trace(p::AbstractPEPO) = Trace(contractphysical.(getstate(p)))
+trace(p::GlobalUpdatablePEPO) = Trace(contractphysical.(getcurrentstate(p)))
 
 function contractphysical(tsrc::AbsTen{2,4})
     virtual_space = domain(tsrc)
@@ -60,16 +62,6 @@ function mergevirtual(t::AbstractTensorMap{S,0,8}) where {S}
     return TensorMap(t.data, one(S), *(dom...))
 end
 
-_bondspace(tensor::AbsTen{2,4}, i::Int) = domain(tensor)[i] * domain(tensor)[i]'
-_bondspace(tensor::AbsTen{0,4}, i::Int) = domain(tensor)[i]
-_bondspaces(tensor::ContractableTensor) = (bondspace(tensor, i) for i in 1:4)
-
-function _bondspaces(onlattice::ContractableTensors)
-    return (_bondspace.(onlattice, i) for i in 1:4)
+function Base.BroadcastStyle(::Type{<:AbstractBulk{G,PType,A}}) where {G,PType,A}
+    return LatticeStyle{G,typeof(Base.BroadcastStyle(A))}()
 end
-
-swapaxes(tensor::AbsTen{0,4}) = permute(tensor, (), (2, 1, 4, 3))
-swapaxes(tensor::AbsTen{2,4}) = permute(tensor, (1, 2), (4, 3, 6, 5))
-
-invertaxes(tensor::AbsTen{0,4}) = permute(tensor, (), (3, 4, 1, 2))
-invertaxes(tensor::AbsTen{2,4}) = permute(tensor, (1, 2), (5, 6, 3, 4))

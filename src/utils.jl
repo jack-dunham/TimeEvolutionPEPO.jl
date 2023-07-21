@@ -92,10 +92,18 @@ function _transpose(tsrc::AbsTen{N,M}) where {N,M}
     return permute(tsrc, Tuple((N + 1):(N + M))::NTuple{M::Int}, Tuple(1:N)::NTuple{N,Int})
 end
 
+# TODO move to ITC
+function permutecod(t::ITC.TensorPair, p::NTuple{M,Int}) where {M}
+    return ITC.TensorPair(permutecod(t.top, p), permutecod(t.bot, p))
+end
 function permutecod(t::AbsTen{N,M}, p::NTuple{N,Int}) where {N,M}
     return permute(t, p, Tuple((N + 1):(M + N))::NTuple{M,Int})
 end
 
+# TODO move to ITC
+function permutedom(t::ITC.TensorPair, p::NTuple{M,Int}) where {M}
+    return ITC.TensorPair(permutedom(t.top, p), permutedom(t.bot, p))
+end
 function permutedom(t::AbsTen{N,M}, p::NTuple{M,Int}) where {N,M}
     p_dom = p .+ N
     return permute(t, Tuple(1:N)::NTuple{N,Int}, p_dom)
@@ -122,3 +130,46 @@ function _rightorth(t::AbsTen{N,2}) where {N}
     l_out = permute(L, (), (2, 1))
     return l_out, t_out
 end
+
+ftsvd(t::TensorMap; trunc::TensorKit.TruncationScheme=notrunc()) = tsvd(t; trunc=trunc)
+function ftsvd(t::TensorMap{ComplexSpace}; trunc::TensorKit.TruncationSpace)
+    T = eltype(t)
+
+    d = trunc.space
+
+    S = TensorMap(zeros, T, d, d)
+
+    U = TensorMap(zeros, T, codomain(t), codomain(S))
+    V = TensorMap(zeros, T, domain(S), domain(t))
+
+    u, s, v = psvd(t.data; rank=dim(d))
+
+    ci = x -> CartesianIndices(x)
+
+    ds = Diagonal(s)
+
+    copyto!(U.data, ci(u), u, ci(u))
+    copyto!(S.data, ci(ds), ds, ci(ds))
+    copyto!(V.data, ci(v'), v', ci(v'))
+
+    return U, S, V
+end
+
+# function fsvd(t::TensorMap{D}; trunc::TensorKit.TruncationSpace) where {D<:IndexSpace}
+#     d = trunc.space
+#
+#     S = similar(t, d, d)
+#
+#     U = similar(t, codomain(t), codomain(S))
+#     V = similar(t, domain(S), domain(t))
+#
+#     for c in sectors(d)
+#         println(dim(c))
+#         u, s, v = psvd(TensorKit.block(t, c); rank=dim(c))
+#         copy!(U.data[c], u)
+#         copy!(S.data[c], diagm(s))
+#         copy!(V.data[c], v')
+#     end
+#
+#     return U, S, V
+# end

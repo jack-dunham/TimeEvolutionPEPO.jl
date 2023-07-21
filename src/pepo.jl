@@ -1,9 +1,9 @@
-function LinearAlgebra.normalize!(pepo::AbstractPEPO, boundary::AbstractBoundary)
-    return rmul!.(st, 1 / norm(pepo, boundary))
+function LinearAlgebra.normalize!(pepo::AbstractPEPO, boundary::AbstractBoundaryTensors)
+    return rmul!.(getstate(pepo), 1 / norm(pepo, boundary))
 end
-function LinearAlgebra.norm(pepo::AbstractPEPO, boundary::AbstractBoundary)
+function LinearAlgebra.norm(pepo::AbstractPEPO, boundary::AbstractBoundaryTensors)
     st = getstate(pepo)
-    norm = tracecontract(boundary, contractphysical.(st))
+    norm = tracecontract(boundary, st)
     return norm
 end
 
@@ -11,7 +11,7 @@ function onelocal(pepo::AbstractPEPO, boundary::AbstractBoundaryState; kwargs...
     return onelocal(pepo, boundary.tensors; kwargs...)
 end
 
-function onelocal(pepo::AbstractPEPO, boundary::AbstractBoundary; normalize=false)
+function onelocal(pepo::AbstractPEPO, boundary::AbstractBoundaryTensors; normalize=false)
     onelocal = onelocalcontract(boundary, getstate(pepo))
 
     if normalize
@@ -24,7 +24,7 @@ function onelocal(pepo::AbstractPEPO, boundary::AbstractBoundary; normalize=fals
 end
 
 function measure(pepo::AbstractPEPO, boundary, observables...; kwargs...)
-    pepo_i = onelocal(pepo; kwargs...)
+    pepo_i = onelocal(pepo, boundary; kwargs...)
     return measure(pepo_i, observables...)
 end
 function measure(pepo_i, observables::Vararg{<:AbstractMatrix})
@@ -39,3 +39,5 @@ function measure(pepo_i, observable::AbstractMatrix)
     @debug "Measurment outcome: $out_val"
     return out_val
 end
+
+tracecontract(boundary, bulk) = tr.(onelocalcontract(boundary, bulk))
