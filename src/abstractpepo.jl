@@ -20,6 +20,10 @@ function Base.getindex(weights::Weights, bond::Bond)
     end
 end
 
+function TensorKit.truncspace(w::Weights, bond::Bond)
+    return TensorKit.TruncationSpace(codomain(w[bond])[1])
+end
+
 function changeaxis(weights::Weights)
     return Weights(permutedims(weights.vertical), permutedims(weights.horizontal))
 end
@@ -39,6 +43,9 @@ struct PEPO{G,PType<:AbsTen{2,4},CType} <: AbstractPEPO
     state::Lattice{G,PType,Matrix{PType}}
     weights::Weights{G,CType}
 end
+TensorKit.truncspace(p::AbstractPEPO, bond::Bond) = truncspace(getweights(p), bond)
+
+quicknormalize!(pepo) = normalize!.(getstate(pepo))
 
 ITC.numbertype(pepo::AbstractPEPO) = ITC.numbertype(getstate(pepo))
 
@@ -63,12 +70,11 @@ function changeaxis!(pepo_permuted::AbstractPEPO, pepo::AbstractPEPO)
 end
 
 function setweights!(pepo::AbstractPEPO, s, bond::Bond)
-    @debug "$(typeof(getweights(pepo, bond)))"
     copy!(getweights(pepo, bond), s)
     return pepo
 end
 
-getbonds(pepo::AbstractPEPO) = getbonds(getstate(pepo))
+getbonds(pepo::AbstractPEPO, args...) = getbonds(getstate(pepo), args...)
 
 function bloch(a::Base.AbstractVecOrTuple)
     σ = pauli
@@ -134,7 +140,7 @@ function PEPO(
     return PEPO(tensors)
 end
 function PEPO(
-    a::IdentityState,
+    ::IdentityState,
     physbond::AbstractMatrix,
     eastbond::AbstractMatrix,
     southbond::AbstractMatrix=eastbond;
@@ -271,10 +277,11 @@ _getindex(p::GlobalUpdatablePEPO, bond::Bond, ::Val{true}) = getindex(getevolved
 struct TimeDependantPEPO{P<:AbstractUpdatablePEPO}
     x::P
     y::P
+    TimeDependantPEPO(x::P, y::P) where {P} = new{P}(x, y)
+    TimeDependantPEPO(x::P) where {P} = new{P}(x)
 end
-#=
 
-function minimalcanonicalform!(tensor::AbsTen{2,4}; tol=1e-5, maxiter=1000)
+function minimalcanonicalform!(tensor::AbsTen{2,4}; tol=1e-7, maxiter=1000)
     hor = id(domain(tensor)[1])
     ver = id(domain(tensor)[2])
     T = deepcopy(tensor)
@@ -299,6 +306,8 @@ function minimalcanonicalform!(tensor::AbsTen{2,4}; tol=1e-5, maxiter=1000)
         end
         hor = exp(-1 / 8 * 1 / tr(ketbra) * h_diff) * hor
         ver = exp(-1 / 8 * 1 / tr(ketbra) * v_diff) * ver
+
+        # @info "Minimal canonical form gauging: $err"
     end
     return tensor
 end
@@ -310,4 +319,3 @@ function mcfgauge!(p_out, p_in, g1, g2) #hor, ver
         p_in[k b; ee ss ww nn] * g1[ee; e] * g2[ss; s] * g1i[ww; w] * g2i[nn; n]
     return p_out
 end
-=#

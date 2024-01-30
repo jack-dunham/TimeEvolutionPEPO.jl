@@ -1,45 +1,29 @@
-# Either a AbstractBoundary or an AbstractNeighbourhood
-struct SimpleUpdateState end
+abstract type AbstractTruncatorState end
 
-const AbstractEnvironmentState = Union{
-    NeighbourhoodState,SimpleUpdateState,AbstractBoundaryState
-}
+# Most basic algorithm for truncating bonds
+struct SimpleUpdateState <: AbstractTruncatorState end
 
-struct Environments{T<:AbstractEnvironmentState}
-    x::T
-    y::T
+# Nearest neighbourhood update
+struct NeighbourhoodUpdateState{N<:NTUState} <: AbstractTruncatorState
+    x::N
+    y::N
 end
 
-struct VidalIsometries{T1<:AbsTen{2,1},T2<:AbsTen{1,2}}
-    east::T1
-    south::T1
-    west::T2
-    north::T2
+# Full enviornment truncation
+struct FullEnvironmentState{E<:AbstractBoundaryState} <: AbstractTruncatorState
+    x::E
+    y::E
 end
 
-function setvidal!(vidals::Lattice{G,<:VidalIsometries},u,v, bond) where {G}
-    ax = bondaxis(bond)
+const EnvironmentOrNeighbourhoodState = Union{NeighbourhoodUpdateState,FullEnvironmentState}
 
-    src_iso, snk_iso = vidals[bond]
-    
-    if ax == 1
-        copy!(src_iso.east, u)
-        copy!(snk_iso.west, v)
-    elseif ax == 2
-        copy!(src_iso.south, u)
-        copy!(snk_iso.north, v)
-    end
-
-    return vidals
-end
-
-
-function calculate!(env::Environments)
-    ITC.reset!(env.x)
-    ITC.reset!(env.y)
-    ITC.calculate!(env.x)
-    ITC.calculate!(env.y)
-    return env
+# Vidal gauge truncation (simmilar to SU)
+struct VidalTruncationState{M<:MessageTensors,U<:VidalIsometries,S<:VidalWeights,T} <:
+       AbstractTruncatorState
+    messages::Lattice{Square,M,Matrix{M}} # only works for
+    isometries::Lattice{Square,U,Matrix{U}}
+    weights::Lattice{Square,S,Matrix{S}}
+    map::T
 end
 
 # SU, FET, NTU
@@ -61,7 +45,10 @@ end
 end
 
 @kwdef struct SU <: AbstractTruncationScheme
-    gauge::Bool = true
+    ξ::Float64 = Inf
+end
+
+@kwdef struct VGU <: AbstractTruncationScheme
     ξ::Float64 = Inf
 end
 
@@ -76,40 +63,106 @@ updatescheme(::SU) = LULT()
 
 Base.show(::IO, tr::AbstractTruncationScheme) = dump(tr)
 
-function environments(pepo::TimeDependantPEPO, truncalg::AbstractTruncationScheme)
-    xenv = initenvironment(pepo.x, truncalg)
-    yenv = initenvironment(pepo.y, truncalg)
-    return Environments(xenv, yenv)
+## Initalialize truncators for a full TD-PEPO
+function initialize_truncators(pepo::TimeDependantPEPO, ::DynamicalMap, truncalg::FET)
+    xenv = initialize_truncators(pepo.x, truncalg)
+    yenv = initialize_truncators(pepo.y, truncalg)
+    return FullEnvironmentState(xenv, yenv)
+end
+function initialize_truncators(pepo::TimeDependantPEPO, ::DynamicalMap, truncalg::NTU)
+    xenv = initialize_truncators(pepo.x, truncalg)
+    yenv = initialize_truncators(pepo.y, truncalg)
+    return NeighbourhoodUpdateState(xenv, yenv)
+end
+function initialize_truncators(pepo::TimeDependantPEPO, ::DynamicalMap, truncalg::SU)
+    return SimpleUpdateState()
+end
+## 
+
+## Initalialize truncators for lattice of tensors
+initialize_truncators(bulk, fet::FET) = initialize_truncators(bulk, fet.alg)
+function initialize_truncators(bulk, conalg::AbstractBoundaryAlgorithm)
+    return ITC.initialize(hilbertschmidt(bulk), conalg)
 end
 
-function environments!(env::Environments)
-    environment!(env.x)
-    environment!(env.y)
-    return env
+function initialize_truncators(bulk, ::NTU)
+    return initialize_neighbourhood(hilbertschmidt(bulk))
 end
 
-function environment!(env::AbstractBoundaryState)
+## Initalialize truncators using existing environment state
+initialize_truncators(tensors, ::NTUState) = initialize_truncators(tensors, NTU())
+initialize_truncators(tensors, st::AbstractBoundaryState) = initialize_truncators(tensors, st.alg)
+
+
+
+function initialize_truncators(pepo::TimeDependantPEPO, dynamical_map, ::VGU)
+    map = dynamical_map.x
+    st = getstate(pepo.x)
+
+    messages = initmessages.(st, map.data)
+
+    function useful_f1(p, t)
+        pdom = domain(p)
+        mdom = domain(t)
+
+        ue = TensorMap(
+            undef, promote_type(eltype(p), eltype(t)), pdom[1] * mdom[1], pdom[1]
+        )
+        us = TensorMap(
+            undef, promote_type(eltype(p), eltype(t)), pdom[2] * mdom[2], pdom[2]
+        )
+        vw = TensorMap(
+            undef, promote_type(eltype(p), eltype(t)), pdom[3] * mdom[3], pdom[3]
+        )
+        vn = TensorMap(
+            undef, promote_type(eltype(p), eltype(t)), pdom[4] * mdom[4], pdom[4]
+        )
+        return VidalIsometries(ue, us, vw, vn)
+    end
+    function useful_f2(p)
+        pdom = domain(p)
+
+        ue = TensorMap(undef, eltype(p), pdom[1], pdom[1])
+        us = TensorMap(undef, eltype(p), pdom[2], pdom[2])
+        vw = TensorMap(undef, eltype(p), pdom[3]', pdom[3]')
+        vn = TensorMap(undef, eltype(p), pdom[4]', pdom[4]')
+        return VidalWeights(ue, us, vw, vn)
+    end
+
+    vidals = useful_f1.(st, map.data)
+    weights = useful_f2.(st)
+
+    return VidalTruncationState(messages, vidals, weights, map)
+end
+
+initialize_truncators(st::SimpleUpdateState) = st
+
+# Truncator renormalization
+function renormalize!(st::EnvironmentOrNeighbourhoodState)
+    renormalize!(st.x)
+    renormalize!(st.y)
+    return st
+end
+
+function renormalize!(env::AbstractBoundaryState)
     ITC.reset!(env)
     ITC.calculate!(env)
     return env
 end
-environment!(env::NeighbourhoodState) = ITC.calculate!(env)
-environment!(env::SimpleUpdateState) = env
+renormalize!(st::NTUState) = calculate_neighbourhood!(st)
+renormalize!(st::SimpleUpdateState) = st
 
-function initenvironment(pepo::AbstractPEPO, fet::FET)
-    return ITC.initialize(hilbertschmidt(pepo), fet.alg)
+function truncators(tensors, truncalg)
+    truncs = initialize_truncators(tensors, truncalg)
+    renormalize!(truncs)
+    return truncs
 end
-function initenvironment(pepo::AbstractPEPO, ::NTU; kwargs...)
-    return ntu_initenvironment(hilbertschmidt(pepo); kwargs...)
-end
-initenvironment(::AbstractPEPO, ::SU) = SimpleUpdateState()
-
-function renormalize(tensors, env::NeighbourhoodState)
-    new_env = ntu_initenvironment(tensors)
-    ITC.calculate!(new_env)
-    return new_env
-end
-renormalize(tensors, env::SimpleUpdateState) = env
+# function renormalize(tensors, env::NTUState)
+#     new_env = ntu_initenvironment(tensors)
+#     ITC.calculate!(new_env)
+#     return new_env
+# end
+# renormalize(tensors, env::SimpleUpdateState) = env
 
 """
     metric(pepo::LocallyEvolvingPEPO, environment::AbstractEnvironment)
@@ -133,7 +186,7 @@ end
 
 Truncate the state `pepo` according to truncation matrices `iso`.
 """
-function truncate!(pepo::AbstractUpdatablePEPO, iso::TruncationIsometries)
+function truncate!(pepo::AbstractUpdatablePEPO, iso)
     @debug "Before truncation:" isevolved(pepo)
 
     _truncate!(pepo, iso)
@@ -154,13 +207,13 @@ function _truncate!(pepo::LocalUpdatablePEPO, iso::TruncationIsometries)
     old_left, old_right = getstate(pepo)[bond]
 
     # Truncate the left site with an isometry on the right bond
-    _truncate!(old_left, new_left, iso.u * sqrt(iso.s))
+    tensor_truncate!(old_left, new_left, iso.u * sqrt(iso.s))
     # Truncate the right site with an isometry on the left bond
-    _truncate!(old_right, sqrt(iso.s) * iso.v, new_right)
+    tensor_truncate!(old_right, sqrt(iso.s) * iso.v, new_right)
 
     setweights!(pepo, normalize(iso.s), bond)
 
-    println(normalize(iso.s))
+    @debug "" weight = normalize(iso.s)
 
     return pepo
 end
@@ -171,7 +224,7 @@ partialtruncate(iso, site::AbsTen) = _partialtruncate(sqrt(iso.s) * iso.v, site)
 function _partialtruncate(arg1, arg2)
     site_pt = similar_but_truncated(arg1, arg2)
     @debug "" space(site_pt)
-    _truncate!(site_pt, arg1, arg2)
+    tensor_truncate!(site_pt, arg1, arg2)
     return site_pt
 end
 
@@ -189,19 +242,15 @@ function similar_but_truncated(iso::AbsTen{1,1}, pepo_tensor)
 end
 
 # Truncate a globally evolving pepo
-function _truncate!(
-    pepo::GlobalUpdatablePEPO, iso::Lattice{G,<:TruncationIsometries}
-) where {G}
-    # Absorb weights into the isometries `u`.
-    u = iso.u .* sqrt.(iso.s)
+function _truncate!(pepo::GlobalUpdatablePEPO, truncators::VidalTruncationState)
+    dst = getstate(pepo)
+    src = getevolved(pepo)
 
-    # Do the same, but let x -> x - 1 for the left isometries `v`.
-    v = circshift(sqrt.(iso.s), (-1, 0)) .* circshift(iso.v, (-1, 0))
+    tno = truncators.map
+    vidals = truncators.isometries
 
-    # Truncate all bonds simultaneously.
-    _truncate!.(getstate(pepo), getevolved(pepo), u, v)
-
-    # setweight!
+    vidaltruncation!.(dst, src, tno.data, vidals)
+    copy!.(src, dst)
 
     return pepo
 end
@@ -220,44 +269,40 @@ function _truncate!(pepo::GlobalUpdatablePEPO, iso::TruncationIsometries)
     return pepo
 end
 
-function vidaltruncation!(pepo, tno, vidals)
-    _vidaltruncation!.(pepo.state, pepo.evolving_state, tno, vidals)
-    copy!(pepo.evolving_state, pepo.state)
-    return pepo
-end
-function _vidaltruncation!(pepo_dst, pepo_src, tno, vidal)
-    _truncate!(pepo_dst, pepo_src, tno, vidal.east, vidal.west, vidal.south,vidal.north)
+function vidaltruncation!(pepo_dst, pepo_src, tno, vidal)
+    tensor_truncate!(
+        pepo_dst, pepo_src, tno, vidal.east, vidal.west, vidal.south, vidal.north
+    )
     return pepo_dst
 end
 
-
 # Truncation macros.
 
-function _truncate!(p::AbsTen{2,4}, q::AbsTen{2,4}, u::AbsTen{1,1})
+function tensor_truncate!(p::AbsTen{2,4}, q::AbsTen{2,4}, u::AbsTen{1,1})
     @tensoropt p[k b; e s w n] = q[k b; ee s w n] * u[ee; e]
     return p
 end
-function _truncate!(p::AbsTen{2,4}, v::AbsTen{1,1}, q::AbsTen{2,4})
+function tensor_truncate!(p::AbsTen{2,4}, v::AbsTen{1,1}, q::AbsTen{2,4})
     @tensoropt p[k b; e s w n] = v[w; ww] * q[k b; e s ww n]
     return p
 end
-function _truncate!(p::AbsTen{2,4}, q::AbsTen{2,4}, u::AbsTen{1,1}, v::AbsTen{1,1})
+function tensor_truncate!(p::AbsTen{2,4}, q::AbsTen{2,4}, u::AbsTen{1,1}, v::AbsTen{1,1})
     @tensoropt p[k b; e s w n] = v[w; ww] * q[k b; ee s ww n] * u[ee; e]
     return p
 end
-function _truncate!(
+function tensor_truncate!(
     p::AbsTen{2,4},     # dst
     q::AbsTen{2,4},     # src
     l::AbsTen{4,4},     # time-stepper
     u1::AbsTen{2,1},    # east
-    v1::AbsTen{1,2},    # west
+    v1::AbsTen{2,1},    # west
     u2::AbsTen{2,1},    # south
-    v2::AbsTen{1,2},    # north
+    v2::AbsTen{2,1},    # north
 )
     @tensoropt p[k b; e s w n] =
-        v1[w; ww1 ww2] *
-        v2[n; nn1 nn2] *
-        q[kk bb; ee ss ww nn] *
+        v1[ww1 ww2; w] *
+        v2[nn1 nn2; n] *
+        q[kk bb; ee1 ss1 ww1 nn1] *
         l[k b kk bb; ee2 ss2 ww2 nn2] *
         u1[ee1 ee2; e] *
         u2[ss1 ss2; s]

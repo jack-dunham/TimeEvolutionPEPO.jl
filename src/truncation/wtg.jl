@@ -35,18 +35,21 @@ function rescale(s, ξ)
 end
 
 wtg!(iso, metric, ::Val{false}) = iso, metric
-wtg!(iso, metric, ::Val{true}) = wtg!(iso.u, iso.s, iso.v, metric)
+function wtg!(iso, metric, ::Val{true})
+    @info "Fixing to weighted trace gauge..."
+    return wtg!(iso.u, iso.s, iso.v, metric)
+end
 
 function wtg!(
     u0::TensorMap{S,1,1}, # u[x] 
     s0::TensorMap{S,1,1}, # s[x]
     v0::TensorMap{S,1,1}, # v[x+1]
-    γ::TensorMap{S,2,2}; # γ[x]
+    Y::TensorMap{S,2,2}; # γ[x]
     test=true,
 ) where {S<:IndexSpace}
     # who knows if this works
     if test == true
-        skip = wtg_test(u0, s0, v0, γ)
+        skip = wtg_test(u0, s0, v0, Y)
         if skip[1] && skip[2]
             @info "Already in weighted trace gauge"
             return u0, s0, v0
@@ -61,23 +64,34 @@ function wtg!(
 
     s_min < 1e-14 ? (@info "Skipped gauge fixing"; return u0, s0, v0) : nothing
 
+    println(s_vals)
+
     # @tensoropt γi[-1 -2; -3 -4] :=
     #     γ[1 2 3 4; 5 6 7 8] * u[5 6; -3] * v[-1; 1 2] * (u')[-2; 3 4] * (v')[7 8; -4]
 
-    @tensoropt γi[-1 -2; -3 -4] :=
-        γ[1 2; 3 4] * u[3; -3] * v[-1; 1] * (u')[-2; 2] * (v')[4; -4]
+    @tensoropt yiso[-1 -2; -3 -4] :=
+        Y[1 2; 3 4] * u[3; -3] * v[-1; 1] * (u')[-2; 2] * (v')[4; -4]
 
-    γm = permute(γi, (1, 4), (3, 2)) # Transform to matrix
+    yf = permute(yiso, (2, 4), (3, 1))
+
+    yf = (1//2 * (yf + yf'))
+
+    # yf, err = posapprox(yf)
+
+    @debug "WTG positive approx error: $err"
+
+    permute!(yiso, yf, (4, 1), (3, 2))
+
+    γm = permute(yiso, (1, 4), (3, 2)) # Transform to matrix
     @tensor γN = γm[a b; a b] # Y_ji
     γm = γm / γN
     # γold = γm
-    # γm = 1 / 2 * (γm' + γm) # γm is now hermitian, so SVD gives eigen-decomposition
 
     # γmr = γm * (s ⊗ permute(s', (2,), (1,)))
-    ri = Tensor(rand, ComplexF64, domain(γm))
+    ri = Tensor(randn, ComplexF64, domain(γm))
     _, rs, _ = eigsolve(x -> γm * x, ri, 1, :LM; eager=true, ishermitian=false)
 
-    li = TensorMap(rand, ComplexF64, one(codomain(γm)), codomain(γm))
+    li = TensorMap(randn, ComplexF64, one(codomain(γm)), codomain(γm))
     # γml = (s ⊗ permute(s', (2,), (1,))) * γm
     _, ls, _ = eigsolve(x -> x * γm, li, 1, :LM; eager=true, ishermitian=false)
 
@@ -102,7 +116,7 @@ function wtg!(
 
     # Test if the metric is gauged correctly.
     if test == true
-        left, right = wtg_test(u0, st, v0, γ)
+        left, right = wtg_test(u0, st, v0, Y)
         if !left
             @warn "Left gauge condition was not met"
         end
@@ -111,7 +125,9 @@ function wtg!(
         end
     end
 
-    return u0, copy!(s0, normalize(st)), v0
+    # normalize!(st)
+
+    return u0, copy!(s0, st), v0
 
     #### this is an approach for complex space
     # eigr = eigh(γm; sortby = x -> -abs(x))
@@ -168,12 +184,12 @@ function wtg_test(
     # else
     #     right = false
     # end
-    if isapprox(γl / γlN, one(γl); rtol=1e-5)
+    if isapprox(γl / γlN, one(γl))
         left = true
     else
         left = false
     end
-    if isapprox(γr / γrN, one(γr); rtol=1e-5)
+    if isapprox(γr / γrN, one(γr))
         right = true
     else
         right = false

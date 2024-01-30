@@ -100,21 +100,72 @@ end
 # end
 
 # For 1x1 unitcell only
-function _quicktruncate!(pepo::GlobalUpdatablePEPO, environment)
-    bond = getbonds(pepo)[1, 1]
-    site = getevolved(pepo)[1, 1]
+# function _quicktruncate!(pepo::GlobalUpdatablePEPO, environment)
+#     bond = getbonds(pepo)[1, 1]
+#     site = getevolved(pepo)[1, 1]
+#
+#     left_site = copy(site)
+#     right_site = copy(site)
+#
+#     # left0, right0 = _rankreduce!(left_site, right_site)
+#
+#     tmetric = _metric(site, site, environment.tensors, bond)
+#     left0, right0 = isometryinit(tmetric)
+#
+#     d = domain.(getstate(pepo), 1)[bond.left]
+#
+#     u, s_f64, v = metricoptimise(left0, right0, tmetric, truncspace(d); rankreduced=false)
+#
+#     s = similar(s_f64, eltype(u))
+#
+#     copy!(s, s_f64)
+#
+#     @info "" normalize(s)
+#
+#     iso = TruncationIsometries(u, s, v)
+#
+#     truncate!(pepo, iso)
+#
+#     return pepo
+# end
 
-    left_site = copy(site)
-    right_site = copy(site)
+function quicktruncate!(pepo_tensor, truncators)
+    u = leftrankreduce!(pepo) # P -> Q * U
+    v = rightrankreduce!(pepo) # Q -> V * W
 
-    # left0, right0 = _rankreduce!(left_site, right_site)
+    q_left = similar(pepo)
+    q_right = similar(pepo)
 
-    tmetric = _metric(site, site, environment.tensors, bond)
+    tensor_truncate!(q_left, pepo, u)
+    tensor_truncate!(q_right, v, pepo)
+
+    return metric = _metric(q_left, q_right, truncators)
+end
+
+function quicktruncate!(pepo::GlobalUpdatablePEPO, env; gauge=true, mcf=false, xi=Inf)
+    only_bond = getbonds(pepo)[1, 1]
+
+    src_pepo = getevolved(pepo)
+    dst_pepo = getstate(pepo)
+
+    src_site = src_pepo[1, 1]
+    dst_site = dst_pepo[1, 1]
+
+    tmetric = metric(pepo, env.tensors, only_bond)
+
+    #=
+
+    if !(validate!(metric)) || tmetric = metric(pepo, env.tensors, only_bond)
+    =#
+
+    # Initial guess for isometries (identities)
     left0, right0 = isometryinit(tmetric)
 
-    d = domain.(getstate(pepo), 1)[bond.left]
+    d = domain(dst_site, 1)
 
-    u, s_f64, v = metricoptimise(left0, right0, tmetric, truncspace(d); rankreduced=false)
+    u, s_f64, v, tmetric = metricoptimise(
+        left0, right0, tmetric, truncspace(d); rankreduced=false
+    )
 
     s = similar(s_f64, eltype(u))
 
@@ -123,50 +174,78 @@ function _quicktruncate!(pepo::GlobalUpdatablePEPO, environment)
     @info "" normalize(s)
 
     iso = TruncationIsometries(u, s, v)
+    wtg!(iso, tmetric, Val(gauge))
+    if xi < Inf
+        copy!(iso.s, rescale(iso.s, xi))
+        wtg!(iso, tmetric, Val(gauge))
+    end
+    ##
 
-    truncate!(pepo, iso)
+    setweights!(pepo, normalize(iso.s), only_bond)
+
+    temp = partialtruncate(src_site, iso)
+    rv = partialtruncate(iso, temp)
+
+    hermitianize!(rv)
+
+    if mcf
+        minimalcanonicalform!(rv)
+    end
+
+    copy!(dst_site, rv)
 
     return pepo
 end
 
-function quicktruncate!(pepo::GlobalUpdatablePEPO, env)
-    site = getevolved(pepo)
+function _sequentialtruncate(pepo::GlobalUpdatablePEPO, env; xi=Inf, gauge=true)
+    ev_pepo = getevolved(pepo)
 
-    inter_pepo = similar(getevolved(pepo), (2, 1))
+    inter_state = deepcopy(ev_pepo)
 
-    inter_pepo[1, 1] = copy(site[1, 1])
-    inter_pepo[2, 1] = copy(site[1, 1])
+    left0s = leftrankreduce!.(ev_pepo) # P -> Q * U
+    right0s = rightrankreduce!.(ev_pepo) # Q -> V * W
 
-    env = renormalize(HilbertSchmidt(inter_pepo, inter_pepo), env)
+    q_lefts = similar.(ev_pepo)
+    q_rights = similar.(ev_pepo)
 
-    bonds = getbonds(inter_pepo)
+    tensor_truncate!.(q_lefts, ev_pepo, left0s)
+    tensor_truncate!.(q_rights, right0s, ev_pepo)
+
+    bonds = getbonds(pepo)
+
+    metrics = _metric.(q_lefts, q_rights, Ref(env.tensors), bonds)
+
     for col in eachcol(bonds)
         for bond in col
-            a_site, b_site = inter_pepo[bond]
+            D = domain.(getstate(pepo), 1)[bond.left]
 
-            left0, right0 = _rankreduce!(a_site, b_site)
-            tmetric = _metric(a_site, b_site, env.tensors, bond)
+            u, s_f64, v = metricoptimise(
+                left0s[bond.left], right0s[bond.right], metrics[bond.left], truncspace(D)
+            )
 
-            d = domain.(getstate(pepo), 1)[bond.left]
-
-            u, s_f64, v = metricoptimise(left0, right0, tmetric, truncspace(d))
-
-            s = similar(s_f64, eltype(u))
-
+            s = similar(s_f64, ITC.numbertype(pepo))
             copy!(s, s_f64)
-
-            @info "" normalize(s)
-
             iso = TruncationIsometries(u, s, v)
 
-            inter_pepo[1, 1] = partialtruncate(a_site, iso)
-            inter_pepo[2, 1] = partialtruncate(iso, b_site)
+            # wtg!(iso, tmetric, Val(gauge))
+            if xi < Inf
+                copy!(iso.s, rescale(iso.s, xi))
+                # wtg!(iso, tmetric, Val(gauge))
+            end
+            ##
 
-            env = renormalize(HilbertSchmidt(inter_pepo, inter_pepo), env)
+            setweights!(pepo, normalize(iso.s), bond)
+
+            left_site, right_site = inter_state[bond]
+
+            #  = A = ->  = A -
+            temp = partialtruncate(left_site, iso)
+            #  = B = ->  - B =
+            inter_state[bond.right] = partialtruncate(iso, temp)
         end
     end
 
-    copy!.(getstate(pepo), Ref(inter_pepo[1, 1]))
+    copy!.(getstate(pepo), inter_state)
 
     return pepo
 end
@@ -180,7 +259,7 @@ function sequentialtruncate(pepo::GlobalUpdatablePEPO, env; xi=Inf, gauge=true)
     else
         inter_state = copy(getevolved(pepo))
 
-        env = renormalize(HilbertSchmidt(inter_state, inter_state), env)
+        env = truncators(inter_state, env)
 
         for col in eachcol(bonds)
             for bond in col
@@ -193,7 +272,7 @@ function sequentialtruncate(pepo::GlobalUpdatablePEPO, env; xi=Inf, gauge=true)
 
                 D = domain.(getstate(pepo), 1)[bond.left]
 
-                u, s_f64, v = metricoptimise(left0, right0, tmetric, truncspace(D))
+                u, s_f64, v, tmetric = metricoptimise(left0, right0, tmetric, truncspace(D))
 
                 s = similar(s_f64, ITC.numbertype(pepo))
 
@@ -201,10 +280,10 @@ function sequentialtruncate(pepo::GlobalUpdatablePEPO, env; xi=Inf, gauge=true)
 
                 iso = TruncationIsometries(u, s, v)
 
-                # wtg!(iso, tmetric, Val(gauge))
+                wtg!(iso, tmetric, Val(gauge))
                 if xi < Inf
                     copy!(iso.s, rescale(iso.s, xi))
-                    # wtg!(iso, tmetric, Val(gauge))
+                    wtg!(iso, tmetric, Val(gauge))
                 end
                 ##
 
@@ -216,11 +295,13 @@ function sequentialtruncate(pepo::GlobalUpdatablePEPO, env; xi=Inf, gauge=true)
                 inter_state[bond.right] = partialtruncate(iso, right_site)
 
                 # Tensors have changed bond dimensions so need to construct new env
-                env = renormalize(HilbertSchmidt(inter_state, inter_state), env)
+                env = truncators(inter_state, env)
             end
         end
         # Recalculate the enviroment (intermediate renormalization step)
         copy!.(getstate(pepo), inter_state)
+
+        hermitianize!.(getstate(pepo))
     end
     return pepo
 end
@@ -265,11 +346,11 @@ function isometryinit(metric::AbsTen{2,2})
     η_left = domain(metric)[1]      # Upper left index
     η_right = codomain(metric)[1]   # Upper right index
 
-    left = id(η_left)
-    right = id(η_right)
+    # left = id(η_left)
+    # right = id(η_right)
 
-    # left = TensorMap(rand, eltype(metric), η_left, η_left)
-    # right = TensorMap(rand, eltype(metric), η_right, η_right)
+    left = TensorMap(randn, eltype(metric), η_left, η_left)
+    right = TensorMap(randn, eltype(metric), η_right, η_right)
 
     return left, right
 end
@@ -295,8 +376,9 @@ function metricoptimise(left, right, metric::AbstractLattice, trunc; kwargs...)
 end
 
 function new_costfunc(A, B, Y, LR)
-    AB = normalize(permute(A * B, (1, 2), ()))
-    LR = normalize(LR)
+    AB = permute(A * B, (1, 2), ())
+    # normalize!(AB)
+    # LR = normalize(LR)
     return norm(1 - scalar(AB' * Y * LR) - scalar(LR' * Y * AB) + scalar(AB' * Y * AB))
 end
 
@@ -315,11 +397,12 @@ function metricoptimise(
         left0 = left
         right0 = right
     else
-        left0 = normalize(one(left))
-        right0 = normalize(one(right))
+        left0 = one(left)
+        right0 = one(right)
     end
 
-    LR0 = normalize(permute(left0 * right0, (1, 2), ()))
+    LR0 = permute(left0 * right0, (1, 2), ())
+    # normalize!(LR0)
 
     # Put in the appropriate matrix form for the Ritz procedure. 
     Y = permute(metric, (2, 4), (3, 1))
@@ -332,7 +415,9 @@ function metricoptimise(
 
     hermiticity = norm(Y - Y')
 
-    htol = 1e-10
+    # htol = 1e-10
+    # htol = 0.0 # force SU
+    htol = Inf # force update
 
     hermiticity > htol &&
         @warn "Metric not hermitian! non-hermiticity:  $hermiticity, tolerance $htol"
@@ -351,6 +436,10 @@ function metricoptimise(
     #Symmetrise and normalise the truncation metric.
     Y = (0.5 * (Y + Y')) / F0
 
+    Y, err = posapprox(Y)
+
+    # @info "Positive approximation error: $err"
+
     # Construct the cost function to measure convergence.
     # cf = (Ma, Mb) -> metric_costfunction(Ma, Mb, Y, left, right, 1)
     cf = (x, y) -> new_costfunc(x, y, Y, LR0)
@@ -361,7 +450,7 @@ function metricoptimise(
     # Proceed with metric optimisation.
     u, s, v = optiso(cf, left, right, Y, trunc, left0, right0; kwargs...)
 
-    return u, s, v
+    return u, s, v, permute(Y, (4, 1), (3, 2))
 end
 
 function _metric_costfunction(Ma, Mb, g, Ra, Rb)
@@ -385,7 +474,9 @@ function optiso(
     R = right
 
     # The following tensor will be useful...
-    LR0 = normalize(permute(left0 * right0, (1, 2), ()))
+    LR0 = permute(left0 * right0, (1, 2), ())
+    # normalize!(LR0)
+
     Y_LR = Y * LR0
 
     u_su, s_su, v_su = tsvd(left0 * right0; trunc=trunc)
@@ -424,12 +515,16 @@ function optiso(
         # Optimise for Ma with Mb fixed.
         Ma = u * s
         Ma_max = optsingleiso(id_a ⊗ transpose(Mb), Y, Y_LR)
-        Ma, s, v = tsvd(Ma_max * Mb; trunc=trunc)
+        Ma, s, v = tsvd(Ma_max * Mb; trunc=trunc, alg=TensorKit.SVD())
+
+        # normalize!(s)
 
         # Optimise for Mb with Ma fixed.
         Mb = s * v
         Mb_max = optsingleiso(Ma ⊗ id_b, Y, Y_LR)
-        u, s, Mb = tsvd(Ma * Mb_max; trunc=trunc)
+        u, s, Mb = tsvd(Ma * Mb_max; trunc=trunc, alg=TensorKit.SVD())
+
+        # normalize!(s)
 
         # calculate convergence measure
         ϵ = norm(s - s_old)
@@ -464,8 +559,6 @@ function optsingleiso(id_Mb, Y, Y_LR)
     g = id_Mb' * Y * id_Mb
     #
     j = id_Mb' * Y_LR
-
-    # println(g)
 
     Ma_max = pinv(g; rtol=1e-7) * j
 

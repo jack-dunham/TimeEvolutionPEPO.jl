@@ -40,7 +40,9 @@ export Bond
 
 export Model
 
-export TEBD
+export TEBD, WII, TNO
+export SU, NTU, FET, VGU
+export GateLike, MPOLike
 export initialize, simulate!, simulate
 
 export @defmodel
@@ -51,6 +53,7 @@ include("utils.jl")
 include("linalg.jl")
 include("convergenceinfo.jl")
 include("abstractlattice.jl")
+include("physics/abstractmap.jl")
 # MPS
 include("abstractpepo.jl")
 include("pepo.jl")
@@ -60,8 +63,9 @@ include("contract/vumps.jl")
 include("contract/ctmrg.jl")
 
 include("physics/trace.jl")
-include("physics/dynamicalmap.jl")
 include("physics/longrange.jl")
+
+include("beliefpropagation.jl")
 
 include("truncation/abstractopt.jl")
 include("truncation/wtg.jl")
@@ -70,11 +74,11 @@ include("truncation/truncation.jl")
 include("truncation/isometries.jl")
 include("truncation/autodiff.jl")
 
-include("beliefpropagation.jl")
-
 #models
-include("physics/trotterevolve.jl")
-include("physics/tebd.jl")
+include("physics/evolution.jl")
+include("physics/tebd_evolve.jl")
+include("physics/tno_evolve.jl")
+include("physics/dynamicalmap.jl")
 
 include("Models/Models.jl")
 

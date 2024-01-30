@@ -1,6 +1,4 @@
-abstract type AbstractNeighbourhood end
-
-struct NTUTensors{L,TType<:AbsTen{2,2},CType<:AbsTen{1,1}} <: AbstractNeighbourhood
+struct NTUTensors{L,TType<:AbsTen{2,2},CType<:AbsTen{1,1}}
     T::Lattice{L,TType,Matrix{TType}}
     B::Lattice{L,TType,Matrix{TType}}
     LC::Lattice{L,CType,Matrix{CType}}
@@ -18,17 +16,19 @@ function Base.getindex(ntu::NTUTensors, bond::Bond)
     return t, b, lc, rc
 end
 
-struct NeighbourhoodState{NN<:NTUTensors,MType<:ITC.AbstractNetwork}
+struct NTUState{NN<:NTUTensors,MType<:ITC.AbstractNetwork}
     tensors::NN
     network::MType
 end
 
-function ntu_initenvironment(network::HilbertSchmidt; kwargs...)
-    ntu = ntu_inittensors(network; kwargs...)
-    return NeighbourhoodState(ntu, network)
+initialize_neighbourhood(network) = initialize_neighbourhood(undef, network)
+
+function initialize_neighbourhood(f, network::HilbertSchmidt)
+    ntu = initialize_neighbourhood_tensors(f, network)
+    return NTUState(ntu, network)
 end
 
-function ntu_inittensors(network; f=undef)
+function initialize_neighbourhood_tensors(f, network)
     el = ITC.numbertype(network)
 
     network_top = getfield.(network, :top)
@@ -49,9 +49,7 @@ function ntu_inittensors(network; f=undef)
     return NTUTensors(T, B, LC, RC)
 end
 
-function ITC.calculate!(state::NeighbourhoodState)
-    return ntuboundary!(state.tensors, state.network)
-end
+calculate_neighbourhood!(state::NTUState) = ntuboundary!(state.tensors, state.network)
 
 function ntuboundary!(ntu, network)
     T, B, LC, RC = unpack(ntu)

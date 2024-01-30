@@ -1,13 +1,34 @@
 struct SequentialUpdate end
 struct ParallelUpdate end
 
-function initevolution(pepo::AbstractPEPO, map::DynamicalMap, updatescheme)
-    xpepo = _initevolution(pepo, map.x, updatescheme)
-    ypepo = _initevolution(changeaxis(pepo), map.y, updatescheme)
-    return TimeDependantPEPO(xpepo, ypepo)
+abstract type AbstractTrotterStyle end
+
+struct GateLike <: AbstractTrotterStyle end
+struct MPOLike <: AbstractTrotterStyle end
+
+@kwdef struct TEBD{TAlg<:AbstractTruncationScheme,S<:AbstractTrotterStyle} <:
+              AbstractTimeEvolution
+    timestep::Float64 = 0.01
+    numsteps::Int = 100
+    breaktol::Float64 = 0.0
+    order::Int = 1
+    truncalg::TAlg = SU()
+    verbose::Bool = true
+    updatestyle::S = GateLike()
 end
 
-function _initevolution(pepo::AbstractPEPO, map, updatescheme::LULT)
+function initialize_evolution(
+    pepo::AbstractPEPO, map::DynamicalMap, evoalg::Union{TEBD,WII}
+)
+    xpepo = _initialize_evolution(pepo, map.x, evoalg)
+    ypepo = _initialize_evolution(changeaxis(pepo), map.y, evoalg)
+    return TimeDependantPEPO(xpepo, ypepo)
+end
+function _initialize_evolution(pepo::AbstractPEPO, map::TrotterGates, evoalg::TEBD)
+    return _initialize_evolution(pepo, map, evoalg.updatestyle)
+end
+
+function _initialize_evolution(pepo::AbstractPEPO, map::TrotterGates, ::GateLike)
     function useful_f(x, l, r)
         D = domain(x)
         lη = domain(l)
@@ -34,7 +55,7 @@ function _initevolution(pepo::AbstractPEPO, map, updatescheme::LULT)
     return LocalUpdatablePEPO(pepo, evolved, first_bond, Ref(false))
 end
 
-function _initevolution(pepo::AbstractPEPO, map, updatescheme::GULT)
+function _initialize_evolution(pepo::AbstractPEPO, map::TrotterGates, ::MPOLike)
     function useful_f(x, l, r)
         D = domain(x)
         lη = domain(l)
@@ -52,7 +73,7 @@ function _initevolution(pepo::AbstractPEPO, map, updatescheme::GULT)
 
     return GlobalUpdatablePEPO(pepo, evolved, Ref(false))
 end
-function _initevolution(pepo::AbstractPEPO, map::WIIMPO, updatescheme::GULT)
+function _initialize_evolution(pepo::AbstractPEPO, map::WIIMPO, ::WII)
     function useful_f(x, t)
         D = domain(x)
         lη = domain(t)[1]
@@ -73,7 +94,7 @@ end
 
 function timestep!(
     pepo::TimeDependantPEPO,
-    env::Environments,
+    truncators::AbstractTruncatorState,
     map::DynamicalMap, #{<:TrotterGates},
     order::Val{N};
     kwargs...,
@@ -81,13 +102,13 @@ function timestep!(
     xpepo = pepo.x
     ypepo = pepo.y
 
-    xenv = env.x
-    yenv = env.y
+    xtruncators = truncators.x
+    ytruncators = truncators.y
 
     xmap = map.x
     ymap = map.y
 
-    trotterstep!(xpepo, ypepo, xenv, yenv, xmap, ymap, order; kwargs...)
+    trotterstep!(xpepo, ypepo, xtruncators, ytruncators, xmap, ymap, order; kwargs...)
 
     # mutation of xpepo_td and ypepo_td should have mutated pepo accordingly.
     return pepo
@@ -139,16 +160,16 @@ end
 # end
 
 # Parallel 
-function updatestep!(pepo::GlobalUpdatablePEPO, environment, map; truncalg=NTU(), kwargs...)
+function updatestep!(pepo::GlobalUpdatablePEPO, truncators, map; truncalg, kwargs...)
     # Evolve, all sites
     pepo = evolve!(pepo, map)
 
     # # Post-env
-    ITC.calculate!(environment)
+    renormalize!(truncators)
 
-    sequentialtruncate(pepo, environment; xi=truncalg.ξ, gauge=truncalg.gauge)
+    sequentialtruncate(pepo, truncators; xi=truncalg.ξ, gauge=truncalg.gauge)
 
-    normalize!.(getstate(pepo))
+    quicknormalize!(pepo)
     # Truncate each site with respect the isometries
     # truncate!(pepo, iso)
 
@@ -156,7 +177,7 @@ function updatestep!(pepo::GlobalUpdatablePEPO, environment, map; truncalg=NTU()
 end
 
 # Sequential, Requires atleast a 2x2 unit cell. I think?
-function updatestep!(pepo::LocalUpdatablePEPO, environment, map; reverse=false, kwargs...)
+function updatestep!(pepo::LocalUpdatablePEPO, truncators, map; reverse=false, kwargs...)
     # if size(getstate(pepo)) < (2, 2)
     #     throw(
     #         ArgumentError(
@@ -167,6 +188,8 @@ function updatestep!(pepo::LocalUpdatablePEPO, environment, map; reverse=false, 
 
     bonds = getbonds(pepo)
 
+    renormalize!(truncators)
+
     if reverse
         axisbonds = Base.reverse(bonds)
     else
@@ -176,41 +199,44 @@ function updatestep!(pepo::LocalUpdatablePEPO, environment, map; reverse=false, 
     for col in eachcol(axisbonds)
         for (i, bond) in enumerate(col)
             # Update the states lying on the bond
-            updatebond!(pepo, environment, map, bond; kwargs...)
+            updatebond!(pepo, truncators, map, bond; kwargs...)
 
             # Quick and dirty normalization for algorithm stabilty. Does not ensure tr(ρ) = 1
-            normalize!.(getstate(pepo))
+
+            hermitianize!.(getstate(pepo))
+
+            quicknormalize!(pepo)
 
             # renormalize(hilbertschmidt(pepo), environment)
             #renormalize!(environment, pepo; renorm=renorm)
-            if true #issymmetric(map.east)
-                println("hello?")
-                for (j, _) in enumerate(eachcol(axisbonds)[2:end])
-                    new_left, new_right = pepo[bond]
-                    l = Lattice(axisbonds)
-                    old_left, old_right = pepo[l[i - j, j + 1]]
-                    copy!(old_left, new_left)
-                    copy!(old_right, new_right)
-                end
-            end
-            environment!(environment)
+            # if true #issymmetric(map.east)
+            #     println("hello?")
+            #     for (j, _) in enumerate(eachcol(axisbonds)[2:end])
+            #         new_left, new_right = pepo[bond]
+            #         l = Lattice(axisbonds)
+            #         old_left, old_right = pepo[l[i - j, j + 1]]
+            #         copy!(old_left, new_left)
+            #         copy!(old_right, new_right)
+            #     end
+            # end
+            renormalize!(truncators)
         end
-        if true#issymmetric(map.east)
-            break
-        end
+        # if true#issymmetric(map.east)
+        #     break
+        # end
     end
-    return pepo, environment
+    return pepo, truncators
 end
 
-function updatebond!(pepo::LocalUpdatablePEPO, environment, operator, bond; kwargs...)
+function updatebond!(pepo::LocalUpdatablePEPO, truncators, operator, bond; kwargs...)
     # Evolve the sites on the bond given by `bond` according to `operator`.
     evolve!(pepo, operator, bond)
 
     # Find the truncation isometries.
-    truncators = isometries(pepo, environment, bond; kwargs...)
+    isoms = isometries(pepo, truncators, bond; kwargs...)
 
     # Truncate the pepo according to the truncation isometries
-    truncate!(pepo, truncators)
+    truncate!(pepo, isoms)
 
     return pepo
 end

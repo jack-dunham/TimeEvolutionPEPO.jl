@@ -155,6 +155,27 @@ function ftsvd(t::TensorMap{ComplexSpace}; trunc::TensorKit.TruncationSpace)
     return U, S, V
 end
 
+function hermitianize!(t::AbsTen{2,4})
+    t_adj = cj(permutecod(t, (2, 1)))
+    dual_swap = isometry(codomain(t), codomain(t_adj))
+    axpby!(1//2, dual_swap * t_adj, 1//2, t)
+    return t
+end
+
+function posapprox(t; tol=10.0 * eps())
+    D, V = eigh(t)
+
+    for (_, v) in blocks(D)
+        v[v .< tol] .= 0
+    end
+
+    rv = V * D * V'
+
+    err = norm(t - rv)
+
+    return V * D * V', err
+end
+
 # function fsvd(t::TensorMap{D}; trunc::TensorKit.TruncationSpace) where {D<:IndexSpace}
 #     d = trunc.space
 #

@@ -4,7 +4,7 @@ ITC.getdata(t::AbstractBulk) = t.data
 
 Base.similar(bulk::AbstractBulk, ::Type{T}) where {T} = similar(ITC.getdata(bulk), T)
 
-struct HilbertSchmidt{G,PType,A<:Matrix{PType}} <: AbstractBulk{G,PType,A}
+struct HilbertSchmidt{G,PType<:TensorPair,A<:Matrix{PType}} <: AbstractBulk{G,PType,A}
     data::Lattice{G,PType,A}
 end
 
@@ -16,10 +16,11 @@ function HilbertSchmidt(
     return HilbertSchmidt(TensorPair.(p1, p2))
 end
 
-hilbertschmidt(p::AbstractPEPO) = HilbertSchmidt(TensorPair.(getstate(p), getstate(p)))
-function hilbertschmidt(p::GlobalUpdatablePEPO)
-    return HilbertSchmidt(TensorPair.(getevolved(p), getevolved(p)))
-end
+hilbertschmidt(t) = HilbertSchmidt(t)
+hilbertschmidt(t1, t2) = HilbertSchmidt(t1, t2)
+
+hilbertschmidt(p::AbstractPEPO) = hilbertschmidt(getstate(p))
+hilbertschmidt(p::GlobalUpdatablePEPO) = hilbertschmidt(getevolved(p))
 hilbertschmidt(p::TimeDependantPEPO) = hilbertschmidt(p.x), hilbertschmidt(p.y)
 
 struct Trace{G,PType<:AbsTen{0,4},A<:Matrix{PType}} <: AbstractBulk{G,PType,A}

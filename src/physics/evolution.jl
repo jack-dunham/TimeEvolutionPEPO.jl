@@ -1,5 +1,7 @@
 abstract type AbstractTimeEvolution end
 
+Base.show(io::IO, te::AbstractTimeEvolution) = dump(te)
+
 # TODO We only need one Model struct. Change this soon.
 struct Simulation{T<:AbstractTimeEvolution,P<:AbstractPEPO,V,M<:AbstractModel}
     state::P
@@ -10,26 +12,24 @@ struct Simulation{T<:AbstractTimeEvolution,P<:AbstractPEPO,V,M<:AbstractModel}
     info::ConvergenceInfo
 end
 
-@kwdef struct TEBD{TAlg<:AbstractTruncationScheme} <: AbstractTimeEvolution
-    timestep::Float64 = 0.01
-    numsteps::Int = 100
-    breaktol::Float64 = 0.0
-    order::Int = 2
-    truncalg::TAlg = SU()
-    verbose::Bool = true
-end
 # Sruct MPOWII
 @kwdef struct WII{TAlg<:AbstractTruncationScheme} <: AbstractTimeEvolution
     timestep::Float64 = 0.01
     numsteps::Int = 100
     breaktol::Float64 = 0.0
-    order::Int = 2
+    order::Int = 1
     truncalg::TAlg = SU()
     verbose::Bool = true
 end
 
 function initialize(
-    model, initial_state, space, eastbond, southbond=eastbond; alg=TEBD(), output=nothing
+    model,
+    initial_state,
+    space,
+    eastbond,
+    southbond=eastbond;
+    alg::AbstractTimeEvolution,
+    output=nothing,
 )
     pepo = PEPO(initial_state, space, eastbond, southbond)
 
@@ -72,37 +72,36 @@ function simulate!(hook, sim::Simulation)
     return sim
 end
 
-function simulate!(hook, sim, order::Val{N}) where {N}
-    tebd = sim.alg
+function simulate!(callback, sim, order::Val{N}) where {N}
+    evoalg = sim.alg
     pepo = sim.state
     model = sim.model
 
     info = sim.info
 
-    alg = tebd.truncalg
-    numsteps = tebd.numsteps
-    timestep = tebd.timestep
-    breaktol = tebd.breaktol
-
-    tau = timestep / N
+    truncalg = evoalg.truncalg
+    numsteps = evoalg.numsteps
+    timestep = evoalg.timestep
+    breaktol = evoalg.breaktol
 
     space = physicalspace(pepo)::AbstractLattice
 
     # Get the dynamical map from the model
-    dynamical_map = dynamicalmap(model, space, tau)
+    dynamical_map = dynamicalmap(model, space, evoalg)
 
     # Make PEPO time-dependant so we can evolve it.
-    td_pepo = initevolution(pepo, dynamical_map, updatescheme(alg))
+    td_pepo = initialize_evolution(pepo, dynamical_map, evoalg)
 
-    # Initialise the environments
-    envs = environments(td_pepo, alg)
+    # Initialise the truncators
+    truncators = initialize_truncators(td_pepo, dynamical_map, truncalg)
 
     # Calculate the environments from the initial guess
-    if isa(alg.updatescheme, LULT)
-        environments!(envs)
-    else
-        nothing
-    end
+
+    # if isa(truncalg.updatescheme, LULT)
+    #     renormalize!(truncators)
+    # else
+    #     nothing
+    # end
 
     numiter = 0
     tol = Inf
@@ -111,7 +110,7 @@ function simulate!(hook, sim, order::Val{N}) where {N}
     prev_weights = deepcopy(getweights(pepo))
 
     while numiter < numsteps && tol ≥ breaktol
-        timestep!(td_pepo, envs, dynamical_map, order; truncalg=alg)
+        timestep!(td_pepo, truncators, dynamical_map, order; truncalg=truncalg)
 
         # If we are doing full renorm at each step, we don't need to recalc
         # if isa(alg, SU) #|| alg.renorm === :full
@@ -120,20 +119,20 @@ function simulate!(hook, sim, order::Val{N}) where {N}
         #     calculate!(envs)
         # end
 
-        environments!(envs)
+        # renormalize!(envs)
 
         # Calculate the difference in pepo singular values between timesteps
         tol = tolerance!(prev_weights, getweights(pepo), timestep)
 
         numiter += 1
 
-        tebd.verbose && @info "Steady state convergence: $tol after $numiter iterations."
+        evoalg.verbose && @info "Steady state convergence: $tol after $numiter iterations."
 
         info.error = tol
         info.iterations = numiter
 
         # User specified function for post-step processing
-        hook(sim)
+        callback(sim)
     end
     return sim
 end
@@ -176,7 +175,7 @@ function measurehook!(sim::Simulation)
 
     pepo = sim.state
 
-    obs_alg = VUMPS(; maxiter=100, bonddim=16)
+    obs_alg = VUMPS(; maxiter=100, bonddim=16, verbose=true)
 
     obs_env = initenvironment(trace(pepo), obs_alg)
 

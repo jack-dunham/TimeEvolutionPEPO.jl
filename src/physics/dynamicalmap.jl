@@ -1,32 +1,3 @@
-struct LiouvillianData{L,ElType,N}
-    data::Lattice{L,Array{ElType,N},Matrix{Array{ElType,N}}}
-end
-
-abstract type AbstractTimeStepper end
-
-struct DynamicalMap{T<:AbstractTimeStepper}
-    x::T
-    y::T
-end
-
-struct TrotterGates{L,MType} <: AbstractTimeStepper
-    east::Lattice{L,MType,Matrix{MType}} #left
-    west::Lattice{L,MType,Matrix{MType}} #right
-end
-struct SimpleGates{L,MType,LType} <: AbstractTimeStepper
-    east::Lattice{L,MType,Matrix{MType}}
-    west::Lattice{L,MType,Matrix{MType}}
-    loc::Lattice{L,LType,Matrix{LType}}
-end
-
-struct WIIMPO{G,MType} <: AbstractTimeStepper
-    data::Lattice{G,MType,Matrix{MType}}
-end
-
-function Base.getindex(gates::TrotterGates, bond::Bond)
-    return (gates.east)[bond.left], (gates.west)[bond.right]
-end
-
 function trottergates(data, pspace, dt; trunc=truncerr(1e-8))
     data_exp = exp.(dt .* data)::typeof(data)
 
@@ -274,7 +245,9 @@ function thermalising()
     return kron(ZZ, one(ZZ)) + kron(one(ZZ), ZZ)
 end
 
-function dynamicalmap(model::AbstractModel, space::AbstractLattice, tau; kwargs...)
+function dynamicalmap(model::AbstractModel, space::AbstractLattice, evoalg::TEBD; kwargs...)
+    tau = evoalg.timestep / evoalg.order
+
     xdata = fill(model.xdata, size(space))
     ydata = fill(model.ydata, size(space))
 
@@ -283,7 +256,9 @@ function dynamicalmap(model::AbstractModel, space::AbstractLattice, tau; kwargs.
 
     return DynamicalMap(xmap, ymap)
 end
-function dynamicalmap(model::SimpleModel, space::AbstractLattice, tau; kwargs...)
+function dynamicalmap(model::SimpleModel, space::AbstractLattice, evoalg::TEBD; kwargs...)
+    tau = evoalg.timestep / evoalg.order
+
     xdata = fill(model, size(space))
     ydata = fill(model, size(space))
 
@@ -292,14 +267,31 @@ function dynamicalmap(model::SimpleModel, space::AbstractLattice, tau; kwargs...
 
     return DynamicalMap(xmap, ymap)
 end
-function dynamicalmap(model::ModelData, space::AbstractLattice, tau; kwargs...)
+
+function dynamicalmap(model::ModelData, space::AbstractLattice, evoalg::WII; kwargs...)
     (ex, wx) = size(model.xdata)[(end - 1):end]
-    (ey, wy) = size(model.xdata)[(end - 1):end]
+    (ey, wy) = size(model.ydata)[(end - 1):end]
 
     xmap = mpodata_to_tensor.(Ref(model.xdata), space, Ref(ex), Ref(wx))
     ymap = mpodata_to_tensor.(Ref(model.ydata), space, Ref(ey), Ref(wy))
 
     return DynamicalMap(WIIMPO(xmap), WIIMPO(ymap))
+end
+
+function dynamicalmap(model::ModelData, space::AbstractLattice, evoalg::TNO; kwargs...)
+    (ex, wx) = size(model.xdata)[(end - 1):end]
+    (ey, wy) = size(model.ydata)[(end - 1):end]
+
+    xmap = mpodata_to_tensor.(Ref(model.xdata), space, Ref(ex), Ref(wx))
+    ymap = mpodata_to_tensor.(Ref(model.ydata), space, Ref(ey), Ref(wy))
+
+    p = concat_map.(xmap, ymap)
+
+    return DynamicalMap(WIIPEPO(p))
+end
+
+function concat_map(x, y)
+    @tensoropt p[k1 b1 k2 b2; e s w n] := y[k1 b1 k b; s n] * x[k b k2 b2; e w]
 end
 
 function mpodata_to_tensor(model_data, space, chi_e, chi_w)
@@ -350,6 +342,7 @@ function exactwii(dt; V=1.0, Γ=1.0)
 
     return ModelData(array, array)
 end
+
 function _longrangewii(dt; V=1.0, Γ=1.0, λ=0.0)
     Z = σ3
     l = sqrt(Γ) / 2 * (σ2 - im * σ3)
@@ -413,11 +406,11 @@ function xyzwii(dt; Jx=0.5, Jy=1.2, Jz=1.0, Γ=1.0)
 
     A .= Ref(kron(nil, nil))
 
-    B[1, 1] = -Jx * kron(X, Id)
+    B[1, 1] = -Jx * im * kron(X, Id)
     B[2, 1] = Jx * im * kron(Id, X)
-    B[3, 1] = -Jy * kron(Y, Id)
+    B[3, 1] = -Jy * im * kron(Y, Id)
     B[4, 1] = Jy * im * kron(Id, Y)
-    B[5, 1] = -Jz * kron(Z, Id)
+    B[5, 1] = -Jz * im * kron(Z, Id)
     B[6, 1] = Jz * im * kron(Id, Z)
 
     C[1, 1] = kron(X, Id)
@@ -501,5 +494,5 @@ function thermalmpo(dx)
 
     t = TensorMap(array, s * s' * s' * s, d * d')
 
-    return ModelData(array)
+    return ModelData(array, array)
 end

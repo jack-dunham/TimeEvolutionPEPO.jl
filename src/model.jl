@@ -22,6 +22,25 @@ struct Model <: AbstractModel
     Model(x, y) = new(x, y)
 end
 
+abstract type AbstractTerm end
+
+struct HamiltonianTerm <: AbstractTerm
+    data::Vector{Matrix{ComplexF64}}
+end
+struct LindbladTerm <: AbstractTerm
+    data::Matrix{ComplexF64}
+end
+
+locality(term::AbstractTerm) = length(term.data)
+
+LinearAlgebra.ishermitian(term::AbstractTerm) = ishermitian(kron(term.data...))
+
+function hamterm(args...)
+    HamiltonianTerm(Matrix{ComplexF64}([args...]))
+end
+
+
+
 struct SimpleModel <: AbstractModel
     oneloc::Vector{Matrix{ComplexF64}}
     twoloc::Vector{Matrix{ComplexF64}}
