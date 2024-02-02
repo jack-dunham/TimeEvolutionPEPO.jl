@@ -64,7 +64,7 @@ function wtg!(
 
     s_min < 1e-14 ? (@info "Skipped gauge fixing"; return u0, s0, v0) : nothing
 
-    println(s_vals)
+    @debug "Singular values: " s_vals
 
     # @tensoropt γi[-1 -2; -3 -4] :=
     #     γ[1 2 3 4; 5 6 7 8] * u[5 6; -3] * v[-1; 1 2] * (u')[-2; 3 4] * (v')[7 8; -4]
@@ -77,12 +77,11 @@ function wtg!(
     yf = (1//2 * (yf + yf'))
 
     # yf, err = posapprox(yf)
+    # @debug "WTG positive approx error: $err"
 
-    @debug "WTG positive approx error: $err"
+    permute!(yiso, yf, ((4, 1), (3, 2)))
 
-    permute!(yiso, yf, (4, 1), (3, 2))
-
-    γm = permute(yiso, (1, 4), (3, 2)) # Transform to matrix
+    γm = permute(yiso, ((1, 4), (3, 2))) # Transform to matrix
     @tensor γN = γm[a b; a b] # Y_ji
     γm = γm / γN
     # γold = γm

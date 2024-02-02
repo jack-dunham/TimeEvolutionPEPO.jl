@@ -47,7 +47,7 @@ TensorKit.truncspace(p::AbstractPEPO, bond::Bond) = truncspace(getweights(p), bo
 
 quicknormalize!(pepo) = normalize!.(getstate(pepo))
 
-ITC.numbertype(pepo::AbstractPEPO) = ITC.numbertype(getstate(pepo))
+TensorKit.scalartype(pepo::AbstractPEPO) = scalartype(getstate(pepo))
 
 getstate(pepo::PEPO) = pepo.state
 getweights(pepo::PEPO) = pepo.weights
@@ -63,9 +63,9 @@ function changeaxis(pepo::AbstractPEPO)
 end
 
 function changeaxis!(pepo_permuted::AbstractPEPO, pepo::AbstractPEPO)
-    permute!.(
-        getstate(pepo_permuted), permutedims(getstate(pepo)), Ref((1, 2)), Ref((4, 3, 6, 5))
-    )
+    broadcast(getstate(pepo_permuted), permutedims(getstate(pepo))) do pdst, psrc
+        permute!(pdst, psrc, ((1, 2), (4, 3, 6, 5)))
+    end
     return pepo_permuted
 end
 
@@ -76,16 +76,9 @@ end
 
 getbonds(pepo::AbstractPEPO, args...) = getbonds(getstate(pepo), args...)
 
-function bloch(a::Base.AbstractVecOrTuple)
-    σ = pauli
-    mat = σ[4]
-    for j in 1:3
-        mat = mat + a[j] * σ[j]
-    end
-    return 1 / 2 * mat
-end
+bloch(a) = 1 / 2 * (I + sum(a * σ for (a, σ) in zip(a, PAULI)))
 
-function pepodata(a::Base.AbstractVecOrTuple, Dw::Int, Ds::Int, De::Int, Dn::Int)
+function pepodata(a, Dw::Int, Ds::Int, De::Int, Dn::Int)
     m = bloch(a)
 
     tw = zeros(ComplexF64, Dw, 2, 2) # out, in

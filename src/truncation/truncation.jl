@@ -10,7 +10,7 @@ struct NeighbourhoodUpdateState{N<:NTUState} <: AbstractTruncatorState
 end
 
 # Full enviornment truncation
-struct FullEnvironmentState{E<:AbstractBoundaryState} <: AbstractTruncatorState
+struct FullEnvironmentState{E<:InfiniteContraction} <: AbstractTruncatorState
     x::E
     y::E
 end
@@ -74,15 +74,19 @@ function initialize_truncators(pepo::TimeDependantPEPO, ::DynamicalMap, truncalg
     yenv = initialize_truncators(pepo.y, truncalg)
     return NeighbourhoodUpdateState(xenv, yenv)
 end
-function initialize_truncators(pepo::TimeDependantPEPO, ::DynamicalMap, truncalg::SU)
+function initialize_truncators(::TimeDependantPEPO, ::DynamicalMap, truncalg::SU)
     return SimpleUpdateState()
 end
 ## 
 
+function ITC.newcontraction(conalg, net::HilbertSchmidt; kwargs...)
+    return newcontraction(conalg, net.data; kwargs...)
+end
+
 ## Initalialize truncators for lattice of tensors
 initialize_truncators(bulk, fet::FET) = initialize_truncators(bulk, fet.alg)
 function initialize_truncators(bulk, conalg::AbstractBoundaryAlgorithm)
-    return ITC.initialize(hilbertschmidt(bulk), conalg)
+    return newcontraction(conalg, hilbertschmidt(bulk); store_initial=true)
 end
 
 function initialize_truncators(bulk, ::NTU)
@@ -91,9 +95,9 @@ end
 
 ## Initalialize truncators using existing environment state
 initialize_truncators(tensors, ::NTUState) = initialize_truncators(tensors, NTU())
-initialize_truncators(tensors, st::AbstractBoundaryState) = initialize_truncators(tensors, st.alg)
-
-
+function initialize_truncators(tensors, st::AbstractBoundaryRuntime)
+    return initialize_truncators(tensors, st.alg)
+end
 
 function initialize_truncators(pepo::TimeDependantPEPO, dynamical_map, ::VGU)
     map = dynamical_map.x
@@ -144,11 +148,18 @@ function renormalize!(st::EnvironmentOrNeighbourhoodState)
     return st
 end
 
-function renormalize!(env::AbstractBoundaryState)
-    ITC.reset!(env)
-    ITC.calculate!(env)
+# function renormalize!(env::InfiniteContraction)
+#     ITC.reset!(env)
+#     ITC.run!(env)
+#     return env
+# end
+
+function renormalize!(env::InfiniteContraction)
+    ITC.restart!(env)
+    ITC.run!(env)
     return env
 end
+
 renormalize!(st::NTUState) = calculate_neighbourhood!(st)
 renormalize!(st::SimpleUpdateState) = st
 
@@ -179,6 +190,10 @@ end
 function metric(pepo::Union{AbstractPEPO,AbstractLattice}, environment, bond::Bond)
     left, right = pepo[bond]
     return _metric(left, right, environment, bond)
+end
+
+function _metric(left, right, env::InfiniteContraction, bond)
+    return _metric(left, right, env.runtime, bond)
 end
 
 """

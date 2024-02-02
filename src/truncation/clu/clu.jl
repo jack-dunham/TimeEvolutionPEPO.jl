@@ -29,7 +29,7 @@ function initialize_neighbourhood(f, network::HilbertSchmidt)
 end
 
 function initialize_neighbourhood_tensors(f, network)
-    el = ITC.numbertype(network)
+    el = scalartype(network)
 
     network_top = getfield.(network, :top)
     network_bot = getfield.(network, :bot)

@@ -22,13 +22,486 @@ struct Model <: AbstractModel
     Model(x, y) = new(x, y)
 end
 
-abstract type AbstractTerm end
+abstract type AbstractTerm{N} end
 
-struct HamiltonianTerm <: AbstractTerm
-    data::Vector{Matrix{ComplexF64}}
+# This only accepts concrete types
+function newterm(::Type{T}, term, args...) where {N,T<:AbstractTerm{N}}
+    term = map(convert_if_identity, term)
+    return T(term, args...)
 end
-struct LindbladTerm <: AbstractTerm
-    data::Matrix{ComplexF64}
+
+function Base.:(==)(t1::T, t2::T) where {T<:AbstractTerm}
+    return all(name -> getfield(t1, name) == getfield(t2, name), fieldnames(T))
+end
+
+convert_if_identity(I::UniformScaling) = Matrix{ComplexF64}(I, (2, 2))
+convert_if_identity(x) = x
+
+## TERM STRUCTS
+
+struct HamiltonianTerm{N} <: AbstractTerm{N}
+    term::NTuple{N,Matrix{ComplexF64}}
+    coeff::ComplexF64
+end
+
+HamiltonianTerm(term::NTuple{N,Any}, a=1) where {N} = newterm(HamiltonianTerm{N}, term, a)
+scaleterm(a, A::HamiltonianTerm) = HamiltonianTerm(A.term, a * A.coeff)
+
+struct LongRangeTerm <: AbstractTerm{2}
+    term::NTuple{2,Matrix{ComplexF64}}
+    decay::ComplexF64
+    coeff::ComplexF64
+    LongRangTerm(term::NTuple{2,Matrix{ComplexF64}}, d, c) = new(term, d, c)
+end
+
+LongRangeTerm(term, λ, a=1) = newterm(LongRangeTerm, term, λ, a)
+scaleterm(a, A::LongRangeTerm) = LongRangeTerm(A.term, a * A.coeff, A.decay)
+
+struct LindbladTerm <: AbstractTerm{1}
+    term::NTuple{1,Matrix{ComplexF64}}
+    coeff::ComplexF64
+    LindbladTerm(term::NTuple{1,Matrix{ComplexF64}}, c) = new(term, c)
+end
+
+LindbladTerm(term, a=1) = newterm(LindbladTerm, term, a)
+scaleterm(a, A::LindbladTerm) = LindbladTerm(A.term, a * A.coeff)
+
+## 
+
+## TERM API + ALGEBRA
+
+ham(A) = HamiltonianTerm((A,))
+ham(A, B) = HamiltonianTerm((A, B))
+ham(A, λ, B) = LongRangeTerm((A, B), λ)
+
+lin(L) = LindbladTerm((L,))
+
+Base.:*(a::Number, A::AbstractTerm) = scaleterm(a, A)
+Base.:*(A::AbstractTerm, a::Number) = Base.:*(a, A)
+
+##
+
+struct LindbladEquation
+    onelocal::Vector{HamiltonianTerm{1}}
+    twolocal::Vector{HamiltonianTerm{2}}
+    longrange::Vector{LongRangeTerm}
+    linops::Vector{LindbladTerm}
+end
+LindbladEquation() = LindbladEquation([], [], [], [])
+
+Base.zero(eqn::LindbladEquation) = zero(typeof(eqn))
+Base.zero(::Type{LindbladEquation}) = LindbladEquation()
+
+function Base.:+(A::AbstractTerm, B::AbstractTerm)
+    eqn = zero(LindbladEquation)
+    push!(eqn, A)
+    push!(eqn, B)
+    return eqn
+end
+
+function Base.:(==)(t1::T, t2::T) where {T<:LindbladEquation}
+    return all(name -> getfield(t1, name) == getfield(t2, name), fieldnames(T))
+end
+
+Base.push!(L::LindbladEquation, A::HamiltonianTerm{1}) = push!(L.onelocal, A)
+Base.push!(L::LindbladEquation, A::HamiltonianTerm{2}) = push!(L.twolocal, A)
+Base.push!(L::LindbladEquation, A::LongRangeTerm) = push!(L.longrange, A)
+Base.push!(L::LindbladEquation, A::LindbladTerm) = push!(L.linops, A)
+
+Base.:+(B::AbstractTerm, eqn::LindbladEquation) = +(eqn, B)
+function Base.:+(eqn::LindbladEquation, B::AbstractTerm)
+    eqnout = zero(eqn)
+    axpy!(1, eqn, eqnout)
+    push!(eqnout, B)
+    return eqnout
+end
+
+function LinearAlgebra.axpy!(a::Number, eqn1::LindbladEquation, eqn2::LindbladEquation)
+    for name in fieldnames(LindbladEquation)
+        field1 = getfield(eqn1, name)
+        field2 = getfield(eqn2, name)
+        append!(field2, a * field1)
+    end
+    return eqn2
+end
+
+function Base.:+(eqn1::LindbladEquation, eqn2::LindbladEquation)
+    eqnout = zero(eqn1)
+    axpy!(1, eqn1, eqnout)
+    axpy!(1, eqn2, eqnout)
+    return eqnout
+end
+
+Base.:*(eqn::LindbladEquation, a::Number) = *(a, eqn)
+function Base.:*(a::Number, eqn::LindbladEquation)
+    eqnout = zero(eqn)
+    axpy!(a, eqn, eqnout)
+    return eqnout
+end
+
+function xyzlindblad(; Jx=0.5, Jy=1.2, Jz=1.0, Γ=1.0)
+    X, Y, Z = PAULI
+    M, _ = LADDER
+
+    eqn = Jx * ham(X, X) + Jy * ham(Y, Y) + Jz * ham(Z, Z) + sqrt(Γ) * lin(M)
+
+    return eqn
+end
+
+const BlockMatrix = Matrix{Matrix{ComplexF64}}
+
+struct MPO
+    A::BlockMatrix
+    B::BlockMatrix
+    C::BlockMatrix
+    D::BlockMatrix
+    data::Matrix{BlockMatrix}
+end
+
+function MPO(A::T, B::T, C::T, D::T) where {T}
+    data = Matrix{T}(undef, 3, 3)
+
+    # row, col
+    data[1, 1] = map(one, D)
+    data[1, 2] = C
+    data[1, 3] = D
+
+    data[2, 1] = map(zero, B)
+    data[2, 2] = A
+    data[2, 3] = B
+
+    data[3, 1] = map(zero, D)
+    data[3, 2] = map(zero, C)
+    data[3, 3] = map(one, D)
+
+    return MPO(A, B, C, D, data)
+end
+
+Base.getindex(mpo::MPO, i1, i2) = mpo.data[i1, i2]
+
+function MPO(eqn::LindbladEquation)
+    Id = Matrix{ComplexF64}(I, 2, 2)
+
+    chi = 2 * (length(eqn.twolocal) + length(eqn.longrange))
+    T = BlockMatrix
+    A = T(undef, chi, chi)
+    B = T(undef, chi, 1)
+    C = T(undef, 1, chi)
+    D = T(undef, 1, 1)
+
+    nil = kron(zero(Id), zero(Id))
+
+    fill!(A, nil)
+    D[1, 1] = nil
+
+    i = 1
+
+    for term in eqn.twolocal
+        X, Y = term.term
+        a = term.coeff
+
+        println("a ", a)
+
+        B[i, 1] = -a * im * kron(X, Id)
+        B[i + 1, 1] = a * im * kron(Id, X)
+
+        C[1, i] = kron(Y, Id)
+        C[1, i + 1] = kron(Id, Y)
+
+        i += 2
+    end
+
+    for term in eqn.longrange
+        termk = kron(term.term[1], Id)
+        termb = kron(Id, term.term[2])
+
+        a = term.coeff
+
+        B[i, 1] = -a * im * termk
+        B[i + 1, 1] = -a * im * termb
+
+        C[1, i] = termk
+        C[1, i + 1] = termb
+
+        A[i, i] = term.decay * Id
+        A[i + 1, i + 1] = term.decay * Id
+
+        i += 2
+    end
+
+    for term in eqn.onelocal
+        termk = kron(term.term[1], Id)
+        termb = kron(Id, term.term)
+        a = term.coeff
+        D[1, 1] -= a * im * (termk - termb)
+    end
+
+    for lin in eqn.linops
+        L = lin.coeff * lin.term[1]
+        Lc = conj(L)
+        Lt = permutedims(L)
+        Ld = conj(permutedims(L))
+
+        D[1, 1] += 1 / 2 * (kron(L, Lc) - 1 / 2 * (kron(Ld * L, Id) + kron(Id, Lt * Lc)))
+    end
+
+    return MPO(A, B, C, D)
+end
+
+struct LazyPowerMPO{N}
+    data::MPO
+end
+
+struct ExtensiveMPO{N}
+    mpo::Matrix{BlockMatrix}
+    levels::Vector{NTuple{N,Int}}
+end
+
+struct TimeEvolutionMPO{N}
+    data::Matrix{BlockMatrix}
+    levels::Vector{NTuple{N,Int}}
+end
+
+function Base.getindex(
+    mpo::LazyPowerMPO{N}, row::NTuple{N,Int}, col::NTuple{N,Int}
+) where {N}
+    H = mpo.data
+    return kron((H[r, c] for (r, c) in zip(row, col))...)
+end
+
+function TimeEvolutionMPO{N}(eqn::LindbladEquation, dt; kwargs...) where {N}
+    return TimeEvolutionMPO{N}(MPO(eqn), dt; kwargs...)
+end
+
+function lazypower(H::MPO, row, col)
+    terms = (H[r, c] for (r, c) in zip(row, col))
+    return kron(1, terms...)
+end
+
+function insertat(tup::NTuple{N}, pos, val) where {N}
+    rv = Int[]
+
+    tupv = [tup...]
+
+    p = 1
+    while length(tupv) > 0
+        if p == pos
+            push!(rv, val)
+        else
+            push!(rv, popfirst!(tupv))
+        end
+        p += 1
+    end
+
+    if length(rv) == N
+        push!(rv, val)
+    end
+
+    return Tuple(rv)::NTuple{N + 1,Int}
+end
+
+function TimeEvolutionMPO{N}(H::MPO, dt; extend=true, compress=true, approx=true) where {N}
+    levels = NTuple{N,Int}[]
+
+    # Generate the levels
+    for tup in Iterators.product(fill(1:3, N)...)
+        push!(levels, reverse(tup))
+    end
+
+    prodlevels = Iterators.product(levels, levels)
+
+    # Raise H to the power of N
+    data = map(i -> lazypower(H, i[1], i[2]), prodlevels)
+
+    # Extension step
+    if extend
+        for (posa, a) in enumerate(levels), (posb, b) in enumerate(levels)
+            # There is a typo in the paper; paper reads do if 1 ∈ b; should read
+            # do if 1 ∉ b. As such, the following conditional skips if 1 ∈ b.
+            if 1 ∈ b
+                continue
+            end
+
+            if (2 ∉ a && 3 ∈ a)
+                continue
+            end
+
+            aes = [insertat(a, pos, 1) for pos in 1:(N + 1)]
+            bes = [insertat(b, pos, 3) for pos in 1:(N + 1)]
+
+            for ae in aes, be in bes
+                n1 = count(isequal(1), ae)
+                n3 = count(isequal(3), be)
+
+                coeff = factorial(N) / (factorial(N + 1) * n1 * n3)
+                # @debug "Extending with ae=$ae, be=$be into a=$a, b=$b and n1*n3=$(n1 * n3)"
+
+                data[posa, posb] += lazypower(H, ae, be) * dt * coeff
+            end
+        end
+    end
+
+    # Construct the time evolution MPO
+    for a in 1:N
+        generator = fill(1, N)
+        for i in 1:a
+            generator[end + 1 - i] = 3
+        end
+
+        @assert length(generator) == N
+
+        P = permutations(generator)
+
+        for lev in P
+            levt = Tuple(lev)
+
+            if levt ∈ levels
+                # get the index corresponding to that particular level
+                b = findfirst(isequal(levt), levels)
+
+                # add column b to the first column
+                data[:, 1] += (dt^a * factorial(N - a) / factorial(N)) * data[:, b]
+
+                # remove row and column b
+                data = data[1:end .!= b, 1:end .!= b]
+                deleteat!(levels, b)
+            end
+        end
+    end
+
+    if compress
+        data = exactcompression!(levels, data)
+    end
+
+    if approx
+        data = approxcompression!(levels, data, dt)
+    end
+
+    return TimeEvolutionMPO(data, levels)
+end
+
+function curly(mpo, args...)
+    P = collect(permutations(args))
+    S = Tuple(Set(P))
+
+    func = term -> kron(1, term...)
+
+    mats = map(term -> map(symb -> getfield(mpo, symb), term), S)
+
+    return sum(func, mats)
+end
+
+topower(H::MPO, N) = topower(LazyPowerMPO{N}(H))
+
+function topower(H::LazyPowerMPO{N}) where {N}
+    # RaisedMPO{N}
+    levels = NTuple{N,Int}[]
+
+    mat = Matrix{BlockMatrix}(undef, 3^N, 3^N)
+
+    for tup in Iterators.product(fill(1:3, N)...)
+        push!(levels, reverse(tup))
+    end
+
+    mat = map(x -> H[x[1], x[2]], Iterators.product(levels, levels))
+
+    return ExtensiveMPO(mat, levels)
+end
+
+function exactcompression!(levels, data)
+    for (c, lev) in enumerate(levels)
+        # sc, n1, sr, n3 = sort_1_3(lev, levels)
+
+        k1 = map(x -> isequal(x, 1) ? 2 : 1, lev)
+
+        # Sort threes to back
+        k3 = map(x -> isequal(x, 3) ? 2 : 1, lev)
+
+        sc = findfirst(isequal(lev[sortperm([k1...])]), levels)
+        sr = findfirst(isequal(lev[sortperm([k3...])]), levels)
+
+        n1 = count(isequal(1), lev)
+        n3 = count(isequal(3), lev)
+
+        if n3 ≤ n1 && sc != c
+            data[sc, :] += data[c, :]
+
+            @debug "Removing $lev"
+
+            data = data[1:end .!= c, 1:end .!= c]
+            deleteat!(levels, c)
+
+        elseif n3 > n1 && sr != c
+            data[:, sr] += data[:, c]
+
+            @debug "Removing $lev"
+
+            data = data[1:end .!= c, 1:end .!= c]
+            deleteat!(levels, c)
+        end
+    end
+    return data
+end
+
+function approxcompression!(levels::Vector{NTuple{N,Int}}, data, dt) where {N}
+    for (ac, alev) in enumerate(levels)
+        n3 = count(isequal(3), alev)
+        (1 in alev || n3 == 0) && continue
+
+        blev = Tuple(isequal(i, 3) ? 1 : i for i in alev)
+
+        bc = findfirst(isequal(blev), levels)
+
+        data[:, bc] += data[:, ac] * dt^n3 * factorial(N - n3) / factorial(N)
+
+        data = data[1:end .!= ac, 1:end .!= ac]
+        deleteat!(levels, ac)
+    end
+    return data
+end
+
+function remove_row_and_column(H::ExtensiveMPO, c)
+    levels = H.levels
+    i = findfirst(isequal(c), levels)
+    new_data = H.mpo[1:end .!= i, 1:end .!= i]
+    new_layers = deleteat!(copy(levels), i)
+    return ExtensiveMPO(new_data, new_layers)
+end
+
+function sort_1_3(c, levels)
+    sc = Int[]
+    sc_rest = Int[]
+
+    sr = Int[]
+    sr_rest = Int[]
+    for i in c
+        if i == 1
+            push!(sc, 1)
+            push!(sr_rest, i)
+        elseif i == 3
+            push!(sr, 3)
+            push!(sc_rest, i)
+        else
+            push!(sr_rest, i)
+            push!(sc_rest, i)
+        end
+    end
+    n1 = length(sc)
+    n3 = length(sr)
+
+    append!(sc, sc_rest)
+    append!(sr, sr_rest)
+
+    sc = findfirst(isequal(Tuple(sc)), levels)
+    sr = findfirst(isequal(Tuple(sr)), levels)
+
+    return sc, n1, sr, n3
+end
+
+function totensor(mpo::TimeEvolutionMPO)
+    nr = sum(x -> size(x, 1), mpo.data)
+    nc = sum(x -> size(x, 1), mpo.data)
+    return (nr, nc)
 end
 
 locality(term::AbstractTerm) = length(term.data)
@@ -36,10 +509,8 @@ locality(term::AbstractTerm) = length(term.data)
 LinearAlgebra.ishermitian(term::AbstractTerm) = ishermitian(kron(term.data...))
 
 function hamterm(args...)
-    HamiltonianTerm(Matrix{ComplexF64}([args...]))
+    return HamiltonianTerm(Matrix{ComplexF64}([args...]))
 end
-
-
 
 struct SimpleModel <: AbstractModel
     oneloc::Vector{Matrix{ComplexF64}}
@@ -166,4 +637,13 @@ function lrtno()
     # 3 2 4 4 = I
     # 1 1 3 4 = B
     # -----------
+end
+
+macro nterm(expr)
+    @capture(expr, NTuple{Num_,TermType_})
+    termtypes = [Expr(:curly, TermType, N) for N in 1:Num]
+    vectortypes = map(termtypes) do term
+        return Expr(:curly, :Vector, term)
+    end
+    return Expr(:curly, :Tuple, vectortypes...)
 end

@@ -104,12 +104,14 @@ function timestep!(
 
     xtruncators = truncators.x
     ytruncators = truncators.y
+    #
+    # xtruncators = SimpleUpdateState()
+    # ytruncators = SimpleUpdateState()
 
     xmap = map.x
     ymap = map.y
 
     trotterstep!(xpepo, ypepo, xtruncators, ytruncators, xmap, ymap, order; kwargs...)
-
     # mutation of xpepo_td and ypepo_td should have mutated pepo accordingly.
     return pepo
 end

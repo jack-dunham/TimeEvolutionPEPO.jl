@@ -8,7 +8,8 @@ const σ3 = Matrix{ComplexF64}([1 0; 0 -1])
 const σp = 1 / 2 * (σ1 + im * σ2) # Pauli+ matrix
 const σm = 1 / 2 * (σ1 - im * σ2) # Pauli- matrix
 
-const pauli = (σ1,σ2,σ3,σ0)
+const PAULI = (σ1,σ2,σ3)
+const LADDER = (σm, σp)
 
 function conjugate(t::AbstractTensorMap)
     return TensorMap(conj(t.data), codomain(t), domain(t))

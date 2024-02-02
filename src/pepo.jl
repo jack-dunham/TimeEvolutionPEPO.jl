@@ -1,17 +1,17 @@
-function LinearAlgebra.normalize!(pepo::AbstractPEPO, boundary::AbstractBoundaryTensors)
+function LinearAlgebra.normalize!(pepo::AbstractPEPO, boundary::AbstractBoundaryRuntime)
     return rmul!.(getstate(pepo), 1 / norm(pepo, boundary))
 end
-function LinearAlgebra.norm(pepo::AbstractPEPO, boundary::AbstractBoundaryTensors)
+function LinearAlgebra.norm(pepo::AbstractPEPO, boundary::AbstractBoundaryRuntime)
     st = getstate(pepo)
     norm = tracecontract(boundary, st)
     return norm
 end
 
-function onelocal(pepo::AbstractPEPO, boundary::AbstractBoundaryState; kwargs...)
-    return onelocal(pepo, boundary.tensors; kwargs...)
+function onelocal(pepo::AbstractPEPO, boundary::InfiniteContraction; kwargs...)
+    return onelocal(pepo, boundary.runtime; kwargs...)
 end
 
-function onelocal(pepo::AbstractPEPO, boundary::AbstractBoundaryTensors; normalize=false)
+function onelocal(pepo::AbstractPEPO, boundary::AbstractBoundaryRuntime; normalize=false)
     onelocal = onelocalcontract(boundary, getstate(pepo))
 
     if normalize

@@ -272,8 +272,13 @@ function dynamicalmap(model::ModelData, space::AbstractLattice, evoalg::WII; kwa
     (ex, wx) = size(model.xdata)[(end - 1):end]
     (ey, wy) = size(model.ydata)[(end - 1):end]
 
-    xmap = mpodata_to_tensor.(Ref(model.xdata), space, Ref(ex), Ref(wx))
-    ymap = mpodata_to_tensor.(Ref(model.ydata), space, Ref(ey), Ref(wy))
+    xmap = broadcast(space) do sp
+        return mpodata_to_tensor(model.xdata, sp, ex, wx)
+    end
+
+    ymap = broadcast(space) do sp
+        return mpodata_to_tensor(model.ydata, sp, ey, wy)
+    end
 
     return DynamicalMap(WIIMPO(xmap), WIIMPO(ymap))
 end
@@ -295,12 +300,16 @@ function concat_map(x, y)
 end
 
 function mpodata_to_tensor(model_data, space, chi_e, chi_w)
+    # A space with dimension one
     unit = oneunit(space)
-    east = ⊕(fill(unit, chi_e)...)
-    west = ⊕(fill(unit, chi_w)...)
-    return TensorMap(
-        model_data, space * adjoint(space) * adjoint(space) * space, east * west'
-    )
+
+    east = ⊕((unit^chi_e)...)
+    west = ⊕((unit^chi_w)...)
+
+    cod = space * space' * space' * space
+    dom = east * west'
+
+    return TensorMap(model_data, cod, dom)
 end
 
 function exactwii(dt; V=1.0, Γ=1.0)
@@ -420,6 +429,7 @@ function xyzwii(dt; Jx=0.5, Jy=1.2, Jz=1.0, Γ=1.0)
     C[1, 5] = kron(Z, Id)
     C[1, 6] = kron(Id, Z)
 
+    # div by half cos 2d?
     D[1, 1] = 1 / 2 * (kron(L, Lc) - 1 / 2 * (kron(Ld * L, Id) + kron(Id, Lt * Lc)))
 
     mpo = blockmul(A, B, C, D, dt)
@@ -430,7 +440,9 @@ function xyzwii(dt; Jx=0.5, Jy=1.2, Jz=1.0, Γ=1.0)
         array[:, :, :, :, I[2], I[1]] .= reshape(mpo[I], (2, 2, 2, 2))
     end
 
-    return ModelData(array, array)
+    return A,B,C,D
+
+    # return ModelData(array, array)
 end
 
 function longrangewii(dt; V=1.0, Γ=1.0, λx=0.0, λy=1.0)

@@ -8,7 +8,7 @@ function (alg::IsometryOptimisation)(pepo, environment, bond)
     tmetric = metric(pepo, environment, bond)
     left0, right0 = isometryinit(tmetric)
 
-    u, s_f64, v = metricoptimise(left0, right0, tmetric, truncspace(D))
+    u, s_f64, v = metricoptimise(left0, right0, tmetric, truncspace(D); rankreduced=false)
 
     s = similar(s_f64, eltype(u))
 
@@ -23,11 +23,11 @@ function (alg::TensorOptimisation)(pepo::AbstractPEPO, environment, bond)
 
     left0, right0 = rankreduce!(pepo)
 
-    tmetric = metric(pepo, environment.tensors, bond)
+    tmetric = metric(pepo, environment, bond)
 
     u, s_f64, v = metricoptimise(left0, right0, tmetric, truncspace(D))
 
-    s = similar(s_f64, ITC.numbertype(pepo))
+    s = similar(s_f64, scalartype(pepo))
 
     copy!(s, s_f64)
 
@@ -40,26 +40,27 @@ function isometries(pepo, environment; kwargs...)
     return iso
 end
 
-function isometries(pepo, ::SimpleUpdateState, bond, truncalg::SU)
+function isometries(pepo, ::SimpleUpdateState, bond; truncalg::SU)
     D = domain.(getstate(pepo), 1)[bond.left]
 
     left, right = rankreduce!(pepo)
 
     u, s_f64, v = tsvd(left * right; trunc=truncspace(D))
 
-    s = similar(s_f64, ITC.numbertype(pepo))
+    s = similar(s_f64, scalartype(pepo))
 
     copy!(s, s_f64)
 
     return TruncationIsometries(u, s, v)
 end
 
-function isometries(pepo, environment, bond; truncalg=FET()::Union{FET,NTU})
+function isometries(pepo, environment, bond; truncalg::Union{FET,NTU})
     xi = truncalg.ξ
     gauge = truncalg.gauge
 
     # opt = truncalg.opt
-    opt = TensorOptimisation()
+    # opt = TensorOptimisation()
+    opt = IsometryOptimisation()
 
     iso, metric = opt(pepo, environment, bond)
 
@@ -171,7 +172,7 @@ function quicktruncate!(pepo::GlobalUpdatablePEPO, env; gauge=true, mcf=false, x
 
     copy!(s, s_f64)
 
-    @info "" normalize(s)
+    @debug "Normalized weights: " normalize(s)
 
     iso = TruncationIsometries(u, s, v)
     wtg!(iso, tmetric, Val(gauge))
@@ -223,7 +224,7 @@ function _sequentialtruncate(pepo::GlobalUpdatablePEPO, env; xi=Inf, gauge=true)
                 left0s[bond.left], right0s[bond.right], metrics[bond.left], truncspace(D)
             )
 
-            s = similar(s_f64, ITC.numbertype(pepo))
+            s = similar(s_f64, scalartype(pepo))
             copy!(s, s_f64)
             iso = TruncationIsometries(u, s, v)
 
@@ -274,7 +275,7 @@ function sequentialtruncate(pepo::GlobalUpdatablePEPO, env; xi=Inf, gauge=true)
 
                 u, s_f64, v, tmetric = metricoptimise(left0, right0, tmetric, truncspace(D))
 
-                s = similar(s_f64, ITC.numbertype(pepo))
+                s = similar(s_f64, scalartype(pepo))
 
                 copy!(s, s_f64)
 
@@ -319,12 +320,12 @@ end
 
 function leftrankreduce!(p::AbsTen{2,4})
     Q, R = leftorth(p, (1, 2, 4, 5, 6), (3,))
-    permute!(p, Q, (1, 2), (6, 3, 4, 5))
+    permute!(p, Q, ((1, 2), (6, 3, 4, 5)))
     return R
 end
 function rightrankreduce!(p::AbsTen{2,4})
     L, Q = rightorth(p, (5,), (1, 2, 3, 4, 6))
-    permute!(p, Q, (2, 3), (4, 5, 1, 6))
+    permute!(p, Q, ((2, 3), (4, 5, 1, 6)))
     return L
 end
 
@@ -356,7 +357,7 @@ function isometryinit(metric::AbsTen{2,2})
 end
 
 function metricoptimise(left, right, metric::AbstractLattice, trunc; kwargs...)
-    T = promote_type(eltype(left), eltype(right), numbertype(metric))
+    T = promote_type(eltype(left), eltype(right), scalartype(metric))
 
     nx, ny = size(metric)
 

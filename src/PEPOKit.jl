@@ -2,22 +2,15 @@ module PEPOKit
 
 using Random
 using TensorKit
-import TensorKit.IndexTuple, TensorKit.AdjointTensorMap
 using LinearAlgebra
 using KrylovKit
 using MacroTools
-using DataStructures: DefaultOrderedDict
 using TrotterMacros
 using InfiniteTensorContractions
-using FunctionWrappers
 using Combinatorics
-using TensorKitAD
-using Manopt, Manifolds
-using Zygote
 
 import LowRankApprox: psvd
-
-import FunctionWrappers: FunctionWrapper
+import TensorKit.IndexTuple, TensorKit.AdjointTensorMap
 
 const ITC = InfiniteTensorContractions
 
@@ -30,7 +23,7 @@ export delta
 
 export cj, conjugate
 
-export σ0, σ1, σ2, σ3, σp, σm, pauli
+export σ0, σ1, σ2, σ3, σp, σm, PAULI, LADDER
 
 # Lattice
 export AbstractLattice, Lattice, SquareLattice
@@ -46,6 +39,9 @@ export GateLike, MPOLike
 export initialize, simulate!, simulate
 
 export @defmodel
+
+export TimeEvolutionMPO, MPO
+export ham, lin
 
 #generic 
 include("model.jl")
@@ -72,7 +68,6 @@ include("truncation/wtg.jl")
 include("truncation/clu/clu.jl")
 include("truncation/truncation.jl")
 include("truncation/isometries.jl")
-include("truncation/autodiff.jl")
 
 #models
 include("physics/evolution.jl")

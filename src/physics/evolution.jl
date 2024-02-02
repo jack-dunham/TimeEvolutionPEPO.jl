@@ -49,7 +49,7 @@ const LocalTimeDependantPEPO{P<:LocalUpdatablePEPO} = TimeDependantPEPO{P}
 const GlobalTimeDependantPEPO{P<:GlobalUpdatablePEPO} = TimeDependantPEPO{P}
 
 function initenvironment(network::Trace, alg::AbstractBoundaryAlgorithm; kwargs...)
-    return ITC.initialize(network, alg; kwargs...)
+    return ITC.initialize(alg, network.data; kwargs...)
 end
 
 """
@@ -175,11 +175,11 @@ function measurehook!(sim::Simulation)
 
     pepo = sim.state
 
-    obs_alg = VUMPS(; maxiter=100, bonddim=16, verbose=true)
+    alg = VUMPS(; maxiter=100, bonddim=10, verbose=true)
 
-    obs_env = initenvironment(trace(pepo), obs_alg)
+    obs_env = newcontraction(alg, trace(pepo).data)
 
-    ITC.calculate!(obs_env)
+    run!(obs_env)
 
     one_local = onelocal(pepo, obs_env; normalize=true)
 
