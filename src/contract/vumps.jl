@@ -20,13 +20,13 @@ function get_truncmetric_tensors(mps::MPS, bond::Bond)
     return ac_u, ac_d, ar_u, ar_d
 end
 
-# function tracecontract(vumps::VUMPSTensors, network)
+# function tracecontract(vumps::VUMPSRuntime, network)
 #     AC = ITC.getcentral(vumps.mps)
 #     FL = vumps.fixedpoints.left
 #     FR = vumps.fixedpoints.right
 #     return tracecontract.(FL, FR, AC, circshift(AC, (0, -1)), network)
 # end
-function onelocalcontract(vumps::VUMPSTensors, network)
+function onelocalcontract(vumps::VUMPSRuntime, network)
     AC = ITC.getcentral(vumps.mps)
     FL = vumps.fixedpoints.left
     FR = vumps.fixedpoints.right
@@ -34,7 +34,7 @@ function onelocalcontract(vumps::VUMPSTensors, network)
     return onelocalcontract.(FL, FR, AC, circshift(AC, (0, -1)), network)
 end
 
-function _metric(left, right, vumps::VUMPSTensors, bond::Bond)
+function _metric(left, right, vumps::VUMPSRuntime, bond::Bond)
     fs = get_truncmetric_tensors(vumps.fixedpoints, bond)
 
     as = get_truncmetric_tensors(vumps.mps, bond)
@@ -42,7 +42,7 @@ function _metric(left, right, vumps::VUMPSTensors, bond::Bond)
     return truncmetriccontract(fs..., as..., left, right)
 end
 
-function truncmetric!(dst, vumps::VUMPSTensors, network::ITC.AbstractNetwork)
+function truncmetric!(dst, vumps::VUMPSRuntime, network::ITC.AbstractNetwork)
     mps = vumps.mps
 
     AC = ITC.getcentral(mps)

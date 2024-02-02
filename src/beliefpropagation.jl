@@ -129,90 +129,93 @@ end
 #     return Mw_new
 # end
 
-function update_message_tensor_opt!(Mw_new, Te, Ms, Mw, Mn, P)
-    if Mw_new === Mw
-        Mw = copy(Mw)
-    end
-    @tensoropt (
-        k => 2,
-        b => 2,
-        kk => 2,
-        bb => 2,
-        kkk => 2,
-        bbb => 2,
-        e1 => D,
-        e2 => D,
-        w1 => D,
-        w2 => D,
-        s1 => D,
-        s2 => D,
-        n1 => D,
-        n2 => D,
-        ee1 => D,
-        ee2 => D,
-        ww1 => D,
-        ww2 => D,
-        ss1 => D,
-        ss2 => D,
-        nn1 => D,
-        nn2 => D,
-    ) Mw_new[e1 ee1; e2 ee2] =
-        Te[k b; e1 s1 w1 n1] *
-        P[kk bb; k b ee1 ss1 ww1 nn1] *
-        conj(Te[kkk bbb; e2 s2 w2 n2] * P[kk bb kkk bbb; ee2 ss2 ww2 nn2]) *
-        Ms[s1 ss1; s2 ss2] *
-        Mw[w1 ww1; w2 ww2] *
-        Mn[n1 nn1; n2 nn2]
-    rmul!(Mw_new, 1 / tr(Mw_new))
-    return Mw_new
-end
-function vidal_gauge_test!(Te, P, isoms, weights, dir)
-    Ws, Ww, Wn = sqrt_weights(weights, dir)
-    Us, Uw, Un = get_matrices_except_dir(isoms, dir)
+# wont parse currently
+# function update_message_tensor_opt!(Mw_new, Te, Ms, Mw, Mn, P)
+#     if Mw_new === Mw
+#         Mw = copy(Mw)
+#     end
+#     @tensoropt (
+#         k => 2,
+#         b => 2,
+#         kk => 2,
+#         bb => 2,
+#         kkk => 2,
+#         bbb => 2,
+#         e1 => D,
+#         e2 => D,
+#         w1 => D,
+#         w2 => D,
+#         s1 => D,
+#         s2 => D,
+#         n1 => D,
+#         n2 => D,
+#         ee1 => D,
+#         ee2 => D,
+#         ww1 => D,
+#         ww2 => D,
+#         ss1 => D,
+#         ss2 => D,
+#         nn1 => D,
+#         nn2 => D,
+#     ) Mw_new[e1 ee1; e2 ee2] =
+#         Te[k b; e1 s1 w1 n1] *
+#         P[kk bb; k b ee1 ss1 ww1 nn1] *
+#         conj(Te[kkk bbb; e2 s2 w2 n2] * P[kk bb kkk bbb; ee2 ss2 ww2 nn2]) *
+#         Ms[s1 ss1; s2 ss2] *
+#         Mw[w1 ww1; w2 ww2] *
+#         Mn[n1 nn1; n2 nn2]
+#     rmul!(Mw_new, 1 / tr(Mw_new))
+#     return Mw_new
+# end
 
-    Us = Us * Ws
-    Uw = Uw * _transpose(Ww)
-    Un = Un * _transpose(Wn)
-
-    @tensoropt (
-        k => 2,
-        b => 2,
-        kk => 2,
-        bb => 2,
-        kkk => 2,
-        bbb => 2,
-        e1 => D,
-        e2 => D,
-        w1 => D,
-        w2 => D,
-        s1 => D,
-        s2 => D,
-        n1 => D,
-        n2 => D,
-        ee1 => D,
-        ee2 => D,
-        ww1 => D,
-        ww2 => D,
-        ss1 => D,
-        ss2 => D,
-        nn1 => D,
-        nn2 => D,
-    ) out[e1 ee1; e2 ee2] :=
-        Te[k b; e1 s1 w1 n1] *
-        P[kk bb; k b ee1 ss1 ww1 nn1] *
-        conj(
-            Te[kkk bbb; e2 s2 w2 n2] *
-            P[kk bb kkk bbb; ee2 ss2 ww2 nn2] *
-            Us[s2 ss2; sx] *
-            Uw[w2 ww2; wx] *
-            Un[n2 nn2; nx],
-        ) *
-        Us[s1 ss1; sx] *
-        Uw[w1 ww1; wx] *
-        Un[n1 nn1; nx]
-    rmul!(out, 1 / tr(out))
-    return out
-end
+# wont parse currently
+# function vidal_gauge_test!(Te, P, isoms, weights, dir)
+#     Ws, Ww, Wn = sqrt_weights(weights, dir)
+#     Us, Uw, Un = get_matrices_except_dir(isoms, dir)
+#
+#     Us = Us * Ws
+#     Uw = Uw * _transpose(Ww)
+#     Un = Un * _transpose(Wn)
+#
+#     @tensoropt (
+#         k => 2,
+#         b => 2,
+#         kk => 2,
+#         bb => 2,
+#         kkk => 2,
+#         bbb => 2,
+#         e1 => D,
+#         e2 => D,
+#         w1 => D,
+#         w2 => D,
+#         s1 => D,
+#         s2 => D,
+#         n1 => D,
+#         n2 => D,
+#         ee1 => D,
+#         ee2 => D,
+#         ww1 => D,
+#         ww2 => D,
+#         ss1 => D,
+#         ss2 => D,
+#         nn1 => D,
+#         nn2 => D,
+#     ) out[e1 ee1; e2 ee2] :=
+#         Te[k b; e1 s1 w1 n1] *
+#         P[kk bb; k b ee1 ss1 ww1 nn1] *
+#         conj(
+#             Te[kkk bbb; e2 s2 w2 n2] *
+#             P[kk bb kkk bbb; ee2 ss2 ww2 nn2] *
+#             Us[s2 ss2; sx] *
+#             Uw[w2 ww2; wx] *
+#             Un[n2 nn2; nx],
+#         ) *
+#         Us[s1 ss1; sx] *
+#         Uw[w1 ww1; wx] *
+#         Un[n1 nn1; nx]
+#     rmul!(out, 1 / tr(out))
+#     return out
+# end
 
 # inits Me
 function initmessagetensor(Te)
