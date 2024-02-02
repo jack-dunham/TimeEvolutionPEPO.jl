@@ -1,4 +1,4 @@
-function onelocalcontract(ctmrg::ITC.AbstractCornerBoundary, bulk::AbstractLattice)
+function onelocalcontract(ctmrg::CornerMethodRuntime, bulk::AbstractLattice)
     cor = corners(ctmrg)
     edg = edges(ctmrg)
 
@@ -63,7 +63,7 @@ function onelocalcontract!(
         C3_22[x8 x6]
     return dst
 end
-function _metric(left, right, ctmrg::ITC.AbstractCornerBoundary, bond)
+function _metric(left, right, ctmrg::CornerMethodRuntime, bond)
     return ctmrg_trunctensors(left, right, ctmrg, bond)
 end
 function ctmrg_trunctensors(left, right, ctmrg, bond)
@@ -71,14 +71,15 @@ function ctmrg_trunctensors(left, right, ctmrg, bond)
     # r = bond.right
     r = l + CartesianIndex((1, 0))
 
-    corners = ctmrg.corners
-    edges = ctmrg.edges
+    i1 = l[1]:r[1]
+    i2 = l[2]
 
-    cs = corners[l[1]:r[1], l[2]]
+    cs = getboundary(corners(ctmrg), i1, i2)
 
     @debug "" l[1] r[1] l[2]
 
-    t1s, t2s, t3s, t4s = edges[l[1]:r[1], l[2]]
+    t1s, t2s, t3s, t4s = map(x -> tuple(x...), getboundary(edges(ctmrg), i1, i2))
+    # t1s, t2s, t3s, t4s = edge[l[1]:r[1], l[2]]
 
     return truncmetriccontract(
         cs..., t1s..., t2s..., t3s..., t4s..., left, right, CTMRG(; bonddim=1)
