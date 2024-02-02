@@ -3,8 +3,10 @@ using TensorKit
 using KrylovKit
 using LinearAlgebra
 using Test
-using TestSetExtensions
+using Combinatorics
 
-@testset ExtendedTestSet "All tests" begin
-    @includetests ARGS
+@testset verbose = true "All tests" begin
+    for file in ARGS
+        include("$(file).jl")
+    end
 end
