@@ -40,7 +40,10 @@ export initialize, simulate!, simulate
 
 export @defmodel
 
-export TimeEvolutionMPO, MPO
+export TimeEvolutionMPO, MatrixProductOperator
+
+export LindbladEquation, HamiltonianTerm, LongRangeTerm, LindbladTerm
+
 export ham, lin
 
 #generic 
@@ -75,6 +78,6 @@ include("physics/tebd_evolve.jl")
 include("physics/tno_evolve.jl")
 include("physics/dynamicalmap.jl")
 
-include("Models/Models.jl")
+# include("Models/Models.jl")
 
 end # module

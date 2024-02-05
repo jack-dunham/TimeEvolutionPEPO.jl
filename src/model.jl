@@ -30,6 +30,8 @@ function newterm(::Type{T}, term, args...) where {N,T<:AbstractTerm{N}}
     return T(term, args...)
 end
 
+physicaldim(term::AbstractTerm) = map(x -> size(x, 1), term.term)
+
 function Base.:(==)(t1::T, t2::T) where {T<:AbstractTerm}
     return all(name -> getfield(t1, name) == getfield(t2, name), fieldnames(T))
 end
@@ -80,22 +82,37 @@ Base.:*(a::Number, A::AbstractTerm) = scaleterm(a, A)
 Base.:*(A::AbstractTerm, a::Number) = Base.:*(a, A)
 
 ##
+abstract type AbstractLindbladEquation end
 
-struct LindbladEquation
+struct ZeroLindbladEquation <: AbstractLindbladEquation end
+
+function push!!(eqn::ZeroLindbladEquation, term::AbstractTerm)
+    outeqn = LindbladEquation(physicaldim(term)[1])
+    push!!(outeqn, term)
+    return outeqn
+end
+
+struct LindbladEquation <: AbstractLindbladEquation
     onelocal::Vector{HamiltonianTerm{1}}
     twolocal::Vector{HamiltonianTerm{2}}
     longrange::Vector{LongRangeTerm}
     linops::Vector{LindbladTerm}
+    physicaldim::Int
 end
-LindbladEquation() = LindbladEquation([], [], [], [])
+LindbladEquation(p::Int) = LindbladEquation([], [], [], [], p::Int)
 
-Base.zero(eqn::LindbladEquation) = zero(typeof(eqn))
-Base.zero(::Type{LindbladEquation}) = LindbladEquation()
+Base.zero(eqn::AbstractLindbladEquation) = zero(typeof(eqn))
+Base.zero(::Type{<:AbstractLindbladEquation}) = ZeroLindbladEquation()
+
+physicaldim(eqn::LindbladEquation) = eqn.physicaldim
+function physicalspace(S::Type{<:IndexSpace}, eqn::LindbladEquation)
+    d = eqn.physicaldim
+    return oneunit(S)^d
+end
 
 function Base.:+(A::AbstractTerm, B::AbstractTerm)
-    eqn = zero(LindbladEquation)
-    push!(eqn, A)
-    push!(eqn, B)
+    eqn = push!!(zero(LindbladEquation), A)
+    eqn = push!!(eqn, B)
     return eqn
 end
 
@@ -103,32 +120,55 @@ function Base.:(==)(t1::T, t2::T) where {T<:LindbladEquation}
     return all(name -> getfield(t1, name) == getfield(t2, name), fieldnames(T))
 end
 
+function push!!(L::LindbladEquation, A::AbstractTerm)
+    ld = physicaldim(L)
+    ad = physicaldim(A)
+    if ld == ad[1]
+        push!(L, A)
+        return L
+    else
+        throw(
+            DimensionMismatch(
+                "cannot add term of dimension $ad to lindblad equation of dimension $ld"
+            ),
+        )
+    end
+end
+
 Base.push!(L::LindbladEquation, A::HamiltonianTerm{1}) = push!(L.onelocal, A)
 Base.push!(L::LindbladEquation, A::HamiltonianTerm{2}) = push!(L.twolocal, A)
 Base.push!(L::LindbladEquation, A::LongRangeTerm) = push!(L.longrange, A)
 Base.push!(L::LindbladEquation, A::LindbladTerm) = push!(L.linops, A)
 
-Base.:+(B::AbstractTerm, eqn::LindbladEquation) = +(eqn, B)
-function Base.:+(eqn::LindbladEquation, B::AbstractTerm)
+Base.:+(B::AbstractTerm, eqn::AbstractLindbladEquation) = +(eqn, B)
+function Base.:+(eqn::AbstractLindbladEquation, B::AbstractTerm)
     eqnout = zero(eqn)
-    axpy!(1, eqn, eqnout)
-    push!(eqnout, B)
+    eqnout = axpy!(1, eqn, eqnout)
+    eqnout = push!!(eqnout, B)
     return eqnout
 end
 
-function LinearAlgebra.axpy!(a::Number, eqn1::LindbladEquation, eqn2::LindbladEquation)
-    for name in fieldnames(LindbladEquation)
-        field1 = getfield(eqn1, name)
-        field2 = getfield(eqn2, name)
-        append!(field2, a * field1)
+function LinearAlgebra.axpy!(
+    a::Number, eqn1::ZeroLindbladEquation, eqn2::AbstractLindbladEquation
+)
+    return eqn2
+end
+
+function LinearAlgebra.axpy!(
+    a::Number, eqn1::LindbladEquation, eqn2::AbstractLindbladEquation
+)
+    for name in (:onelocal, :twolocal, :longrange, :linops)
+        for term in getfield(eqn1, name)
+            eqn2 = push!!(eqn2, a * term)
+        end
     end
     return eqn2
 end
 
-function Base.:+(eqn1::LindbladEquation, eqn2::LindbladEquation)
+function Base.:+(eqn1::AbstractLindbladEquation, eqn2::AbstractLindbladEquation)
     eqnout = zero(eqn1)
-    axpy!(1, eqn1, eqnout)
-    axpy!(1, eqn2, eqnout)
+    eqnout = axpy!(1, eqn1, eqnout)
+    eqnout = axpy!(1, eqn2, eqnout)
     return eqnout
 end
 
@@ -150,7 +190,7 @@ end
 
 const BlockMatrix = Matrix{Matrix{ComplexF64}}
 
-struct MPO
+struct MatrixProductOperator
     A::BlockMatrix
     B::BlockMatrix
     C::BlockMatrix
@@ -158,7 +198,7 @@ struct MPO
     data::Matrix{BlockMatrix}
 end
 
-function MPO(A::T, B::T, C::T, D::T) where {T}
+function MatrixProductOperator(A::T, B::T, C::T, D::T) where {T}
     data = Matrix{T}(undef, 3, 3)
 
     # row, col
@@ -174,12 +214,12 @@ function MPO(A::T, B::T, C::T, D::T) where {T}
     data[3, 2] = map(zero, C)
     data[3, 3] = map(one, D)
 
-    return MPO(A, B, C, D, data)
+    return MatrixProductOperator(A, B, C, D, data)
 end
 
-Base.getindex(mpo::MPO, i1, i2) = mpo.data[i1, i2]
+Base.getindex(mpo::MatrixProductOperator, i1, i2) = mpo.data[i1, i2]
 
-function MPO(eqn::LindbladEquation)
+function MatrixProductOperator(eqn::LindbladEquation)
     Id = Matrix{ComplexF64}(I, 2, 2)
 
     chi = 2 * (length(eqn.twolocal) + length(eqn.longrange))
@@ -245,11 +285,11 @@ function MPO(eqn::LindbladEquation)
         D[1, 1] += 1 / 2 * (kron(L, Lc) - 1 / 2 * (kron(Ld * L, Id) + kron(Id, Lt * Lc)))
     end
 
-    return MPO(A, B, C, D)
+    return MatrixProductOperator(A, B, C, D)
 end
 
 struct LazyPowerMPO{N}
-    data::MPO
+    data::MatrixProductOperator
 end
 
 struct ExtensiveMPO{N}
@@ -270,10 +310,10 @@ function Base.getindex(
 end
 
 function TimeEvolutionMPO{N}(eqn::LindbladEquation, dt; kwargs...) where {N}
-    return TimeEvolutionMPO{N}(MPO(eqn), dt; kwargs...)
+    return TimeEvolutionMPO{N}(MatrixProductOperator(eqn), dt; kwargs...)
 end
 
-function lazypower(H::MPO, row, col)
+function lazypower(H::MatrixProductOperator, row, col)
     terms = (H[r, c] for (r, c) in zip(row, col))
     return kron(1, terms...)
 end
@@ -300,7 +340,9 @@ function insertat(tup::NTuple{N}, pos, val) where {N}
     return Tuple(rv)::NTuple{N + 1,Int}
 end
 
-function TimeEvolutionMPO{N}(H::MPO, dt; extend=true, compress=true, approx=true) where {N}
+function TimeEvolutionMPO{N}(
+    H::MatrixProductOperator, dt; extend=true, compress=true, approx=true
+) where {N}
     levels = NTuple{N,Int}[]
 
     # Generate the levels
@@ -377,7 +419,7 @@ function TimeEvolutionMPO{N}(H::MPO, dt; extend=true, compress=true, approx=true
         data = approxcompression!(levels, data, dt)
     end
 
-    return TimeEvolutionMPO(data, levels)
+    return data
 end
 
 function curly(mpo, args...)
@@ -391,7 +433,7 @@ function curly(mpo, args...)
     return sum(func, mats)
 end
 
-topower(H::MPO, N) = topower(LazyPowerMPO{N}(H))
+topower(H::MatrixProductOperator, N) = topower(LazyPowerMPO{N}(H))
 
 function topower(H::LazyPowerMPO{N}) where {N}
     # RaisedMPO{N}
@@ -503,6 +545,8 @@ function totensor(mpo::TimeEvolutionMPO)
     nc = sum(x -> size(x, 1), mpo.data)
     return (nr, nc)
 end
+
+####
 
 locality(term::AbstractTerm) = length(term.data)
 

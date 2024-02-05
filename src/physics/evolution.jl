@@ -22,7 +22,182 @@ end
     verbose::Bool = true
 end
 
-function initialize(
+@kwdef struct DMPO{TAlg<:AbstractTruncationScheme} <: AbstractTimeEvolution
+    timestep::Float64 = 0.01
+    numsteps::Int = 100
+    breaktol::Float64 = 0.0
+    trotterorder::Int = 1
+    truncalg::TAlg = SU()
+    extend::Bool = true
+    compress::Bool = true
+    approx::Bool = false
+    order::Int = 1
+    verbose::Bool = true
+end
+
+function tensorify(method::DMPO, model::AbstractUnitCell, physical::AbstractUnitCell)
+    # Calculate the time-evolution mpo for each unique mpo
+    tempo = map(x -> TimeEvolutionMPO(x, method.timestep), model)
+
+    rv = broadcast(eachindex(physical), physical) do ind, p
+        return dmpo2tensor(tempo[ind[1], ind[2]], p)
+    end
+
+    return rv
+end
+
+function tensorify(method::TEBD, model::AbstractUnitCell, physical::AbstractUnitCell)
+    # Calculate the time-evolution mpo for each unique mpo
+    tempo = map(x -> TimeEvolutionMPO(x, method.timestep), model)
+
+    u1, v2 = tebd2tensor(tempo[1, 1], physical[1, 1], physical[2, 1])
+
+    u = similar(physical, typeof(u1))
+    v = similar(physical, typeof(v2))
+
+    skipfirst = true
+
+    foreach(eachindex(physical)) do ind
+        if skipfirst
+            skipfirst = false
+            continue
+        end
+        x = ind[1]
+        y = ind[2]
+        u1, v2 = tebd2tensor(tempo[x, y], physical[x, y], physical[x + 1, y])
+        u[x, y] = u1
+        v[x + 1, y] = v2
+    end
+
+    return u, v
+end
+
+function tebd2tensor(model::LindbladEquation, p1::IndexSpace, p2::IndexSpace; trunc)
+    ⊗ = kron
+
+    # Vectorise the superoperators; we do this the non-julian way (row major) as the rest
+    # of the code assumes (ket, bra) ordering (whoops).
+    c2 = H -> (-im * (H ⊗ one(H) - one(H) ⊗ transpose(H)))
+    d2 = L -> L ⊗ transpose(L') - 1 / 2 * (L' * L ⊗ one(L) + one(L) * transpose(L' * L))
+
+    # We need both local terms that have support on two sites, and therefore need to divide
+    # by two to avoid double counting in the brickwork pattern
+    c1 = H -> 1 / 2 * (c2(one(H) ⊗ H) + c2(H ⊗ one(H)))
+    d1 = L -> 1 / 2 * (d2(one(L) ⊗ L) + d2(L ⊗ one(L)))
+
+    data = Matrix(ComplexF64, p^4, p^4)
+
+    # We divide by half again for local terms as in 2D we effectively apply these twice
+    data += 1 / 2 * sum(c1, model.onelocal)
+    data += 1 / 2 * sum(d1, model.linops)
+
+    data += sum(c2, model.twolocal)
+
+    space = p1 * p2 * p1' * p2'
+
+    tensor = TensorMap(exp(dt * data), space, space)
+
+    # move site one to codomain and site two to domain
+    tensor = permute(tensor, (1, 3, 5, 7), (2, 4, 6, 8))
+
+    u, s, v = tsvd(tensor; trunc=trunc)
+
+    return u * sqrt(s), _transpose(sqrt(s) * v)
+end
+
+function dmpo2tensor(mpo, p::S) where {S<:IndexSpace}
+    d = dim(p)
+    D = prod(x -> size(x, 1), mpo)
+    s = oneunit(S)^D
+    array = zeros(ComplexF64, d, d, d, d, D, D)
+
+    for (slice, block) in zip(eachslice(array; dims=(5, 6)), mpo)
+        slice .= reshape(block, size(slice))
+    end
+
+    tensor = TensorMap(array, p * p' * p' * p, s * s')
+    return tensor
+end
+
+unitcellsize(x::AbstractMatrix) = size(x)
+unitcellsize(_) = (1, 1)
+
+dimtospace(d::Int) = ℂ^d
+dimtospace(s::IndexSpace) = s
+
+similar_matrix(A::AbstractMatrix, outsize) = Matrix{eltype(A)}(undef, outsize)
+similar_matrix(A, outsize) = Matrix{A}(undef, outsize)
+
+function promote_matrix_size(args...)
+    xs = map(x -> size(x, 1), args)
+    ys = map(x -> size(x, 2), args)
+    outsize = (lcm(xs...), lcm(ys...))
+
+    outmat = map(x -> similar_matrix(x, outsize), args)
+
+    foreach(outmat, args) do mat, arg
+        sx, sy = isa(arg, AbstractMatrix) ? size(arg) : (1, 1)
+        nx, ny = size(mat)
+
+        for y in 1:sy:ny
+            for x in 1:sx:nx
+                mat[x:sx, y:sy] = arg
+            end
+        end
+    end
+
+    return outmat
+end
+
+function Simulation(
+    model::LindbladEquation,
+    eastdim::Int,
+    southdim::Int=eastdim;
+    physical,
+    unitcell=(1, 1),
+    kwargs...,
+)
+    eastspace = fill(ℂ^eastdim, unitcell)
+    southspace = fill(ℂ^southdim, unitcell)
+
+    d = trivial_physical_space(model)
+
+    return Simulation(model, d, eastspace, southspace; kwargs...)
+end
+
+function Simulation(
+    model::AbstractMatrix{LindbladEquation}, eastdim::Int, southdim::Int=eastdim; kwargs...
+)
+    eastspace = fill(ℂ^eastdim, unitcell)
+    southspace = fill(ℂ^southdim, unitcell)
+
+    d = physicaldim(model)
+
+    physicalspace = ℂ^d
+
+    return Simulation(model, d, eastspace, southspace; kwargs...)
+end
+
+# Assumes IndexSpace
+function Simulation(
+    model::Union{LindbladEquation,AbstractMatrix{LindbladEquation}},
+    rho0,
+    horizontal::Union{S,AbstractMatrix{S}},
+    vertical::Union{S,AbstractMatrix{S}}=horizontal;
+    physical=physicalspace(S, model),
+    output=nothing,
+    method,
+) where {S}
+    mod, phy, hor, ver = promote_matrix_size(model, physical, horizontal, vertical)
+
+    pepo = PEPO(rho0, dimtospace.(phy), dimtospace.(hor), dimtospace.(ver))
+
+    dynamicalmap = tensorify(method, model, phy)
+
+    return Simulation(pepo, deepcopy(pepo), mod, dynamicalmap, output, ConvergenceInfo())
+end
+
+function Simulation(
     model,
     initial_state,
     space,

@@ -106,7 +106,7 @@ function wiimpo(data::ModelMPO, dt)
     B = data.B
     C = data.C
     D = data.D
-
+    
     f! = factorial
 
     # M = Matrix{promote_type(eltype(A), eltype(B), eltype(C), eltype(D)}(zeros)
