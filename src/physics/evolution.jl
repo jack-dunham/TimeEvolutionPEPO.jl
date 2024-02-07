@@ -7,16 +7,6 @@ abstract type AbstractUpdateStyle end
 struct LocalUpdate <: AbstractUpdateStyle end
 struct GlobalUpdate <: AbstractUpdateStyle end
 
-# # TODO We only need one Model struct. Change this soon.
-# struct Simulation{T<:AbstractTimeEvolution,P<:AbstractPEPO,V,M<:AbstractModel}
-#     state::P
-#     initialstate::P
-#     model::M
-#     alg::T
-#     output::V
-#     info::ConvergenceInfo
-# end
-
 struct Simulation{E<:AbstractTimeEvolution,P<:AbstractPEPO,L<:AbstractTimeStepper,T}
     initialstate::Tuple{P,P}
     info::ConvergenceInfo
@@ -26,6 +16,18 @@ struct Simulation{E<:AbstractTimeEvolution,P<:AbstractPEPO,L<:AbstractTimeSteppe
     truncators::Tuple{T,T}
 end
 
+function Base.show(io::IO, m::MIME"text/plain", sim::Simulation)
+    println("METHOD")
+    println("≡≡≡≡≡≡")
+    show(io, m, sim.method)
+    println("INFO")
+    print("≡≡≡≡")
+    for name in fieldnames(ConvergenceInfo)
+        println("")
+        print(name, ": ", getfield(sim.info, name))
+    end
+    return nothing
+end
 getstate(sim::Simulation) = sim.state[1]
 
 # Sruct MPOWII
@@ -51,8 +53,17 @@ end
     verbose::Bool = true
 end
 
-@kwdef struct TEBD{TAlg<:AbstractTruncationScheme,S<:AbstractUpdateStyle,C} <:
-              AbstractTimeEvolution
+showheader(::Type{<:DMPO}) = "Dynamical Matrix Product Operator (DMPO)"
+
+
+function Base.show(io::IO, m::MIME"text/plain", sim::AbstractTimeEvolution)
+    shownested(io, m, sim)
+    return nothing
+end
+
+@kwdef struct TEBD{
+    TAlg<:AbstractTruncationScheme,S<:AbstractUpdateStyle,C<:TensorKit.TruncationScheme
+} <: AbstractTimeEvolution
     timestep::Float64 = 0.01
     numsteps::Int = 100
     breaktol::Float64 = 0.0
@@ -63,6 +74,9 @@ end
     compress::C = truncerr(eps())
 end
 
+showheader(::Type{<:TEBD}) = "Time-evolving block decimation (TEBD)"
+
+# Explicitly isotropic
 function dynamicalmap(
     method::AbstractTimeEvolution,
     model::AbstractMatrix{<:LindbladEquation},
@@ -71,6 +85,8 @@ function dynamicalmap(
     stepper = timestepper(method, model, physical)
     return stepper, stepper
 end
+
+# Anisotropic
 function dynamicalmap(
     method::AbstractTimeEvolution,
     model::NTuple{2,AbstractMatrix{<:LindbladEquation}},
@@ -88,11 +104,11 @@ function timestepper(method::DMPO, model::AbstractUnitCell, physical::AbstractUn
     # Calculate the time-evolution mpo for each unique mpo
     tempo = broadcast(x -> dynamicalmpo(x, tau, method.order), model)
 
-    rv = broadcast(eachindex(physical), physical) do ind, p
+    t = broadcast(eachindex(physical), physical) do ind, p
         return dmpotensor(tempo[ind[1], ind[2]], p)
     end
 
-    return GlobalStepper(rv)
+    return GlobalStepper(t)
 end
 
 function timestepper(method::TEBD, model::AbstractUnitCell, physical::AbstractUnitCell)
@@ -177,11 +193,9 @@ end
 
 function dmpotensor(mpo, p::S) where {S<:IndexSpace}
     d = dim(p)
-    D = sum(x -> size(x, 1), mpo)
+    D = sum(x -> size(x, 1), mpo[:, 1])
     s = ⊕(oneunit(S)^D...)
     array = zeros(ComplexF64, d, d, d, d, D, D)
-
-    # println(size(array))
 
     # for (slice, block) in zip(eachslice(array; dims=(5, 6)), mpo)
     #     println(size(slice))
@@ -195,7 +209,7 @@ function dmpotensor(mpo, p::S) where {S<:IndexSpace}
         for (ind2, op) in pairs(block)
             n = i + ind2[1] - 1
             m = j + ind2[2] - 1
-            slice = view(array,:,:,:,:,n,m)
+            slice = view(array, :, :, :, :, n, m)
             slice .= reshape(op, size(slice))
         end
     end
@@ -273,9 +287,7 @@ function Simulation(
 
     initialstate = deepcopy(state)
 
-    sim = Simulation(
-        initialstate, ConvergenceInfo(), map, method, state, truncators
-    )
+    sim = Simulation(initialstate, ConvergenceInfo(), map, method, state, truncators)
 
     return sim
 end

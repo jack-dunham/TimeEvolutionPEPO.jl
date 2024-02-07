@@ -33,7 +33,7 @@ export Bond
 
 export Model
 
-export TEBD, WII, TNO
+export TEBD, WII, TNO, DMPO
 export SU, NTU, FET, VGU
 export GateLike, MPOLike
 export initialize, simulate!, simulate

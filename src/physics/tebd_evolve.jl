@@ -12,21 +12,14 @@ end
 
 function _initevolution(pepo::AbstractPEPO, map::LocalStepper)
     evolved = broadcast(getstate(pepo), map.u, map.v) do p, u, v
-        D = domain(p)
-        lη = domain(u)
-        rη = domain(v)
-        left = TensorMap(
-            undef,
-            promote_type(eltype(p), eltype(u)),
-            codomain(p),
-            fuse(D[1] * lη) * D[2] * D[3] * D[4],
-        )
-        right = TensorMap(
-            undef,
-            promote_type(eltype(p), eltype(v)),
-            codomain(p),
-            D[1] * D[2] * fuse(D[3] * rη)' * D[4],
-        )
+        D1, D2, D3, D4 = domain(p)
+
+        TL = promote_type(eltype(p), eltype(u))
+        TR = promote_type(eltype(p), eltype(v))
+
+        left = TensorMap(undef, TL, codomain(p), fuse(D1 * domain(u)) * D2 * D3 * D4)
+        right = TensorMap(undef, TR, codomain(p), D1 * D2 * fuse(D3 * domain(v))' * D4)
+
         return left, right
     end
 
@@ -72,18 +65,12 @@ function _initevolution(pepo::AbstractPEPO, map::GlobalStepper)
     return GlobalUpdatablePEPO(pepo, evolved, Ref(false))
 end
 
-function timestep!(pepo, truncators, map, order; kwargs...)
-    trotterstep!(pepo, truncators, map, order; kwargs...)
-
-    return pepo
-end
-
 # One full cycle of the trotter evolution. That is, t -> t + τ
-function trotterstep!(pepo, env, map, order; kwargs...)
-    partialupdate!(pepo, env, map; kwargs...)
+function timestep!(pepo, env, map, order; kwargs...)
+    trotterstep!(pepo, env, map; kwargs...)
 
     if order == 2
-        partialupdate!(pepo, env, map; reverse=true, kwargs...)
+        trotterstep!(pepo, env, map; reverse=true, kwargs...)
     elseif order == 1
         changeaxis!(pepo[1], pepo[2])
     end
@@ -91,7 +78,7 @@ function trotterstep!(pepo, env, map, order; kwargs...)
     return pepo
 end
 
-function partialupdate!(pepo, env, map; reverse::Bool=false, kwargs...)
+function trotterstep!(pepo, env, map; reverse::Bool=false, kwargs...)
     in = 1 + reverse
     out = 2 - reverse
 
@@ -115,17 +102,11 @@ function updatestep!(pepo::GlobalUpdatablePEPO, truncators, map; truncalg, kwarg
     # # Post-env
     renormalize!(truncators)
 
-    if isa(truncalg, SU)
-        gauge = false
-    else
-        gauge = truncalg.gauge
-    end
-
-    sequentialtruncate(pepo, truncators; xi=truncalg.ξ, gauge=gauge)
+    sequentialtruncate(pepo, truncators; truncalg)
 
     quicknormalize!(pepo)
-    # Truncate each site with respect the isometries
-    # truncate!(pepo, iso)
+
+    hermitianize!(pepo)
 
     return pepo
 end
@@ -152,13 +133,9 @@ function updatestep!(pepo::LocalUpdatablePEPO, truncators, map; reverse=false, k
         axisbonds = bonds
     end
 
-    firstcol = true
-
     for col in eachcol(axisbonds)
-
         for bond in col
 
-            x, y = deepcopy(pepo[bond])
             # Update the states lying on the bond
             updatebond!(pepo, truncators, map, bond; kwargs...)
 
@@ -168,16 +145,14 @@ function updatestep!(pepo::LocalUpdatablePEPO, truncators, map; reverse=false, k
             quicknormalize!(pepo)
 
             if issymmetric
-
                 tensors = getstate(pepo)
 
                 for (c, col) in enumerate(eachcol(tensors))
                     if c == 1
                         continue
                     end
-                    copy!.(tensors[:, c], circshift(tensors[:, 1],  - ( c - 1)))
+                    copy!.(tensors[:, c], circshift(tensors[:, 1], -(c - 1)))
                 end
-
             end
 
             renormalize!(truncators)
@@ -186,14 +161,15 @@ function updatestep!(pepo::LocalUpdatablePEPO, truncators, map; reverse=false, k
         if issymmetric
             break
         end
-
     end
 
     # renormalize!(truncators)
     return pepo, truncators
 end
 
-function updatebond!(pepo::LocalUpdatablePEPO, truncators, operator, bond; truncalg, kwargs...)
+function updatebond!(
+    pepo::LocalUpdatablePEPO, truncators, operator, bond; truncalg, kwargs...
+)
     # Evolve the sites on the bond given by `bond` according to `operator`.
     evolve!(pepo, operator, bond)
 

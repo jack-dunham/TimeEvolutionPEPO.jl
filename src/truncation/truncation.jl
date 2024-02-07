@@ -29,24 +29,38 @@ end
 # SU, FET, NTU
 abstract type AbstractTruncationScheme end
 
+function Base.show(io::IO, m::MIME"text/plain", sim::AbstractTruncationScheme)
+    shownested(io, m, sim)
+    return nothing
+end
+
 # TRUNCATION SCHEMES
 @kwdef struct FET{BAlg<:AbstractBoundaryAlgorithm,UScheme<:AbstractUpdateScheme} <:
               AbstractTruncationScheme
     gauge::Bool = true
     ξ::Float64 = Inf
+    rankreduce = true
     alg::BAlg
     updatescheme::UScheme = LULT()
 end
 
+showheader(::Type{<:FET}) = "Full environment truncation (FET)"
+
 @kwdef struct NTU{UScheme<:AbstractUpdateScheme} <: AbstractTruncationScheme
-    gauge::Bool = true
+    gauge::Bool = false
     ξ::Float64 = Inf
+    rankreduce = true
     updatescheme::UScheme = LULT()
 end
+
+showheader(::Type{<:NTU}) = "Neighbourhood tensor update (NTU)"
+
 
 @kwdef struct SU <: AbstractTruncationScheme
     ξ::Float64 = Inf
 end
+
+showheader(::Type{<:SU}) = "Simple update"
 
 @kwdef struct VGU <: AbstractTruncationScheme
     ξ::Float64 = Inf
@@ -85,6 +99,8 @@ end
 
 ## Initalialize truncators for lattice of tensors
 inittruncators(bulk, fet::FET) = inittruncators(bulk, fet.alg)
+inittruncators(bulk, conalg::InfiniteContraction) = inittruncators(bulk, conalg.algorithm)
+
 function inittruncators(bulk, conalg::AbstractBoundaryAlgorithm)
     return newcontraction(conalg, hilbertschmidt(bulk); store_initial=true)
 end
@@ -188,8 +204,8 @@ function metric(pepo::LocalUpdatablePEPO, environment)
     return metric(pepo, environment, currentbond(pepo))
 end
 
-function metric(pepo::Union{AbstractPEPO,AbstractLattice}, environment, bond::Bond)
-    left, right = pepo[bond]
+function metric(state::Union{AbstractPEPO,AbstractLattice}, environment, bond::Bond)
+    left, right = state[bond]
     return _metric(left, right, environment, bond)
 end
 
