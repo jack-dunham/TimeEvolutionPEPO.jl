@@ -311,3 +311,18 @@ function mcfgauge!(p_out, p_in, g1, g2) #hor, ver
         p_in[k b; ee ss ww nn] * g1[ee; e] * g2[ss; s] * g1i[ww; w] * g2i[nn; n]
     return p_out
 end
+
+bondspace(pepo::AbstractPEPO, bond) = domain.(getstate(pepo), getaxis(bond))[left(bond)]
+
+function copyevolved(pepo::G) where {G<:GlobalUpdatablePEPO}
+    newpepo = G(pepo.parent, copy(pepo.evolved_tensors), pepo.isevolved)
+    return newpepo
+end
+
+function truncateinto!(dst::G, src::G) where {G<:GlobalUpdatablePEPO}
+    copy!.(getstate(dst), getevolved(src))
+    setisevolved!(dst, false)
+    return dst
+end
+
+hermitianize!(pepo::AbstractPEPO) = hermitianize!.(getstate(pepo))
