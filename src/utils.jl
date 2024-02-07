@@ -176,6 +176,20 @@ function posapprox(t; tol=10.0 * eps())
     return V * D * V', err
 end
 
+function shownested(io::IO, m::MIME"text/plain", sim::T) where {T}
+    level = get(io, :nesting_level, 0)
+
+    print(io, showheader(T))
+
+    ion = IOContext(io, :nesting_level => level + 1)
+    for name in fieldnames(T)
+        println("")
+        print(ion, "  "^(level + 1), name, ": ")
+        show(ion, m, getfield(sim, name))
+    end
+    return nothing
+end
+
 # function fsvd(t::TensorMap{D}; trunc::TensorKit.TruncationSpace) where {D<:IndexSpace}
 #     d = trunc.space
 #
