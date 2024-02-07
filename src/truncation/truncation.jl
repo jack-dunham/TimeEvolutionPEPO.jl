@@ -39,7 +39,7 @@ abstract type AbstractTruncationScheme end
 end
 
 @kwdef struct NTU{UScheme<:AbstractUpdateScheme} <: AbstractTruncationScheme
-    gauge::Bool = false
+    gauge::Bool = true
     ξ::Float64 = Inf
     updatescheme::UScheme = LULT()
 end
@@ -64,19 +64,19 @@ updatescheme(::SU) = LULT()
 Base.show(::IO, tr::AbstractTruncationScheme) = dump(tr)
 
 ## Initalialize truncators for a full TD-PEPO
-function initialize_truncators(pepo::TimeDependantPEPO, ::DynamicalMap, truncalg::FET)
-    xenv = initialize_truncators(pepo.x, truncalg)
-    yenv = initialize_truncators(pepo.y, truncalg)
-    return FullEnvironmentState(xenv, yenv)
+function inittruncators(
+    pepo::NTuple{2,P}, ::NTuple{2,L}, truncalg::Union{FET,NTU}
+) where {P<:AbstractPEPO,L}
+    xenv = inittruncators(pepo[1], truncalg)
+    yenv = inittruncators(pepo[2], truncalg)
+    return xenv, yenv
 end
-function initialize_truncators(pepo::TimeDependantPEPO, ::DynamicalMap, truncalg::NTU)
-    xenv = initialize_truncators(pepo.x, truncalg)
-    yenv = initialize_truncators(pepo.y, truncalg)
-    return NeighbourhoodUpdateState(xenv, yenv)
+function inittruncators(
+    ::NTuple{2,P}, ::NTuple{2,L}, truncalg::SU
+) where {P<:AbstractPEPO,L}
+    return SimpleUpdateState(), SimpleUpdateState()
 end
-function initialize_truncators(::TimeDependantPEPO, ::DynamicalMap, truncalg::SU)
-    return SimpleUpdateState()
-end
+
 ## 
 
 function ITC.newcontraction(conalg, net::HilbertSchmidt; kwargs...)
@@ -84,22 +84,22 @@ function ITC.newcontraction(conalg, net::HilbertSchmidt; kwargs...)
 end
 
 ## Initalialize truncators for lattice of tensors
-initialize_truncators(bulk, fet::FET) = initialize_truncators(bulk, fet.alg)
-function initialize_truncators(bulk, conalg::AbstractBoundaryAlgorithm)
+inittruncators(bulk, fet::FET) = inittruncators(bulk, fet.alg)
+function inittruncators(bulk, conalg::AbstractBoundaryAlgorithm)
     return newcontraction(conalg, hilbertschmidt(bulk); store_initial=true)
 end
 
-function initialize_truncators(bulk, ::NTU)
+function inittruncators(bulk, ::NTU)
     return initialize_neighbourhood(hilbertschmidt(bulk))
 end
 
 ## Initalialize truncators using existing environment state
-initialize_truncators(tensors, ::NTUState) = initialize_truncators(tensors, NTU())
-function initialize_truncators(tensors, st::AbstractBoundaryRuntime)
-    return initialize_truncators(tensors, st.alg)
+inittruncators(tensors, ::NTUState) = inittruncators(tensors, NTU())
+function inittruncators(tensors, st::AbstractBoundaryRuntime)
+    return inittruncators(tensors, st.alg)
 end
 
-function initialize_truncators(pepo::TimeDependantPEPO, dynamical_map, ::VGU)
+function inittruncators(pepo, dynamical_map, ::VGU)
     map = dynamical_map.x
     st = getstate(pepo.x)
 
@@ -139,7 +139,8 @@ function initialize_truncators(pepo::TimeDependantPEPO, dynamical_map, ::VGU)
     return VidalTruncationState(messages, vidals, weights, map)
 end
 
-initialize_truncators(st::SimpleUpdateState) = st
+inittruncators(tensors, st::SimpleUpdateState) = st
+inittruncators(st::SimpleUpdateState) = st
 
 # Truncator renormalization
 function renormalize!(st::EnvironmentOrNeighbourhoodState)
@@ -164,7 +165,7 @@ renormalize!(st::NTUState) = calculate_neighbourhood!(st)
 renormalize!(st::SimpleUpdateState) = st
 
 function truncators(tensors, truncalg)
-    truncs = initialize_truncators(tensors, truncalg)
+    truncs = inittruncators(tensors, truncalg)
     renormalize!(truncs)
     return truncs
 end
@@ -192,9 +193,13 @@ function metric(pepo::Union{AbstractPEPO,AbstractLattice}, environment, bond::Bo
     return _metric(left, right, environment, bond)
 end
 
-function _metric(left, right, env::InfiniteContraction, bond)
+function _metric(left, right, env::InfiniteContraction, bond::Bond)
     return _metric(left, right, env.runtime, bond)
 end
+function _metric(left, right, env::NTUState, bond::Bond)
+    return _metric(left, right, env.tensors, bond)
+end
+
 
 """
     truncate!(pepo::AbstractUpdatablePEPO, iso::TruncationIsometries)
@@ -219,12 +224,12 @@ function _truncate!(pepo::LocalUpdatablePEPO, iso::TruncationIsometries)
     @debug "Truncating bond: $bond"
 
     new_left, new_right = pepo[bond]
-    old_left, old_right = getstate(pepo)[bond]
+    old_left, old_right = parentpair(pepo, bond)
 
     # Truncate the left site with an isometry on the right bond
-    tensor_truncate!(old_left, new_left, iso.u * sqrt(iso.s))
+    truncateto!(old_left, new_left, iso.u * sqrt(iso.s))
     # Truncate the right site with an isometry on the left bond
-    tensor_truncate!(old_right, sqrt(iso.s) * iso.v, new_right)
+    truncateto!(old_right, sqrt(iso.s) * iso.v, new_right)
 
     setweights!(pepo, normalize(iso.s), bond)
 
@@ -239,7 +244,7 @@ partialtruncate(iso, site::AbsTen) = _partialtruncate(sqrt(iso.s) * iso.v, site)
 function _partialtruncate(arg1, arg2)
     site_pt = similar_but_truncated(arg1, arg2)
     @debug "" space(site_pt)
-    tensor_truncate!(site_pt, arg1, arg2)
+    truncateto!(site_pt, arg1, arg2)
     return site_pt
 end
 
@@ -285,27 +290,30 @@ function _truncate!(pepo::GlobalUpdatablePEPO, iso::TruncationIsometries)
 end
 
 function vidaltruncation!(pepo_dst, pepo_src, tno, vidal)
-    tensor_truncate!(
-        pepo_dst, pepo_src, tno, vidal.east, vidal.west, vidal.south, vidal.north
-    )
+    truncateto!(pepo_dst, pepo_src, tno, vidal.east, vidal.west, vidal.south, vidal.north)
     return pepo_dst
 end
 
 # Truncation macros.
 
-function tensor_truncate!(p::AbsTen{2,4}, q::AbsTen{2,4}, u::AbsTen{1,1})
+# East-bond truncation
+function truncateto!(p::AbsTen{2,4}, q::AbsTen{2,4}, u::AbsTen{1,1})
     @tensoropt p[k b; e s w n] = q[k b; ee s w n] * u[ee; e]
     return p
 end
-function tensor_truncate!(p::AbsTen{2,4}, v::AbsTen{1,1}, q::AbsTen{2,4})
+
+# West bond truncation
+function truncateto!(p::AbsTen{2,4}, v::AbsTen{1,1}, q::AbsTen{2,4})
     @tensoropt p[k b; e s w n] = v[w; ww] * q[k b; e s ww n]
     return p
 end
-function tensor_truncate!(p::AbsTen{2,4}, q::AbsTen{2,4}, u::AbsTen{1,1}, v::AbsTen{1,1})
+
+# Both
+function truncateto!(p::AbsTen{2,4}, q::AbsTen{2,4}, u::AbsTen{1,1}, v::AbsTen{1,1})
     @tensoropt p[k b; e s w n] = v[w; ww] * q[k b; ee s ww n] * u[ee; e]
     return p
 end
-function tensor_truncate!(
+function truncateto!(
     p::AbsTen{2,4},     # dst
     q::AbsTen{2,4},     # src
     l::AbsTen{4,4},     # time-stepper

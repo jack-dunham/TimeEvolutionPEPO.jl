@@ -40,7 +40,7 @@ export initialize, simulate!, simulate
 
 export @defmodel
 
-export TimeEvolutionMPO, MatrixProductOperator
+export dynamicalmpo, MatrixProductOperator
 
 export LindbladEquation, HamiltonianTerm, LongRangeTerm, LindbladTerm
 

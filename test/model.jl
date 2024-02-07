@@ -10,7 +10,7 @@ function xyzlindblad(; Jx=0.5, Jy=1.2, Jz=1.0, Γ=1.0)
 end
 
 @testset verbose = true "Time evolution MPO" begin
-    H = MPO(xyzlindblad())
+    H = MatrixProductOperator(xyzlindblad())
 
     cur = (args...) -> curly(H, args...)
 
@@ -71,15 +71,13 @@ end
 
     @testset verbose = true "Loopback" begin
         @testset "First order" begin
-            mpo = TimeEvolutionMPO{1}(H, dt; extend=false, compress=false, approx=false)
-            M = mpo.data
+            M = TimeEvolutionMPO{1}(H, dt; extend=false, compress=false, approx=false)
 
             @test M ≈ WI
         end
 
         @testset "Equation (32)" begin
-            mpo = TimeEvolutionMPO{2}(H, dt; extend=false, compress=false, approx=false)
-            M = mpo.data
+            M = TimeEvolutionMPO{2}(H, dt; extend=false, compress=false, approx=false)
 
             @test M[1, 1] ≈ Id + dt * D + dt^2 / 2 * kron(D, D)
             @test M[2, 1] ≈ dt / 2 * B + dt^2 / 2 * kron(D, B)
@@ -87,21 +85,17 @@ end
             @test M[4, 1] ≈ dt^2 / 2 * kron(B, B)
             @test M[5, 1] ≈ dt^2 / 2 * B
             @test M[6, 1] ≈ dt^2 / 2 * B
-
-            @test mpo.levels == [(1, 1), (1, 2), (2, 1), (2, 2), (2, 3), (3, 2)]
         end
     end
     @testset verbose = true "Exact compression" begin
         @testset "First order" begin
-            mpo = TimeEvolutionMPO{1}(H, dt; extend=false, compress=true, approx=false)
-            M = mpo.data
+            M = TimeEvolutionMPO{1}(H, dt; extend=false, compress=true, approx=false)
 
             @test M ≈ WI
         end
 
         @testset "Equation (39)" begin
-            mpo = TimeEvolutionMPO{2}(H, dt; extend=false, compress=true, approx=false)
-            M = mpo.data
+            M = TimeEvolutionMPO{2}(H, dt; extend=false, compress=true, approx=false)
 
             @test M[1, 1] ≈ Id + dt * D + dt^2 / 2 * kron(D, D)
             @test M[2, 1] ≈ dt * B + dt^2 / 2 * (kron(D, B) + kron(B, D))
@@ -119,20 +113,16 @@ end
             @test M[2, 4] ≈ kron(C, B) + kron(A, D) + kron(D, A) + kron(B, C)
             @test M[3, 4] ≈ kron(A, B) + kron(B, A)
             @test M[4, 4] ≈ A
-
-            @test mpo.levels == [(1, 1), (2, 1), (2, 2), (2, 3)]
         end
     end
     @testset verbose = true "Extension and exact compression" begin
         @testset "First order" begin
-            mpo = TimeEvolutionMPO{1}(H, dt; extend=true, compress=true, approx=false)
-            M = mpo.data
+            M = TimeEvolutionMPO{1}(H, dt; extend=true, compress=true, approx=false)
 
             @test M ≈ WII
         end
         @testset "Equation (43)" begin
-            mpo = TimeEvolutionMPO{2}(H, dt; extend=true, compress=true, approx=false)
-            M = mpo.data
+            M = TimeEvolutionMPO{2}(H, dt; extend=true, compress=true, approx=false)
 
             @test M[1, 1] ≈ Id + dt * D + dt^2 / 2 * kron(D, D) + dt^3 / 6 * kron(D, D, D)
             @test M[2, 1] ≈ dt * B + dt^2 / 2 * cur(:D, :B) + dt^3 / 6 * cur(:B, :D, :D)
@@ -154,8 +144,6 @@ end
             @test M[3, 4] ≈ cur(:A, :B) + dt / 3 * (cur(:A, :B, :D) + cur(:B, :B, :C))
             @test M[4, 4] ≈
                 A + dt / 3 * (cur(:A, :D) + kron(A, D) + cur(:B, :C) + kron(B, C))
-
-            @test mpo.levels == [(1, 1), (2, 1), (2, 2), (2, 3)]
         end
     end
 end

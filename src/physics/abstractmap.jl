@@ -31,3 +31,20 @@ end
 function Base.getindex(gates::TrotterGates, bond::Bond)
     return (gates.east)[bond.left], (gates.west)[bond.right]
 end
+
+struct Unidirectional{T}
+    horizontal::T
+    vertical::T
+end
+
+struct GlobalStepper{G,MType} <: AbstractTimeStepper
+    t::Lattice{G,MType,Matrix{MType}}
+end
+struct LocalStepper{G,MType} <: AbstractTimeStepper
+    u::Lattice{G,MType,Matrix{MType}} #left
+    v::Lattice{G,MType,Matrix{MType}} #right
+end
+
+function Base.getindex(stepper::LocalStepper, bond::Bond)
+    return (stepper.u)[bond.left], (stepper.v)[bond.right]
+end

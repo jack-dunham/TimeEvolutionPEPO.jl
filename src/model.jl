@@ -68,6 +68,10 @@ end
 LindbladTerm(term, a=1) = newterm(LindbladTerm, term, a)
 scaleterm(a, A::LindbladTerm) = LindbladTerm(A.term, a * A.coeff)
 
+function (A::Type{<:AbstractArray})(term::Union{HamiltonianTerm,LindbladTerm})
+    mat = term.coeff * kron(1, term.term...)
+    return convert(A, mat)
+end
 ## 
 
 ## TERM API + ALGEBRA
@@ -101,13 +105,30 @@ struct LindbladEquation <: AbstractLindbladEquation
 end
 LindbladEquation(p::Int) = LindbladEquation([], [], [], [], p::Int)
 
+function Base.show(io::IO, ::MIME"text/plain", eqn::LindbladEquation)
+    d = physicaldim(eqn)
+
+    n1 = length(eqn.onelocal)
+    n2 = length(eqn.twolocal)
+
+    nl = length(eqn.longrange)
+
+    nd = length(eqn.linops)
+
+    println(io, "LindbladEquation with d = $d containing:")
+    println(io, "  $n1 local terms")
+    println(io, "  $n2 nearest-neighbour terms")
+    println(io, "  $nl long-range terms")
+    return print(io, "  $nd lindblad operators")
+end
+
 Base.zero(eqn::AbstractLindbladEquation) = zero(typeof(eqn))
 Base.zero(::Type{<:AbstractLindbladEquation}) = ZeroLindbladEquation()
 
 physicaldim(eqn::LindbladEquation) = eqn.physicaldim
 function physicalspace(S::Type{<:IndexSpace}, eqn::LindbladEquation)
     d = eqn.physicaldim
-    return oneunit(S)^d
+    return ⊕(oneunit(S)^d...)
 end
 
 function Base.:+(A::AbstractTerm, B::AbstractTerm)
@@ -188,6 +209,14 @@ function xyzlindblad(; Jx=0.5, Jy=1.2, Jz=1.0, Γ=1.0)
     return eqn
 end
 
+function exactlindblad(; V=1.0, Γ=1.0)
+    _, Y, Z = PAULI
+
+    eqn = V / 4 * ham(Z, Z) + sqrt(Γ) / 2 * lin(Y - im * Z)
+
+    return eqn
+end
+
 const BlockMatrix = Matrix{Matrix{ComplexF64}}
 
 struct MatrixProductOperator
@@ -196,6 +225,11 @@ struct MatrixProductOperator
     C::BlockMatrix
     D::BlockMatrix
     data::Matrix{BlockMatrix}
+end
+
+function Base.show(io::IO, ::MIME"text/plain", mpo::MatrixProductOperator)
+    chi = size(mpo.A, 1)
+    return print(io, "MatrixProductOperator with χ = $chi")
 end
 
 function MatrixProductOperator(A::T, B::T, C::T, D::T) where {T}
@@ -239,8 +273,6 @@ function MatrixProductOperator(eqn::LindbladEquation)
     for term in eqn.twolocal
         X, Y = term.term
         a = term.coeff
-
-        println("a ", a)
 
         B[i, 1] = -a * im * kron(X, Id)
         B[i + 1, 1] = a * im * kron(Id, X)
@@ -297,7 +329,7 @@ struct ExtensiveMPO{N}
     levels::Vector{NTuple{N,Int}}
 end
 
-struct TimeEvolutionMPO{N}
+struct dynamicalmpo{N}
     data::Matrix{BlockMatrix}
     levels::Vector{NTuple{N,Int}}
 end
@@ -309,8 +341,8 @@ function Base.getindex(
     return kron((H[r, c] for (r, c) in zip(row, col))...)
 end
 
-function TimeEvolutionMPO{N}(eqn::LindbladEquation, dt; kwargs...) where {N}
-    return TimeEvolutionMPO{N}(MatrixProductOperator(eqn), dt; kwargs...)
+function dynamicalmpo(eqn::LindbladEquation, dt::Number, order::Integer; kwargs...)
+    return dynamicalmpo(MatrixProductOperator(eqn), dt, order; kwargs...)
 end
 
 function lazypower(H::MatrixProductOperator, row, col)
@@ -318,36 +350,30 @@ function lazypower(H::MatrixProductOperator, row, col)
     return kron(1, terms...)
 end
 
-function insertat(tup::NTuple{N}, pos, val) where {N}
-    rv = Int[]
+function insertat(level::Vector, pos::Integer, val)
+    rv = copy(level)
 
-    tupv = [tup...]
+    insert!(rv, pos, val)
 
-    p = 1
-    while length(tupv) > 0
-        if p == pos
-            push!(rv, val)
-        else
-            push!(rv, popfirst!(tupv))
-        end
-        p += 1
-    end
-
-    if length(rv) == N
-        push!(rv, val)
-    end
-
-    return Tuple(rv)::NTuple{N + 1,Int}
+    return rv
 end
 
-function TimeEvolutionMPO{N}(
-    H::MatrixProductOperator, dt; extend=true, compress=true, approx=true
-) where {N}
-    levels = NTuple{N,Int}[]
+function dynamicalmpo(
+    H::MatrixProductOperator,
+    dt::Number,
+    order::Integer;
+    extend=true,
+    compress=true,
+    approx=true,
+)
+    N = order
+
+    levels = Vector{Int}[]
 
     # Generate the levels
     for tup in Iterators.product(fill(1:3, N)...)
-        push!(levels, reverse(tup))
+        v = collect(reverse(tup))
+        push!(levels, v)
     end
 
     prodlevels = Iterators.product(levels, levels)
@@ -395,11 +421,9 @@ function TimeEvolutionMPO{N}(
         P = permutations(generator)
 
         for lev in P
-            levt = Tuple(lev)
-
-            if levt ∈ levels
+            if lev ∈ levels
                 # get the index corresponding to that particular level
-                b = findfirst(isequal(levt), levels)
+                b = findfirst(isequal(lev), levels)
 
                 # add column b to the first column
                 data[:, 1] += (dt^a * factorial(N - a) / factorial(N)) * data[:, b]
@@ -455,12 +479,10 @@ function exactcompression!(levels, data)
         # sc, n1, sr, n3 = sort_1_3(lev, levels)
 
         k1 = map(x -> isequal(x, 1) ? 2 : 1, lev)
-
-        # Sort threes to back
         k3 = map(x -> isequal(x, 3) ? 2 : 1, lev)
 
-        sc = findfirst(isequal(lev[sortperm([k1...])]), levels)
-        sr = findfirst(isequal(lev[sortperm([k3...])]), levels)
+        sc = findfirst(isequal(lev[sortperm(k1)]), levels)
+        sr = findfirst(isequal(lev[sortperm(k3)]), levels)
 
         n1 = count(isequal(1), lev)
         n3 = count(isequal(3), lev)
@@ -485,12 +507,14 @@ function exactcompression!(levels, data)
     return data
 end
 
-function approxcompression!(levels::Vector{NTuple{N,Int}}, data, dt) where {N}
+function approxcompression!(levels::Vector{Vector{Int}}, data, dt)
     for (ac, alev) in enumerate(levels)
+        N = length(alev)
+
         n3 = count(isequal(3), alev)
         (1 in alev || n3 == 0) && continue
 
-        blev = Tuple(isequal(i, 3) ? 1 : i for i in alev)
+        blev = [isequal(i, 3) ? 1 : i for i in alev]
 
         bc = findfirst(isequal(blev), levels)
 
@@ -540,7 +564,7 @@ function sort_1_3(c, levels)
     return sc, n1, sr, n3
 end
 
-function totensor(mpo::TimeEvolutionMPO)
+function totensor(mpo::dynamicalmpo)
     nr = sum(x -> size(x, 1), mpo.data)
     nc = sum(x -> size(x, 1), mpo.data)
     return (nr, nc)

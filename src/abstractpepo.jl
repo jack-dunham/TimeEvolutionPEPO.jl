@@ -124,7 +124,7 @@ function PEPO(
     bond_s = southbond
     bond_n = circshift(southbond, (0, 1))
 
-    p_data = pepodata.(Ref(a), dim.(bond_e), dim.(bond_s), dim.(bond_w), dim.(bond_n))
+    p_data = @. pepodata($Ref(a), dim(bond_e), dim(bond_s), dim(bond_w), dim(bond_n))
 
     tensors = @. TensorMap(
         p_data, phys * adjoint(phys), bond_e * bond_s * adjoint(bond_w) * adjoint(bond_n)
@@ -228,9 +228,13 @@ function setcurrentbond!(p::LocalUpdatablePEPO, bond::Bond)
     return p
 end
 
-function evolvedpair(p::LocalUpdatablePEPO{G,PType}) where {G,PType}
-    leftpair, rightpair = getevolved(p)[currentbond(p)]
+function evolvedpair(p::LocalUpdatablePEPO{G,PType}, bond=currentbond(p)) where {G,PType}
+    leftpair, rightpair = getevolved(p)[bond]
     return leftpair[1]::PType, rightpair[2]::PType
+end
+function parentpair(p::LocalUpdatablePEPO{G,PType}, bond=currentbond(p)) where {G,PType}
+    leftpair, rightpair = getstate(p)[bond]
+    return leftpair::PType, rightpair::PType
 end
 
 function _getindex(pe::LocalUpdatablePEPO, bond::Bond, ::Val{true})
@@ -267,12 +271,7 @@ _getcurrentstate(p, ::Val{false}) = getstate(p)
 
 _getindex(p::GlobalUpdatablePEPO, bond::Bond, ::Val{true}) = getindex(getevolved(p), bond)
 
-struct TimeDependantPEPO{P<:AbstractUpdatablePEPO}
-    x::P
-    y::P
-    TimeDependantPEPO(x::P, y::P) where {P} = new{P}(x, y)
-    TimeDependantPEPO(x::P) where {P} = new{P}(x)
-end
+###
 
 function minimalcanonicalform!(tensor::AbsTen{2,4}; tol=1e-7, maxiter=1000)
     hor = id(domain(tensor)[1])

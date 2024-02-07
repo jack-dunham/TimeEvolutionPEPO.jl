@@ -7,16 +7,16 @@
     verbose::Bool = true
 end
 
-function initialize_evolution(
+function initevolution(
     pepo::AbstractPEPO, map::DynamicalMap{<:WIIPEPO}, evoalg::Union{TNO}
 )
-    xpepo = _initialize_evolution(pepo, map.x, evoalg.truncalg)
-    return TimeDependantPEPO(xpepo)
+    pepo = _initevolution(pepo, map.x, evoalg.truncalg)
+    return pepo
 end
-function _initialize_evolution(pepo::AbstractPEPO, ::WIIPEPO, ::VGU)
+function _initevolution(pepo::AbstractPEPO, ::WIIPEPO, ::VGU)
     return GlobalUpdatablePEPO(pepo, deepcopy(getstate(pepo)), Ref(false))
 end
-function _initialize_evolution(pepo::AbstractPEPO, map::WIIPEPO, ::SU)
+function _initevolution(pepo::AbstractPEPO, map::WIIPEPO, ::SU)
     function useful_f(x, l)
         D = domain(x)
         η = domain(l)
@@ -33,12 +33,12 @@ function _initialize_evolution(pepo::AbstractPEPO, map::WIIPEPO, ::SU)
 end
 
 function timestep!(
-    pepo::TimeDependantPEPO,
+    pepo::AbstractPEPO,
     truncators::Union{SimpleUpdateState,VidalTruncationState},
     map::DynamicalMap{<:WIIPEPO}, #{<:TrotterGates},
-    order::Val{N};
+    order;
     kwargs...,
-) where {N}
+)
     tnostep!(pepo.x, truncators, map.x, order; kwargs...)
 
     return pepo

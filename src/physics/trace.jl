@@ -21,13 +21,16 @@ hilbertschmidt(t1, t2) = HilbertSchmidt(t1, t2)
 
 hilbertschmidt(p::AbstractPEPO) = hilbertschmidt(getstate(p))
 hilbertschmidt(p::GlobalUpdatablePEPO) = hilbertschmidt(getevolved(p))
-hilbertschmidt(p::TimeDependantPEPO) = hilbertschmidt(p.x), hilbertschmidt(p.y)
+function hilbertschmidt(p::Tuple{P,P}) where {P<:AbstractPEPO}
+    return hilbertschmidt(p[1]), hilbertschmidt(p[2])
+end
 
 struct Trace{G,PType<:AbsTen{0,4},A<:Matrix{PType}} <: AbstractBulk{G,PType,A}
     data::Lattice{G,PType,A}
 end
 
 trace(p::AbstractPEPO) = Trace(contractphysical.(getstate(p)))
+trace(p::NTuple{2, <:AbstractPEPO}) = Trace(contractphysical.(getstate(p[1])))
 trace(p::GlobalUpdatablePEPO) = Trace(contractphysical.(getcurrentstate(p)))
 
 function contractphysical(tsrc::AbsTen{2,4})

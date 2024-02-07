@@ -21,8 +21,10 @@ end
 function (alg::TensorOptimisation)(pepo::AbstractPEPO, environment, bond)
     D = domain.(getstate(pepo), 1)[left(bond)]
 
+    # First, rankreduce
     left0, right0 = rankreduce!(pepo)
 
+    # Calculate the metric with reduced tensors
     tmetric = metric(pepo, environment, bond)
 
     u, s_f64, v = metricoptimise(left0, right0, tmetric, truncspace(D))
@@ -40,12 +42,14 @@ function isometries(pepo, environment; kwargs...)
     return iso
 end
 
-function isometries(pepo, ::SimpleUpdateState, bond; truncalg::SU)
+function isometries(pepo, environment, bond, truncalg::SU)
     D = domain.(getstate(pepo), 1)[bond.left]
 
     left, right = rankreduce!(pepo)
 
-    u, s_f64, v = tsvd(left * right; trunc=truncspace(D))
+    u, s_f64, v, err = tsvd(left * right; trunc=truncspace(D))
+
+    println(s_f64)
 
     s = similar(s_f64, scalartype(pepo))
 
@@ -54,13 +58,13 @@ function isometries(pepo, ::SimpleUpdateState, bond; truncalg::SU)
     return TruncationIsometries(u, s, v)
 end
 
-function isometries(pepo, environment, bond; truncalg::Union{FET,NTU})
+function isometries(pepo, environment, bond, truncalg::Union{FET,NTU})
     xi = truncalg.ξ
     gauge = truncalg.gauge
 
     # opt = truncalg.opt
-    # opt = TensorOptimisation()
-    opt = IsometryOptimisation()
+    opt = TensorOptimisation()
+    # opt = IsometryOptimisation()
 
     iso, metric = opt(pepo, environment, bond)
 
@@ -130,18 +134,18 @@ end
 #     return pepo
 # end
 
-function quicktruncate!(pepo_tensor, truncators)
-    u = leftrankreduce!(pepo) # P -> Q * U
-    v = rightrankreduce!(pepo) # Q -> V * W
-
-    q_left = similar(pepo)
-    q_right = similar(pepo)
-
-    tensor_truncate!(q_left, pepo, u)
-    tensor_truncate!(q_right, v, pepo)
-
-    return metric = _metric(q_left, q_right, truncators)
-end
+# function quicktruncate!(pepo_tensor, truncators)
+#     u = leftrankreduce!(pepo) # P -> Q * U
+#     v = rightrankreduce!(pepo) # Q -> V * W
+#
+#     q_left = similar(pepo)
+#     q_right = similar(pepo)
+#
+#     truncateto!(q_left, pepo, u)
+#     truncateto!(q_right, v, pepo)
+#
+#     return metric = _metric(q_left, q_right, truncators)
+# end
 
 function quicktruncate!(pepo::GlobalUpdatablePEPO, env; gauge=true, mcf=false, xi=Inf)
     only_bond = getbonds(pepo)[1, 1]
@@ -152,7 +156,7 @@ function quicktruncate!(pepo::GlobalUpdatablePEPO, env; gauge=true, mcf=false, x
     src_site = src_pepo[1, 1]
     dst_site = dst_pepo[1, 1]
 
-    tmetric = metric(pepo, env.tensors, only_bond)
+    tmetric = metric(pepo, env, only_bond)
 
     #=
 
@@ -209,8 +213,8 @@ function _sequentialtruncate(pepo::GlobalUpdatablePEPO, env; xi=Inf, gauge=true)
     q_lefts = similar.(ev_pepo)
     q_rights = similar.(ev_pepo)
 
-    tensor_truncate!.(q_lefts, ev_pepo, left0s)
-    tensor_truncate!.(q_rights, right0s, ev_pepo)
+    truncateto!.(q_lefts, ev_pepo, left0s)
+    truncateto!.(q_rights, right0s, ev_pepo)
 
     bonds = getbonds(pepo)
 
@@ -256,7 +260,7 @@ function sequentialtruncate(pepo::GlobalUpdatablePEPO, env; xi=Inf, gauge=true)
     lx, _ = size(bonds)
 
     if lx == 1
-        quicktruncate!(pepo, env)
+        quicktruncate!(pepo, env; gauge=gauge)
     else
         inter_state = copy(getevolved(pepo))
 
@@ -356,25 +360,25 @@ function isometryinit(metric::AbsTen{2,2})
     return left, right
 end
 
-function metricoptimise(left, right, metric::AbstractLattice, trunc; kwargs...)
-    T = promote_type(eltype(left), eltype(right), scalartype(metric))
-
-    nx, ny = size(metric)
-
-    u = Matrix{T}(undef, nx, ny)
-    v = Matrix{T}(undef, nx, ny)
-    s = Matrix{T}(undef, nx, ny)
-
-    # TODO: mulithreading
-    for y in axes(metric, 2)
-        for x in axes(metric, 1)
-            u[x, y], s[x, y], v[mod(x + 1, 1:nx), y] = metricoptimise(
-                left[x, y], right[x, y], metric[x, y], trunc; kwargs...
-            )
-        end
-    end
-    return u, s, v
-end
+# function metricoptimise(left, right, metric::AbstractLattice, trunc; kwargs...)
+#     T = promote_type(eltype(left), eltype(right), scalartype(metric))
+#
+#     nx, ny = size(metric)
+#
+#     u = Matrix{T}(undef, nx, ny)
+#     v = Matrix{T}(undef, nx, ny)
+#     s = Matrix{T}(undef, nx, ny)
+#
+#     # TODO: mulithreading
+#     for y in axes(metric, 2)
+#         for x in axes(metric, 1)
+#             u[x, y], s[x, y], v[mod(x + 1, 1:nx), y] = metricoptimise(
+#                 left[x, y], right[x, y], metric[x, y], trunc; kwargs...
+#             )
+#         end
+#     end
+#     return u, s, v
+# end
 
 function new_costfunc(A, B, Y, LR)
     AB = permute(A * B, (1, 2), ())
@@ -437,7 +441,8 @@ function metricoptimise(
     #Symmetrise and normalise the truncation metric.
     Y = (0.5 * (Y + Y')) / F0
 
-    Y, err = posapprox(Y)
+    # This is type unstable and making things slow
+    # Y, err = posapprox(Y)
 
     # @info "Positive approximation error: $err"
 
