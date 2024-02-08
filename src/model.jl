@@ -131,6 +131,11 @@ function physicalspace(S::Type{<:IndexSpace}, eqn::LindbladEquation)
     return ⊕(oneunit(S)^d...)
 end
 
+function physicalspace(S::Type{<:IndexSpace}, mpo::MatrixProductOperator)
+    d = Int(sqrt(size(mpo.D[1,1], 1)))
+    return ⊕(oneunit(S)^d...)
+end
+
 function Base.:+(A::AbstractTerm, B::AbstractTerm)
     eqn = push!!(zero(LindbladEquation), A)
     eqn = push!!(eqn, B)
@@ -275,25 +280,23 @@ function MatrixProductOperator(eqn::LindbladEquation)
         a = term.coeff
 
         B[i, 1] = -a * im * kron(X, Id)
-        B[i + 1, 1] = a * im * kron(Id, X)
+        B[i + 1, 1] = a * im * kron(Id, transpose(X))
 
         C[1, i] = kron(Y, Id)
-        C[1, i + 1] = kron(Id, Y)
+        C[1, i + 1] = kron(Id, transpose(Y))
 
         i += 2
     end
 
     for term in eqn.longrange
-        termk = kron(term.term[1], Id)
-        termb = kron(Id, term.term[2])
-
+        X, Y = term.term
         a = term.coeff
 
-        B[i, 1] = -a * im * termk
-        B[i + 1, 1] = -a * im * termb
+        B[i, 1] = -a * im * kron(X, Id)
+        B[i + 1, 1] = -a * im * kron(Id, transpose(X))
 
-        C[1, i] = termk
-        C[1, i + 1] = termb
+        C[1, i] = kron(Y, Id)
+        C[1, i + 1] = kron(Id, transpose(Y))
 
         A[i, i] = term.decay * Id
         A[i + 1, i + 1] = term.decay * Id
@@ -301,20 +304,17 @@ function MatrixProductOperator(eqn::LindbladEquation)
         i += 2
     end
 
-    for term in eqn.onelocal
-        termk = kron(term.term[1], Id)
-        termb = kron(Id, term.term)
-        a = term.coeff
-        D[1, 1] -= a * im * (termk - termb)
+    # LOCAL TERMS
+
+    D[1, 1] = 1 / 2 * sum(eqn.onelocal; init=D[1, 1]) do term
+        H = Matrix{ComplexF64}(term)
+        return -im * (kron(H, one(H)) - kron(one(H), transpose(H)))
     end
 
-    for lin in eqn.linops
-        L = lin.coeff * lin.term[1]
-        Lc = conj(L)
-        Lt = permutedims(L)
-        Ld = conj(permutedims(L))
-
-        D[1, 1] += 1 / 2 * (kron(L, Lc) - 1 / 2 * (kron(Ld * L, Id) + kron(Id, Lt * Lc)))
+    D[1, 1] = 1 / 2 * sum(eqn.linops; init=D[1, 1]) do term
+        L = Matrix{ComplexF64}(term)
+        anticomm = kron(L' * L, one(L)) + kron(one(L), transpose(L' * L))
+        return kron(L, transpose(L')) - 1 / 2 * anticomm
     end
 
     return MatrixProductOperator(A, B, C, D)
@@ -562,6 +562,29 @@ function sort_1_3(c, levels)
     sr = findfirst(isequal(Tuple(sr)), levels)
 
     return sc, n1, sr, n3
+end
+
+function isingthermal()
+    _, _, Z = PAULI
+
+    Id = one(Z)
+    hk = kron(Z, Id)
+    hb = kron(Id, Z)
+
+    T = BlockMatrix
+
+    A = T(undef, 2, 2)
+    B = T(undef, 2, 1)
+    C = T(undef, 1, 2)
+    D = T(undef, 1, 1)
+
+    B[1, 1] = C[1, 1] = 1 / 2 * hk
+    B[2, 1] = C[1, 2] = 1 / 2 * hb
+
+    A .= Ref(zero(hk))
+    D .= Ref(zero(hk))
+
+    return MatrixProductOperator(A,B,C,D)
 end
 
 function totensor(mpo::dynamicalmpo)
