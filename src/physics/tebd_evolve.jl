@@ -140,7 +140,7 @@ function updatestep!(pepo::LocalUpdatablePEPO, truncators, map; reverse=false, k
             updatebond!(pepo, truncators, map, bond; kwargs...)
 
             # Quick normalization for algorithm stabilty. Does not ensure tr(ρ) = 1
-            hermitianize!.(getstate(pepo))
+            hermitianize!(pepo)
 
             quicknormalize!(pepo)
 

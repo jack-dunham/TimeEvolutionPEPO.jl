@@ -55,7 +55,6 @@ end
 
 showheader(::Type{<:NTU}) = "Neighbourhood tensor update (NTU)"
 
-
 @kwdef struct SU <: AbstractTruncationScheme
     ξ::Float64 = Inf
 end
@@ -172,7 +171,15 @@ end
 # end
 
 function renormalize!(env::InfiniteContraction)
-    ITC.restart!(env)
+    # ITC.restart!(env)
+    ITC.reset!(env)
+    #
+    # mainnet = env.runtime.primary.network
+    # permnet = env.runtime.permuted.network
+    #
+    # mainnet .= env.network
+    # permnet .= permutedims(ITC.swapaxes(env.network))
+
     ITC.run!(env)
     return env
 end
@@ -215,7 +222,6 @@ end
 function _metric(left, right, env::NTUState, bond::Bond)
     return _metric(left, right, env.tensors, bond)
 end
-
 
 """
     truncate!(pepo::AbstractUpdatablePEPO, iso::TruncationIsometries)

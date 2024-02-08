@@ -48,13 +48,12 @@ end
     truncalg::TAlg = SU()
     extend::Bool = true
     compress::Bool = true
-    approx::Bool = false
+    approx::Bool = true
     order::Int = 1
     verbose::Bool = true
 end
 
 showheader(::Type{<:DMPO}) = "Dynamical Matrix Product Operator (DMPO)"
-
 
 function Base.show(io::IO, m::MIME"text/plain", sim::AbstractTimeEvolution)
     shownested(io, m, sim)
@@ -79,7 +78,7 @@ showheader(::Type{<:TEBD}) = "Time-evolving block decimation (TEBD)"
 # Explicitly isotropic
 function dynamicalmap(
     method::AbstractTimeEvolution,
-    model::AbstractMatrix{<:LindbladEquation},
+    model::AbstractMatrix,
     physical::AbstractMatrix{<:IndexSpace},
 )
     stepper = timestepper(method, model, physical)
@@ -89,7 +88,7 @@ end
 # Anisotropic
 function dynamicalmap(
     method::AbstractTimeEvolution,
-    model::NTuple{2,AbstractMatrix{<:LindbladEquation}},
+    model::NTuple{2,AbstractMatrix},
     physical::AbstractMatrix{<:IndexSpace},
 )
     horizontal = timestepper(method, model[1], physical)
@@ -102,7 +101,17 @@ function timestepper(method::DMPO, model::AbstractUnitCell, physical::AbstractUn
     tau = method.timestep / method.trotterorder
 
     # Calculate the time-evolution mpo for each unique mpo
-    tempo = broadcast(x -> dynamicalmpo(x, tau, method.order), model)
+    tempo = broadcast(
+        x -> dynamicalmpo(
+            x,
+            tau,
+            method.order;
+            extend=method.extend,
+            compress=method.compress,
+            approx=method.approx,
+        ),
+        model,
+    )
 
     t = broadcast(eachindex(physical), physical) do ind, p
         return dmpotensor(tempo[ind[1], ind[2]], p)
@@ -194,6 +203,9 @@ end
 function dmpotensor(mpo, p::S) where {S<:IndexSpace}
     d = dim(p)
     D = sum(x -> size(x, 1), mpo[:, 1])
+
+    @info "MPO bond dimension: $D"
+
     s = ⊕(oneunit(S)^D...)
     array = zeros(ComplexF64, d, d, d, d, D, D)
 
@@ -262,7 +274,7 @@ copyspaceto!(mat, arg::AbstractMatrix) = copyto!(mat, arg)
 copyspaceto!(mat, arg::TensorSpace) = copyto!(mat, [arg;;])
 
 function Simulation(
-    model::Union{LindbladEquation,AbstractMatrix{LindbladEquation}},
+    model,
     rho0,
     horizontal::Union{S,AbstractMatrix{S}},
     vertical::Union{S,AbstractMatrix{S}}=horizontal;
@@ -428,7 +440,7 @@ function testthermal(D)
 
     return sim.output
 end
-function measurehook!(sim::Simulation)
+function measurehook!(sim::Simulation, A = PAULI[1])
     # if sim.info.iterations < 1
     #     return sim
     # end
@@ -445,7 +457,7 @@ function measurehook!(sim::Simulation)
 
     one_local = onelocal(pepo, obs_env; normalize=true)
 
-    magn = measure(one_local, σ1)
+    magn = measure(one_local, A)
 
     return magn.data[1, 1]
 end

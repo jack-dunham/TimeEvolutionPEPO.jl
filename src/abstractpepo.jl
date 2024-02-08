@@ -273,11 +273,15 @@ _getindex(p::GlobalUpdatablePEPO, bond::Bond, ::Val{true}) = getindex(getevolved
 
 ###
 
-function minimalcanonicalform!(tensor::AbsTen{2,4}; tol=1e-7, maxiter=1000)
+function minimalcanonicalform!(tensor::AbsTen{2,4}; tol=100 * eps(), maxiter=1000)
     hor = id(domain(tensor)[1])
     ver = id(domain(tensor)[2])
     T = deepcopy(tensor)
+    err = Inf
+    numiter = 0
     for t in 1:maxiter
+        numiter = t
+
         mcfgauge!(tensor, T, hor, ver)
         ketbra = tensor' * tensor
         @tensor begin
@@ -293,14 +297,17 @@ function minimalcanonicalform!(tensor::AbsTen{2,4}; tol=1e-7, maxiter=1000)
 
         err = 1 / real(tr(ketbra)) * (norm(h_diff)^2 + norm(v_diff)^2)
 
-        if err ≤ tol^2
-            return tensor
+        # if err ≤ tol^2
+        #     break
+        # end
+
+        if err ≤ tol
+            break
         end
         hor = exp(-1 / 8 * 1 / tr(ketbra) * h_diff) * hor
         ver = exp(-1 / 8 * 1 / tr(ketbra) * v_diff) * ver
-
-        # @info "Minimal canonical form gauging: $err"
     end
+    @info "Minimal canonical form gauging: $err after $numiter iterations"
     return tensor
 end
 

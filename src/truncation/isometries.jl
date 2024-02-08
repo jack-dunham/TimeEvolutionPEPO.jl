@@ -197,7 +197,7 @@ end
 # end
 
 function quicktruncate!(
-    pepo::GlobalUpdatablePEPO, environment; gauge=false, mcf=false, xi=Inf
+    pepo::GlobalUpdatablePEPO, environment; gauge=true, mcf=false, xi=Inf
 )
     onlybond = getbonds(pepo)[1, 1]
 
@@ -207,45 +207,14 @@ function quicktruncate!(
     src_site = src_pepo[1, 1]
     dst_site = dst_pepo[1, 1]
 
-    # iso = isometries(pepo, environment, onlybond; gauge=gauge, xi=xi, rankreduce=false)
-
-
-    #=
-
-    if !(validate!(metric)) || tmetric = metric(pepo, env.tensors, only_bond)
-    =#
-
-    tmetric = metric(pepo, environment, onlybond)
-
-    # Initial guess for isometries (identities)
-    left0, right0 = isometryinit(tmetric)
-
-    d = domain(dst_site, 1)
-
-    u, s_f64, v, tmetric = metricoptimise(
-        left0, right0, tmetric, truncspace(d); rankreduce=false
-    )
-
-    s = similar(s_f64, eltype(u))
-
-    copy!(s, s_f64)
-
-    @debug "Normalized weights: " normalize(s)
-
-    iso = TruncationIsometries(u, s, v)
-    wtg!(iso, tmetric, Val(gauge))
-    if xi < Inf
-        copy!(iso.s, rescale(iso.s, xi))
-        wtg!(iso, tmetric, Val(gauge))
-    end
-    ##
+    iso = isometries(pepo, environment, onlybond; gauge=gauge, xi=xi, rankreduce=false)
 
     setweights!(pepo, normalize(iso.s), onlybond)
 
     temp = partialtruncate(src_site, iso)
     rv = partialtruncate(iso, temp)
 
-    hermitianize!(rv)
+    # hermitianize!(rv)
 
     if mcf
         minimalcanonicalform!(rv)
@@ -338,17 +307,14 @@ function sequentialtruncate(pepo::GlobalUpdatablePEPO, environment; truncalg)
             #  = B = ->  - B =
             interstate[bond.right] = partialtruncate(iso, right_site)
 
-
             # Tensors have changed bond dimensions so need to construct new env
             if issymmetric
-
                 for (c, col) in enumerate(eachcol(interstate))
                     if c == 1
                         continue
                     end
-                    (interstate[:, c] .= circshift(interstate[:, 1],  - ( c - 1)))
+                    (interstate[:, c] .= circshift(interstate[:, 1], -(c - 1)))
                 end
-
             end
 
             environment = truncators(interpepo, environment)
@@ -384,12 +350,14 @@ function _rankreduce!(left_site, right_site)
 end
 
 function leftrankreduce!(p::AbsTen{2,4})
-    Q, R = leftorth(p, (1, 2, 4, 5, 6), (3,))
+    println(space(p))
+    Q, R = leftorth(p, (1, 2, 4, 5, 6), (3,); alg=Polar())
+    println(space(R))
     permute!(p, Q, ((1, 2), (6, 3, 4, 5)))
     return R
 end
 function rightrankreduce!(p::AbsTen{2,4})
-    L, Q = rightorth(p, (5,), (1, 2, 3, 4, 6))
+    L, Q = rightorth(p, (5,), (1, 2, 3, 4, 6); alg=Polar())
     permute!(p, Q, ((2, 3), (4, 5, 1, 6)))
     return L
 end
@@ -449,9 +417,7 @@ function new_costfunc(A, B, Y, LR)
 end
 
 # Optimise the isometries `left` and `right` with respect to `metric`.
-function metricoptimise(
-    left, right, metric::AbsTen{2,2}, trunc; rankreduce, kwargs...
-)
+function metricoptimise(left, right, metric::AbsTen{2,2}, trunc; rankreduce, kwargs...)
 
     # normalize!(left)
     # normalize!(right)
