@@ -102,7 +102,7 @@ end
 function mergevirtual(t::AbstractTensorMap{S,0,8}) where {S}
     DomType = ProductSpace{S, 4}
 
-    outdom = DomType(map(fuse(domain(t, i) * domain(t, i + 1)), 1:2:7)))
+    outdom = DomType(map(i -> fuse(domain(t, i) * domain(t, i + 1)), 1:2:8))
 
     return TensorMap(t.data, codomain(t), outdom)
 end

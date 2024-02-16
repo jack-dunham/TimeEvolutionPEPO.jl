@@ -16,8 +16,8 @@ import TensorKit.IndexTuple, TensorKit.AdjointTensorMap
 const ITC = InfiniteTensorContractions
 
 ## ITC exports
-export ITC.Square
-export ITC.VUMPS, ITC.CTMRG
+export Square
+export VUMPS, CTMRG
 #
 
 export delta

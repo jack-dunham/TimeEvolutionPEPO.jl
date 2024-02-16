@@ -101,8 +101,8 @@ function Simulation(
     return sim
 end
 
-function initenvironment(network::Trace, alg::AbstractBoundaryAlgorithm; kwargs...)
-    return ITC.initialize(alg, network.data; kwargs...)
+function initenvironment(network, alg::AbstractBoundaryAlgorithm; kwargs...)
+    return ITC.initialize(alg, network; kwargs...)
 end
 
 """
