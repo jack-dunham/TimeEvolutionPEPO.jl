@@ -1,5 +1,3 @@
-abstract type AbstractConvergenceInfo end
-
 """
     ConvergenceInfo
 
@@ -10,7 +8,7 @@ A mutable struct that holds information about the convergence progress of an alg
 - `iterations::Int`: stores the number of interations so far
 - `finished::Bool`: whether or not the algorithm has finished running
 """
-@kwdef mutable struct ConvergenceInfo <: AbstractConvergenceInfo
+@kwdef mutable struct ConvergenceInfo
     converged::Bool = false
     error::Float64 = Inf
     iterations::Int = 0

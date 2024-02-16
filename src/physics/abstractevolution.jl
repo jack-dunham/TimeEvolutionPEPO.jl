@@ -1,8 +1,8 @@
 abstract type AbstractUpdateStyle end
 abstract type AbstractTimeStepper end
 
-struct Local <: AbstractUpdateStyle end
-struct Global <: AbstractUpdateStyle end
+struct LocalUpdate <: AbstractUpdateStyle end
+struct GlobalUpdate <: AbstractUpdateStyle end
 
 # Updates along a single bond on an axis. 
 struct LocalStepper{G,MType} <: AbstractTimeStepper
@@ -110,7 +110,7 @@ showheader(::Type{<:DMPO}) = "Dynamical matrix product operator (DMPO)"
     timestep::Float64 = 0.01
     trotterorder::Int = 1
     truncalg::TAlg = SU()
-    updatestyle::S = Local()
+    updatestyle::S = LocalUpdate()
     verbose::Bool = true
 end
 

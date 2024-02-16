@@ -34,7 +34,7 @@ export AbstractPEPO, PEPO, Weights
 export Bond
 
 export TEBD, DMPO
-export Local, Global
+export LocalUpdate, GlobalUpdate
 export SU, NTU, FET, VGU
 export Simulation, simulate!, simulate
 
@@ -62,7 +62,7 @@ include("abstractlattice.jl")
 ## PEPO OBJECTS
 include("pepo/weights.jl")
 include("pepo/abstractpepo.jl")
-include("pepo.jl")
+include("pepo/pepo.jl")
 
 ### UPDATABLE PEPOS
 include("pepo/abstractupdatablepepo.jl")

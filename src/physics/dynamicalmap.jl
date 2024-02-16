@@ -58,13 +58,13 @@ function timestepper(physical::AbstractUnitCell, model::AbstractUnitCell, method
     )
 end
 function tebdtimestepper(
-    style::Local, model::AbstractUnitCell, physical::AbstractUnitCell; kwargs...
+    style::LocalUpdate, model::AbstractUnitCell, physical::AbstractUnitCell; kwargs...
 )
     u, v = tebdtimestepper(model, physical; kwargs...)
     return LocalStepper(u, v)
 end
 function tebdtimestepper(
-    style::Global, model::AbstractUnitCell, physical::AbstractUnitCell; kwargs...
+    style::GlobalUpdate, model::AbstractUnitCell, physical::AbstractUnitCell; kwargs...
 )
     u, v = tebdtimestepper(model, physical; kwargs...)
     return GlobalStepper(u, v)
