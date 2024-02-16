@@ -27,14 +27,6 @@ struct FullEnvironmentState{E<:InfiniteContraction} <: AbstractTruncatorState
     y::E
 end
 
-# Vidal gauge truncation (simmilar to SU)
-struct VidalTruncationState{M<:MessageTensors,U<:VidalIsometries,S<:VidalWeights,T} <:
-       AbstractTruncatorState
-    messages::Lattice{Square,M,Matrix{M}} # only works for
-    isometries::Lattice{Square,U,Matrix{U}}
-    weights::Lattice{Square,S,Matrix{S}}
-    map::T
-end
 
 # SU, FET, NTU
 abstract type AbstractTruncationScheme end
@@ -106,46 +98,6 @@ end
 newtruncators(tensors, ::NTUState) = newtruncators(tensors, NTU())
 function newtruncators(tensors, st::AbstractBoundaryRuntime)
     return newtruncators(tensors, st.alg)
-end
-
-function newtruncators(pepo, dynamical_map, ::VGU)
-    map = dynamical_map.x
-    st = latticetensors(pepo.x)
-
-    messages = initmessages.(st, map.data)
-
-    function useful_f1(p, t)
-        pdom = domain(p)
-        mdom = domain(t)
-
-        ue = TensorMap(
-            undef, promote_type(eltype(p), eltype(t)), pdom[1] * mdom[1], pdom[1]
-        )
-        us = TensorMap(
-            undef, promote_type(eltype(p), eltype(t)), pdom[2] * mdom[2], pdom[2]
-        )
-        vw = TensorMap(
-            undef, promote_type(eltype(p), eltype(t)), pdom[3] * mdom[3], pdom[3]
-        )
-        vn = TensorMap(
-            undef, promote_type(eltype(p), eltype(t)), pdom[4] * mdom[4], pdom[4]
-        )
-        return VidalIsometries(ue, us, vw, vn)
-    end
-    function useful_f2(p)
-        pdom = domain(p)
-
-        ue = TensorMap(undef, eltype(p), pdom[1], pdom[1])
-        us = TensorMap(undef, eltype(p), pdom[2], pdom[2])
-        vw = TensorMap(undef, eltype(p), pdom[3]', pdom[3]')
-        vn = TensorMap(undef, eltype(p), pdom[4]', pdom[4]')
-        return VidalWeights(ue, us, vw, vn)
-    end
-
-    vidals = useful_f1.(st, map.data)
-    weights = useful_f2.(st)
-
-    return VidalTruncationState(messages, vidals, weights, map)
 end
 
 newtruncators(tensors, st::SimpleUpdateState) = st
@@ -256,19 +208,6 @@ function similar_but_truncated(iso::AbsTen{1,1}, pepo_tensor)
     return _similar_but_truncated(pepo_tensor, codomain(iso)', 3)
 end
 
-# Truncate a globally evolving pepo
-function _truncate!(pepo::GlobalUpdatablePEPO, truncators::VidalTruncationState)
-    dst = latticetensors(pepo)
-    src = evolvedtensors(pepo)
-
-    tno = truncators.map
-    vidals = truncators.isometries
-
-    vidaltruncation!.(dst, src, tno.data, vidals)
-    copy!.(src, dst)
-
-    return pepo
-end
 function _truncate!(pepo::GlobalUpdatablePEPO, iso::TruncationIsometries)
     @assert size(latticetensors(pepo)) == (1, 1)
 

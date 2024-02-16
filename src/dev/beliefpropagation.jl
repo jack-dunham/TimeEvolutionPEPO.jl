@@ -18,6 +18,64 @@ struct VidalWeights{T<:AbsTen{1,1}}
     north::T
 end
 
+struct VidalTruncationState{M<:MessageTensors,U<:VidalIsometries,S<:VidalWeights,T} <:
+       AbstractTruncatorState
+    messages::Lattice{Square,M,Matrix{M}} # only works for
+    isometries::Lattice{Square,U,Matrix{U}}
+    weights::Lattice{Square,S,Matrix{S}}
+    map::T
+end
+# Truncate a globally evolving pepo
+function _truncate!(pepo::GlobalUpdatablePEPO, truncators::VidalTruncationState)
+    dst = latticetensors(pepo)
+    src = evolvedtensors(pepo)
+
+    tno = truncators.map
+    vidals = truncators.isometries
+
+    vidaltruncation!.(dst, src, tno.data, vidals)
+    copy!.(src, dst)
+
+    return pepo
+end
+
+function newtruncators(pepo, dynamical_map, ::VGU)
+    map = dynamical_map.x
+    st = latticetensors(pepo.x)
+
+    messages = initmessages.(st, map.data)
+
+    vidals = broadcast(st, map.data) do p, t
+        pdom = domain(p)
+        mdom = domain(t)
+
+        ue = TensorMap(
+            undef, promote_type(eltype(p), eltype(t)), pdom[1] * mdom[1], pdom[1]
+        )
+        us = TensorMap(
+            undef, promote_type(eltype(p), eltype(t)), pdom[2] * mdom[2], pdom[2]
+        )
+        vw = TensorMap(
+            undef, promote_type(eltype(p), eltype(t)), pdom[3] * mdom[3], pdom[3]
+        )
+        vn = TensorMap(
+            undef, promote_type(eltype(p), eltype(t)), pdom[4] * mdom[4], pdom[4]
+        )
+        return VidalIsometries(ue, us, vw, vn)
+    end
+
+    weights = useful_f2.(st) do p
+        pdom = domain(p)
+
+        ue = TensorMap(undef, eltype(p), pdom[1], pdom[1])
+        us = TensorMap(undef, eltype(p), pdom[2], pdom[2])
+        vw = TensorMap(undef, eltype(p), pdom[3]', pdom[3]')
+        vn = TensorMap(undef, eltype(p), pdom[4]', pdom[4]')
+        return VidalWeights(ue, us, vw, vn)
+    end
+
+    return VidalTruncationState(messages, vidals, weights, map)
+end
 const AbstractTensorsOnBond = Union{MessageTensors,VidalIsometries,VidalWeights}
 
 unpack(mts::AbstractTensorsOnBond) = (mts.east, mts.south, mts.west, mts.north)
