@@ -16,8 +16,8 @@ import TensorKit.IndexTuple, TensorKit.AdjointTensorMap
 const ITC = InfiniteTensorContractions
 
 ## ITC exports
-export Square
-export VUMPS, CTMRG
+export ITC.Square
+export ITC.VUMPS, ITC.CTMRG
 #
 
 export delta
@@ -44,7 +44,9 @@ export LindbladEquation, HamiltonianTerm, LongRangeTerm, LindbladTerm
 
 export ham, lin
 
-#generic 
+include("utils.jl")
+include("tensorkitutils.jl")
+
 ## MODEL AND EQUATION
 include("model/abstractterm.jl")
 include("model/hamiltonianterm.jl")
@@ -53,7 +55,6 @@ include("model/lindbladterm.jl")
 include("model/equation.jl")
 include("model/mpo.jl")
 
-include("utils.jl")
 include("linalg.jl")
 include("convergenceinfo.jl")
 include("abstractlattice.jl")
@@ -69,13 +70,13 @@ include("pepo/abstractupdatablepepo.jl")
 include("pepo/localpepo.jl")
 include("pepo/globalpepo.jl")
 
-### MINIMAL CANONICAL FORM
+### OTHER
 include("pepo/mcf.jl")
+include("pepo/hilbertschmidt.jl")
 
 include("contract/vumps.jl")
 include("contract/ctmrg.jl")
 
-include("physics/trace.jl")
 include("physics/longrange.jl")
 
 include("beliefpropagation.jl")
