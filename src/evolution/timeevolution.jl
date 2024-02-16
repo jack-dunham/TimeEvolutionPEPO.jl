@@ -83,7 +83,8 @@ function trotterstep!(pepo, truncator, stepper; reverse, kwargs...)
     return pepo
 end
 
-@noinline function quickupdate!(
+# Single site update step
+function quickupdate!(
     pepo::GlobalUpdatablePEPO, truncator; gauge=false, mcf=true, xi=Inf
 )
     onlybond = getbonds(pepo)[1, 1]
@@ -116,7 +117,6 @@ end
     return pepo
 end
 
-# Parallel 
 function updatestep!(pepo::GlobalUpdatablePEPO, truncator, stepper; truncalg, reverse)
     # Evolve, all sites
 
@@ -200,7 +200,6 @@ function copysymmetric!(array::AbstractMatrix)
     return array
 end
 
-# Sequential, Requires atleast a 2x2 unit cell. I think?
 function updatestep!(pepo::LocalUpdatablePEPO, truncator, map; reverse=false, kwargs...)
     symmetric = issymmetric(pepo)
     bonds = getbonds(pepo)
