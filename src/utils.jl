@@ -89,45 +89,64 @@ end
 
 # Swap codomain and domain (Base.transpose reverses indices)
 function _transpose(tsrc::AbsTen{N,M}) where {N,M}
-    return permute(tsrc, Tuple((N + 1):(N + M))::NTuple{M::Int}, Tuple(1:N)::NTuple{N,Int})
+    p1 = NTuple{M,Int}((N + 1):(N + M))
+    p2 = NTuple{N,Int}(1:N)
+    return permute(tsrc, p1, p2)
 end
 
 # TODO move to ITC
 function permutecod(t::ITC.TensorPair, p::NTuple{M,Int}) where {M}
     return ITC.TensorPair(permutecod(t.top, p), permutecod(t.bot, p))
 end
+
 function permutecod(t::AbsTen{N,M}, p::NTuple{N,Int}) where {N,M}
-    return permute(t, p, Tuple((N + 1):(M + N))::NTuple{M,Int})
+    p2 = NTuple{M,Int}((N + 1):(M + N))
+    return permute(t, p, p2)
+end
+
+function permutecod!(tdst, tsrc::AbsTen{N,M}, p::NTuple{N,Int}) where {N,M}
+    p2 = NTuple{M,Int}((N + 1):(M + N))
+    return permute!(tdst, tsrc, (p, p2))
 end
 
 # TODO move to ITC
 function permutedom(t::ITC.TensorPair, p::NTuple{M,Int}) where {M}
     return ITC.TensorPair(permutedom(t.top, p), permutedom(t.bot, p))
 end
+
 function permutedom(t::AbsTen{N,M}, p::NTuple{M,Int}) where {N,M}
-    p_dom = p .+ N
-    return permute(t, Tuple(1:N)::NTuple{N,Int}, p_dom)
-end
-function permutecod!(tdst, tsrc::AbsTen{N,M}, p::NTuple{N,Int}) where {N,M}
-    return permute!(tdst, tsrc, p, Tuple((N + 1):(M + N))::NTuple{M,Int})
+    p1 = NTuple{N,Int}(1:N)
+    p2 = map(x -> x + N, p)
+    return permute(t, p1, p2)
 end
 
 function permutedom!(tdst, tsrc::AbsTen{N,M}, p::NTuple{M,Int}) where {N,M}
-    p_dom = p .+ N
-    return permute!(tdst, tsrc, Tuple(1:N)::NTuple{N,Int}, p_dom)
+    p1 = NTuple{N,Int}(1:N)
+    p2 = map(x -> x + N, p)
+    return permute!(tdst, tsrc, (p1, p2))
 end
 
 function _leftorth(t::AbsTen{N,2}) where {N}
-    Q, R = leftorth(t, tuple(1:N..., N + 2)::NTuple{N + 1,Int}, (N + 1,))
-    t_out = permute(Q, Tuple(1:N)::NTuple{N,Int}, (N + 2, N + 1))
+    p1 = NTuple{N + 1,Int}((1:N..., N + 2))
+    p2 = NTuple{N,Int}(1:N)
+
+    Q, R = leftorth(t, p1, (N + 1,))
+
+    t_out = permute(Q, p2, (N + 2, N + 1))
     r_out = permute(R, (), (2, 1))
+
     return t_out, r_out
 end
 
 function _rightorth(t::AbsTen{N,2}) where {N}
-    L, Q = rightorth(t, (N + 2,), tuple(1:N..., N + 1)::NTuple{N + 1,Int})
-    t_out = permute(Q, Tuple(2:(N + 1))::NTuple{N,Int}, (N + 2, 1))
+    p1 = NTuple{N + 1,Int}((1:N..., N + 1))
+    p2 = NTuple{N,Int}(2:(N + 1))
+
+    L, Q = rightorth(t, (N + 2,), p1)
+
+    t_out = permute(Q, p2, (N + 2, 1))
     l_out = permute(L, (), (2, 1))
+
     return l_out, t_out
 end
 
