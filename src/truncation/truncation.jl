@@ -1,3 +1,15 @@
+struct TruncationIsometries{T<:AbsTen{1,1}}
+    u::T
+    s::T
+    v::T
+end
+
+function TruncationIsometries(pepo, u, s, v)
+    sout = similar(s, scalartype(pepo))
+    copy!(sout, s)
+    return TruncationIsometries(u, sout, v)
+end
+
 abstract type AbstractTruncatorState end
 
 # Most basic algorithm for truncating bonds
@@ -14,8 +26,6 @@ struct FullEnvironmentState{E<:InfiniteContraction} <: AbstractTruncatorState
     x::E
     y::E
 end
-
-const EnvironmentOrNeighbourhoodState = Union{NeighbourhoodUpdateState,FullEnvironmentState}
 
 # Vidal gauge truncation (simmilar to SU)
 struct VidalTruncationState{M<:MessageTensors,U<:VidalIsometries,S<:VidalWeights,T} <:
@@ -35,22 +45,19 @@ function Base.show(io::IO, m::MIME"text/plain", sim::AbstractTruncationScheme)
 end
 
 # TRUNCATION SCHEMES
-@kwdef struct FET{BAlg<:AbstractBoundaryAlgorithm,UScheme<:AbstractUpdateScheme} <:
-              AbstractTruncationScheme
+@kwdef struct FET{BAlg<:AbstractBoundaryAlgorithm} <: AbstractTruncationScheme
     gauge::Bool = true
     ξ::Float64 = Inf
     rankreduce = true
     alg::BAlg
-    updatescheme::UScheme = LULT()
 end
 
 showheader(::Type{<:FET}) = "Full environment truncation (FET)"
 
-@kwdef struct NTU{UScheme<:AbstractUpdateScheme} <: AbstractTruncationScheme
+@kwdef struct NTU <: AbstractTruncationScheme
     gauge::Bool = false
     ξ::Float64 = Inf
     rankreduce = true
-    updatescheme::UScheme = LULT()
 end
 
 showheader(::Type{<:NTU}) = "Neighbourhood tensor update (NTU)"
@@ -65,28 +72,15 @@ showheader(::Type{<:SU}) = "Simple update"
     ξ::Float64 = Inf
 end
 
-updatescheme(sch::AbstractTruncationScheme) = sch.updatescheme
-updatescheme(::SU) = LULT()
-
-# function Base.show(io::IO, fet::FET)
-#     for field in fieldnames(typeof(fet))
-#         dump(getfield(fet, field))
-#     end
-# end
-
-Base.show(::IO, tr::AbstractTruncationScheme) = dump(tr)
-
 ## Initalialize truncators for a full TD-PEPO
-function inittruncators(
+function newtruncators(
     pepo::NTuple{2,P}, ::NTuple{2,L}, truncalg::Union{FET,NTU}
 ) where {P<:AbstractPEPO,L}
-    xenv = inittruncators(pepo[1], truncalg)
-    yenv = inittruncators(pepo[2], truncalg)
+    xenv = newtruncators(pepo[1], truncalg)
+    yenv = newtruncators(pepo[2], truncalg)
     return xenv, yenv
 end
-function inittruncators(
-    ::NTuple{2,P}, ::NTuple{2,L}, truncalg::SU
-) where {P<:AbstractPEPO,L}
+function newtruncators(::NTuple{2,P}, ::NTuple{2,L}, truncalg::SU) where {P<:AbstractPEPO,L}
     return SimpleUpdateState(), SimpleUpdateState()
 end
 
@@ -97,26 +91,26 @@ function ITC.newcontraction(conalg, net::HilbertSchmidt; kwargs...)
 end
 
 ## Initalialize truncators for lattice of tensors
-inittruncators(bulk, fet::FET) = inittruncators(bulk, fet.alg)
-inittruncators(bulk, conalg::InfiniteContraction) = inittruncators(bulk, conalg.algorithm)
+newtruncators(bulk, fet::FET) = newtruncators(bulk, fet.alg)
+newtruncators(bulk, conalg::InfiniteContraction) = newtruncators(bulk, conalg.algorithm)
 
-function inittruncators(bulk, conalg::AbstractBoundaryAlgorithm)
+function newtruncators(bulk, conalg::AbstractBoundaryAlgorithm)
     return newcontraction(conalg, hilbertschmidt(bulk); store_initial=true)
 end
 
-function inittruncators(bulk, ::NTU)
-    return initialize_neighbourhood(hilbertschmidt(bulk))
+function newtruncators(bulk, ::NTU)
+    return initneighbourhood(hilbertschmidt(bulk))
 end
 
 ## Initalialize truncators using existing environment state
-inittruncators(tensors, ::NTUState) = inittruncators(tensors, NTU())
-function inittruncators(tensors, st::AbstractBoundaryRuntime)
-    return inittruncators(tensors, st.alg)
+newtruncators(tensors, ::NTUState) = newtruncators(tensors, NTU())
+function newtruncators(tensors, st::AbstractBoundaryRuntime)
+    return newtruncators(tensors, st.alg)
 end
 
-function inittruncators(pepo, dynamical_map, ::VGU)
+function newtruncators(pepo, dynamical_map, ::VGU)
     map = dynamical_map.x
-    st = getstate(pepo.x)
+    st = latticetensors(pepo.x)
 
     messages = initmessages.(st, map.data)
 
@@ -154,32 +148,16 @@ function inittruncators(pepo, dynamical_map, ::VGU)
     return VidalTruncationState(messages, vidals, weights, map)
 end
 
-inittruncators(tensors, st::SimpleUpdateState) = st
-inittruncators(st::SimpleUpdateState) = st
+newtruncators(tensors, st::SimpleUpdateState) = st
+newtruncators(st::SimpleUpdateState) = st
 
-# Truncator renormalization
-function renormalize!(st::EnvironmentOrNeighbourhoodState)
-    renormalize!(st.x)
-    renormalize!(st.y)
-    return st
+function renormalize!(env::InfiniteContraction, network)
+    ITC.recycle!(env, network)
+    ITC.run!(env)
+    return env
 end
-
-# function renormalize!(env::InfiniteContraction)
-#     ITC.reset!(env)
-#     ITC.run!(env)
-#     return env
-# end
-
 function renormalize!(env::InfiniteContraction)
-    # ITC.restart!(env)
     ITC.reset!(env)
-    #
-    # mainnet = env.runtime.primary.network
-    # permnet = env.runtime.permuted.network
-    #
-    # mainnet .= env.network
-    # permnet .= permutedims(ITC.swapaxes(env.network))
-
     ITC.run!(env)
     return env
 end
@@ -187,17 +165,11 @@ end
 renormalize!(st::NTUState) = calculate_neighbourhood!(st)
 renormalize!(st::SimpleUpdateState) = st
 
-function truncators(tensors, truncalg)
-    truncs = inittruncators(tensors, truncalg)
+function renormalize(tensors, truncalg)
+    truncs = newtruncators(tensors, truncalg)
     renormalize!(truncs)
     return truncs
 end
-# function renormalize(tensors, env::NTUState)
-#     new_env = ntu_initenvironment(tensors)
-#     ITC.calculate!(new_env)
-#     return new_env
-# end
-# renormalize(tensors, env::SimpleUpdateState) = env
 
 """
     metric(pepo::LocallyEvolvingPEPO, environment::AbstractEnvironment)
@@ -243,10 +215,11 @@ end
 function _truncate!(pepo::LocalUpdatablePEPO, iso::TruncationIsometries)
     bond = currentbond(pepo)
 
-    @debug "Truncating bond: $bond"
+    @debug "Truncating bond $bond"
 
-    new_left, new_right = pepo[bond]
+    new_left, new_right = evolvedpair(pepo)
     old_left, old_right = parentpair(pepo, bond)
+
 
     # Truncate the left site with an isometry on the right bond
     truncateto!(old_left, new_left, iso.u * sqrt(iso.s))
@@ -285,8 +258,8 @@ end
 
 # Truncate a globally evolving pepo
 function _truncate!(pepo::GlobalUpdatablePEPO, truncators::VidalTruncationState)
-    dst = getstate(pepo)
-    src = getevolved(pepo)
+    dst = latticetensors(pepo)
+    src = evolvedtensors(pepo)
 
     tno = truncators.map
     vidals = truncators.isometries
@@ -297,7 +270,7 @@ function _truncate!(pepo::GlobalUpdatablePEPO, truncators::VidalTruncationState)
     return pepo
 end
 function _truncate!(pepo::GlobalUpdatablePEPO, iso::TruncationIsometries)
-    @assert size(getstate(pepo)) == (1, 1)
+    @assert size(latticetensors(pepo)) == (1, 1)
 
     # Absorb weights into the isometries `u`.
     u = iso.u * sqrt(iso.s)
@@ -306,7 +279,7 @@ function _truncate!(pepo::GlobalUpdatablePEPO, iso::TruncationIsometries)
 
     # Truncate all bonds simultaneously.
 
-    _truncate!.(getstate(pepo), getevolved(pepo), Ref(u), Ref(v))
+    _truncate!.(latticetensors(pepo), evolvedtensors(pepo), Ref(u), Ref(v))
 
     return pepo
 end

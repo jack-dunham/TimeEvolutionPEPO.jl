@@ -1,8 +1,8 @@
 function LinearAlgebra.normalize!(pepo::AbstractPEPO, boundary::AbstractBoundaryRuntime)
-    return rmul!.(getstate(pepo), 1 / norm(pepo, boundary))
+    return rmul!.(latticetensors(pepo), 1 ./ norm(pepo, boundary))
 end
 function LinearAlgebra.norm(pepo::AbstractPEPO, boundary::AbstractBoundaryRuntime)
-    st = getstate(pepo)
+    st = latticetensors(pepo)
     norm = tracecontract(boundary, st)
     return norm
 end
@@ -12,7 +12,7 @@ function onelocal(pepo::AbstractPEPO, boundary::InfiniteContraction; kwargs...)
 end
 
 function onelocal(pepo::AbstractPEPO, boundary::AbstractBoundaryRuntime; normalize=false)
-    onelocal = onelocalcontract(boundary, getstate(pepo))
+    onelocal = onelocalcontract(boundary, latticetensors(pepo))
 
     if normalize
         N = norm(pepo, boundary)

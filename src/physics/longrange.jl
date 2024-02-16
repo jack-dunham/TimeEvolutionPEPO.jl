@@ -33,6 +33,3 @@ end
 powerlaw(x; α=3) = 1 / (x)^(α)
 
 
-function powerlawwii
-    
-end

@@ -21,9 +21,9 @@ struct NTUState{NN<:NTUTensors,MType<:ITC.AbstractNetwork}
     network::MType
 end
 
-initialize_neighbourhood(network) = initialize_neighbourhood(undef, network)
+initneighbourhood(network) = initneighbourhood(undef, network)
 
-function initialize_neighbourhood(f, network::HilbertSchmidt)
+function initneighbourhood(f, network::HilbertSchmidt)
     ntu = initialize_neighbourhood_tensors(f, network)
     return NTUState(ntu, network)
 end
@@ -60,24 +60,17 @@ function ntuboundary!(ntu, network)
 
     for y in axes(P, 2)
         for x in axes(P, 1)
-            if y == 1 || !issym
-                #@debug "Calculating: y = $y, issym = $issym "
-
-                ntu_top!(T[x, y], P[x, y - 1], P[x + 1, y - 1])
-                ntu_bot!(B[x, y], P[x, y + 1], P[x + 1, y + 1])
-                ntu_leftcap!(LC[x, y], P[x - 1, y])
-                ntu_rightcap!(RC[x, y], P[x + 2, y])
-
-            elseif issym && y != 1
-                #@debug "Copying: y = $y, issym = $issym "
-
-                copy!(T[x, y], T[x + y - 1, y])
-                copy!(B[x, y], B[x + y - 1, y])
-                copy!(LC[x, y], LC[x + y - 1, y])
-                copy!(RC[x, y], RC[x + y - 1, y])
-            else
-                @debug "Unexpected branch"
-            end
+            ntu_top!(T[x, y], P[x, y - 1], P[x + 1, y - 1])
+            ntu_bot!(B[x, y], P[x, y + 1], P[x + 1, y + 1])
+            ntu_leftcap!(LC[x, y], P[x - 1, y])
+            ntu_rightcap!(RC[x, y], P[x + 2, y])
+        end
+        if issym
+            copysymmetric!(T)
+            copysymmetric!(B)
+            copysymmetric!(LC)
+            copysymmetric!(RC)
+            break
         end
     end
 
@@ -96,11 +89,11 @@ function _metric(left, right, ntu::NTUTensors, bond::Bond)
     return ntu_M(left, right, ntu[bond]...)
 end
 
-function _ntuboundary(A, B, style::AbstractUpdateScheme=GULT())
-    T = ntu_top(A, B, style)
-    B = ntu_bottom(A, B, style)
-    LC = ntu_leftcap(B, style)
-    RC = ntu_rightcap(A, style)
+function _ntuboundary(A, B)
+    T = ntu_top(A, B)
+    B = ntu_bottom(A, B)
+    LC = ntu_leftcap(B)
+    RC = ntu_rightcap(A)
     return NTU(T, B, LC, RC)
 end
 
@@ -175,20 +168,20 @@ end
 # end
 
 # Function of A
-ntu_leftcap!(L, B::TensorPair, style::GULT=GULT()) = ntu_leftcap!(L, B.top, B.bot, style)
-function ntu_leftcap!(L, Bt::AbsTen{2,4}, Bb::AbsTen{2,4}, ::GULT=GULT())
+ntu_leftcap!(L, B::TensorPair) = ntu_leftcap!(L, B.top, B.bot)
+function ntu_leftcap!(L, Bt::AbsTen{2,4}, Bb::AbsTen{2,4})
     @tensoropt (
         D2 => D, D4 => D, r1u => 16 * D, r1d => 16 * D, r3 => 16 * D, k => 2, b => 2
     ) L[r1d; r1u] = Bt[k b; r1u D2 r3 D4] * (Bb')[r1d D2 r3 D4; k b]
     return L
 end
-function ntu_rightcap!(R, A::AbsTen{2,4}, style::AbstractUpdateScheme=GULT())
-    return ntu_leftcap!(R, permutedom(A, (3, 2, 1, 4)), style)
+function ntu_rightcap!(R, A::AbsTen{2,4})
+    return ntu_leftcap!(R, permutedom(A, (3, 2, 1, 4)))
 end
 
 # Function of B
-ntu_TL(B::ITC.TensorPair, style::GULT=GULT()) = ntu_TL(B.top, B.bot, style)
-function ntu_TL(Bt::AbsTen{2,4}, Bb::AbsTen{2,4}, style::GULT=GULT())
+ntu_TL(B::ITC.TensorPair) = ntu_TL(B.top, B.bot)
+function ntu_TL(Bt::AbsTen{2,4}, Bb::AbsTen{2,4})
     @tensoropt (
         D2u => D,
         D2d => D,
@@ -201,21 +194,21 @@ function ntu_TL(Bt::AbsTen{2,4}, Bb::AbsTen{2,4}, style::GULT=GULT())
     ) TL[r1d D2d; r1u D2u] := Bt[k b; r1u D2u r3 D4] * (Bb')[r1d D2d r3 D4; k b]
     return TL
 end
-function ntu_TR(A::AbsTen{2,4}, style::AbstractUpdateScheme=GULT())
-    rv = ntu_TL(permutedom(A, (2, 3, 4, 1)), style)
+function ntu_TR(A::AbsTen{2,4})
+    rv = ntu_TL(permutedom(A, (2, 3, 4, 1)))
     return rv
 end
-function ntu_BL(B::AbsTen{2,4}, style::AbstractUpdateScheme=GULT())
-    rv = ntu_TL(permutedom(B, (4, 1, 2, 3)), style)
+function ntu_BL(B::AbsTen{2,4})
+    rv = ntu_TL(permutedom(B, (4, 1, 2, 3)))
     return rv
 end
-function ntu_BR(A::AbsTen{2,4}, style::AbstractUpdateScheme=GULT())
-    rv = ntu_TL(permutedom(A, (3, 4, 1, 2)), style)
+function ntu_BR(A::AbsTen{2,4})
+    rv = ntu_TL(permutedom(A, (3, 4, 1, 2)))
     return rv
 end
 
 # Function of A
-function ntu_T!(T, TL, TR, ::GULT=GULT())
+function ntu_T!(T, TL, TR)
     @tensoropt (Dld => D, Drd => D, Dlu => D, Dru => D, rd => 16 * D, ru => 16 * D) T[
         Dld Drd
         Dlu Dru
@@ -223,19 +216,19 @@ function ntu_T!(T, TL, TR, ::GULT=GULT())
     return T
 end
 
-function ntu_B!(B, BL, BR, style::AbstractUpdateScheme=GULT())
+function ntu_B!(B, BL, BR)
     # Swapped
-    B = ntu_T!(B, BR, BL, style)
+    B = ntu_T!(B, BR, BL)
     return B
 end
 
-function ntu_top!(Top, A, B, style::AbstractUpdateScheme=GULT())
-    TL = ntu_TL(B, style)
-    TR = ntu_TR(A, style)
-    return ntu_T!(Top, TL, TR, style)
+function ntu_top!(Top, A, B)
+    TL = ntu_TL(B)
+    TR = ntu_TR(A)
+    return ntu_T!(Top, TL, TR)
 end
-function ntu_bot!(Bot, A, B, style::AbstractUpdateScheme=GULT())
-    BL = ntu_BL(B, style)
-    BR = ntu_BR(A, style)
-    return ntu_B!(Bot, BL, BR, style)
+function ntu_bot!(Bot, A, B)
+    BL = ntu_BL(B)
+    BR = ntu_BR(A)
+    return ntu_B!(Bot, BL, BR)
 end

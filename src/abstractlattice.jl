@@ -104,6 +104,20 @@ function Base.getindex(lattice::AbstractLattice, bond::Bond)
     return rv
 end
 
+function Base.setindex!(
+    lattice::AbstractLattice{G,T}, vals::Tuple{T,T}, bond::Bond
+) where {G,T}
+    val1, val2 = vals
+    lattice[bond.left] = val1
+    lattice[bond.right] = val2
+    return lattice
+end
+function Base.copyto!(lattice::AbstractLattice, val1, val2, bond::Bond)
+    copy!(lattice[bond.left], val1)
+    copy!(lattice[bond.right], val2)
+    return lattice
+end
+
 abstract type AbstractLatticeStyle{G,A} <: ITC.AbstractUnitCellStyle{G,A} end
 struct LatticeStyle{G,A} <: AbstractLatticeStyle{G,A} end
 
@@ -130,3 +144,12 @@ find_lat(x) = x
 find_lat(::Tuple{}) = nothing
 find_lat(a::AbstractLattice, rest) = a
 find_lat(::Any, rest) = find_lat(rest)
+
+function uniqueindices(L::Lattice)
+    Nx, Ny = size(L)
+    if issymmetric(L)
+        return CartesianIndices((Nx, 1))
+    else
+        return CartesianIndices((Nx, Ny))
+    end
+end

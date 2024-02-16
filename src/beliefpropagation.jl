@@ -354,7 +354,7 @@ end
 #     return mts
 # end
 function beliefpropagation!(mts, pepo, map; kwargs...)
-    return _beliefpropagation!(mts, getstate(pepo), map.data, kwargs...)
+    return _beliefpropagation!(mts, latticetensors(pepo), map.data, kwargs...)
 end
 
 function _beliefpropagation!(mts, tensors, p; maxiter=20, tol=10.0 * eps())

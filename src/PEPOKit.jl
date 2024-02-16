@@ -8,6 +8,7 @@ using MacroTools
 using TrotterMacros
 using InfiniteTensorContractions
 using Combinatorics
+using TupleTools
 
 import LowRankApprox: psvd
 import TensorKit.IndexTuple, TensorKit.AdjointTensorMap
@@ -28,19 +29,17 @@ export σ0, σ1, σ2, σ3, σp, σm, PAULI, LADDER
 # Lattice
 export AbstractLattice, Lattice, SquareLattice
 # PEPO
+export ThermalState
 export AbstractPEPO, PEPO, Weights
 export Bond
 
-export Model
-
-export TEBD, WII, TNO, DMPO
+export TEBD, DMPO
+export Local, Global
 export SU, NTU, FET, VGU
-export GateLike, MPOLike
-export initialize, simulate!, simulate
+export Simulation, simulate!, simulate
 
-export @defmodel
 
-export dynamicalmpo, MatrixProductOperator
+export dynamicalmpo, MPO
 
 export LindbladEquation, HamiltonianTerm, LongRangeTerm, LindbladTerm
 
@@ -52,7 +51,6 @@ include("utils.jl")
 include("linalg.jl")
 include("convergenceinfo.jl")
 include("abstractlattice.jl")
-include("physics/abstractmap.jl")
 # MPS
 include("abstractpepo.jl")
 include("pepo.jl")
@@ -66,17 +64,19 @@ include("physics/longrange.jl")
 
 include("beliefpropagation.jl")
 
-include("truncation/abstractopt.jl")
 include("truncation/wtg.jl")
 include("truncation/clu/clu.jl")
 include("truncation/truncation.jl")
 include("truncation/isometries.jl")
 
 #models
-include("physics/evolution.jl")
-include("physics/tebd_evolve.jl")
-include("physics/tno_evolve.jl")
+include("physics/abstractevolution.jl")
 include("physics/dynamicalmap.jl")
+include("physics/timeevolution.jl")
+# include("physics/tno_evolve.jl")
+include("physics/simulation.jl")
+
+include("physics/densitymatrix.jl")
 
 # include("Models/Models.jl")
 

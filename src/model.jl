@@ -1,26 +1,38 @@
-abstract type AbstractModel end
+const BlockMatrix = Matrix{Matrix{ComplexF64}}
 
-# struct Model{N}
-#     xdata::Array{ComplexF64,N}
-#     ydata::Array{ComplexF64,N}
-# end
-
-struct ModelMPO <: AbstractModel
-    A::Matrix{ComplexF64}
-    B::Matrix{ComplexF64}
-    C::Matrix{ComplexF64}
-    D::Matrix{ComplexF64}
+struct MPO
+    A::BlockMatrix
+    B::BlockMatrix
+    C::BlockMatrix
+    D::BlockMatrix
+    data::Matrix{BlockMatrix}
 end
 
-struct Model <: AbstractModel
-    xdata::Matrix{ComplexF64}
-    ydata::Matrix{ComplexF64}
-    param::Vector{String}
-    hamiltonian::String
-    linops::Vector{String}
-    Model(x, y, p, h, l) = new(x, y, p, h, l)
-    Model(x, y) = new(x, y)
+function Base.show(io::IO, ::MIME"text/plain", mpo::MPO)
+    chi = size(mpo.A, 1)
+    return print(io, "MatrixProductOperator with χ = $chi")
 end
+
+function MPO(A::T, B::T, C::T, D::T) where {T}
+    data = Matrix{T}(undef, 3, 3)
+
+    # row, col
+    data[1, 1] = map(one, D)
+    data[1, 2] = C
+    data[1, 3] = D
+
+    data[2, 1] = map(zero, B)
+    data[2, 2] = A
+    data[2, 3] = B
+
+    data[3, 1] = map(zero, D)
+    data[3, 2] = map(zero, C)
+    data[3, 3] = map(one, D)
+
+    return MPO(A, B, C, D, data)
+end
+
+Base.getindex(mpo::MPO, i1, i2) = mpo.data[i1, i2]
 
 abstract type AbstractTerm{N} end
 
@@ -131,8 +143,8 @@ function physicalspace(S::Type{<:IndexSpace}, eqn::LindbladEquation)
     return ⊕(oneunit(S)^d...)
 end
 
-function physicalspace(S::Type{<:IndexSpace}, mpo::MatrixProductOperator)
-    d = Int(sqrt(size(mpo.D[1,1], 1)))
+function physicalspace(S::Type{<:IndexSpace}, mpo::MPO)
+    d = Int(sqrt(size(mpo.D[1, 1], 1)))
     return ⊕(oneunit(S)^d...)
 end
 
@@ -222,43 +234,15 @@ function exactlindblad(; V=1.0, Γ=1.0)
     return eqn
 end
 
-const BlockMatrix = Matrix{Matrix{ComplexF64}}
+function axylindblad(; J = 1.0, Γ =1.0)
+    X, Y, _ = PAULI
+    M, _ = LADDER
 
-struct MatrixProductOperator
-    A::BlockMatrix
-    B::BlockMatrix
-    C::BlockMatrix
-    D::BlockMatrix
-    data::Matrix{BlockMatrix}
+    eqn = J / 4 * ham(X, X) + -J/4 * ham(Y, Y)  + sqrt(Γ) * lin(M)
+     return eqn
 end
 
-function Base.show(io::IO, ::MIME"text/plain", mpo::MatrixProductOperator)
-    chi = size(mpo.A, 1)
-    return print(io, "MatrixProductOperator with χ = $chi")
-end
-
-function MatrixProductOperator(A::T, B::T, C::T, D::T) where {T}
-    data = Matrix{T}(undef, 3, 3)
-
-    # row, col
-    data[1, 1] = map(one, D)
-    data[1, 2] = C
-    data[1, 3] = D
-
-    data[2, 1] = map(zero, B)
-    data[2, 2] = A
-    data[2, 3] = B
-
-    data[3, 1] = map(zero, D)
-    data[3, 2] = map(zero, C)
-    data[3, 3] = map(one, D)
-
-    return MatrixProductOperator(A, B, C, D, data)
-end
-
-Base.getindex(mpo::MatrixProductOperator, i1, i2) = mpo.data[i1, i2]
-
-function MatrixProductOperator(eqn::LindbladEquation)
+function MPO(eqn::LindbladEquation)
     Id = Matrix{ComplexF64}(I, 2, 2)
 
     chi = 2 * (length(eqn.twolocal) + length(eqn.longrange))
@@ -317,35 +301,14 @@ function MatrixProductOperator(eqn::LindbladEquation)
         return kron(L, transpose(L')) - 1 / 2 * anticomm
     end
 
-    return MatrixProductOperator(A, B, C, D)
-end
-
-struct LazyPowerMPO{N}
-    data::MatrixProductOperator
-end
-
-struct ExtensiveMPO{N}
-    mpo::Matrix{BlockMatrix}
-    levels::Vector{NTuple{N,Int}}
-end
-
-struct dynamicalmpo{N}
-    data::Matrix{BlockMatrix}
-    levels::Vector{NTuple{N,Int}}
-end
-
-function Base.getindex(
-    mpo::LazyPowerMPO{N}, row::NTuple{N,Int}, col::NTuple{N,Int}
-) where {N}
-    H = mpo.data
-    return kron((H[r, c] for (r, c) in zip(row, col))...)
+    return MPO(A, B, C, D)
 end
 
 function dynamicalmpo(eqn::LindbladEquation, dt::Number, order::Integer; kwargs...)
-    return dynamicalmpo(MatrixProductOperator(eqn), dt, order; kwargs...)
+    return dynamicalmpo(MPO(eqn), dt, order; kwargs...)
 end
 
-function lazypower(H::MatrixProductOperator, row, col)
+function lazypower(H::MPO, row, col)
     terms = (H[r, c] for (r, c) in zip(row, col))
     return kron(1, terms...)
 end
@@ -359,7 +322,7 @@ function insertat(level::Vector, pos::Integer, val)
 end
 
 function dynamicalmpo(
-    H::MatrixProductOperator,
+    H::MPO,
     dt::Number,
     order::Integer;
     extend=true,
@@ -457,27 +420,8 @@ function curly(mpo, args...)
     return sum(func, mats)
 end
 
-topower(H::MatrixProductOperator, N) = topower(LazyPowerMPO{N}(H))
-
-function topower(H::LazyPowerMPO{N}) where {N}
-    # RaisedMPO{N}
-    levels = NTuple{N,Int}[]
-
-    mat = Matrix{BlockMatrix}(undef, 3^N, 3^N)
-
-    for tup in Iterators.product(fill(1:3, N)...)
-        push!(levels, reverse(tup))
-    end
-
-    mat = map(x -> H[x[1], x[2]], Iterators.product(levels, levels))
-
-    return ExtensiveMPO(mat, levels)
-end
-
 function exactcompression!(levels, data)
     for (c, lev) in enumerate(levels)
-        # sc, n1, sr, n3 = sort_1_3(lev, levels)
-
         k1 = map(x -> isequal(x, 1) ? 2 : 1, lev)
         k3 = map(x -> isequal(x, 3) ? 2 : 1, lev)
 
@@ -526,44 +470,6 @@ function approxcompression!(levels::Vector{Vector{Int}}, data, dt)
     return data
 end
 
-function remove_row_and_column(H::ExtensiveMPO, c)
-    levels = H.levels
-    i = findfirst(isequal(c), levels)
-    new_data = H.mpo[1:end .!= i, 1:end .!= i]
-    new_layers = deleteat!(copy(levels), i)
-    return ExtensiveMPO(new_data, new_layers)
-end
-
-function sort_1_3(c, levels)
-    sc = Int[]
-    sc_rest = Int[]
-
-    sr = Int[]
-    sr_rest = Int[]
-    for i in c
-        if i == 1
-            push!(sc, 1)
-            push!(sr_rest, i)
-        elseif i == 3
-            push!(sr, 3)
-            push!(sc_rest, i)
-        else
-            push!(sr_rest, i)
-            push!(sc_rest, i)
-        end
-    end
-    n1 = length(sc)
-    n3 = length(sr)
-
-    append!(sc, sc_rest)
-    append!(sr, sr_rest)
-
-    sc = findfirst(isequal(Tuple(sc)), levels)
-    sr = findfirst(isequal(Tuple(sr)), levels)
-
-    return sc, n1, sr, n3
-end
-
 function isingthermal()
     _, _, Z = PAULI
 
@@ -579,162 +485,10 @@ function isingthermal()
     D = T(undef, 1, 1)
 
     B[1, 1] = C[1, 1] = 1 / 2 * hk
-    B[2, 1] = C[1, 2] = 1 / 2 * hb
+    B[2, 1] = C[1, 2] = hb
 
     A .= Ref(zero(hk))
     D .= Ref(zero(hk))
 
-    return MatrixProductOperator(A,B,C,D)
-end
-
-function totensor(mpo::dynamicalmpo)
-    nr = sum(x -> size(x, 1), mpo.data)
-    nc = sum(x -> size(x, 1), mpo.data)
-    return (nr, nc)
-end
-
-####
-
-locality(term::AbstractTerm) = length(term.data)
-
-LinearAlgebra.ishermitian(term::AbstractTerm) = ishermitian(kron(term.data...))
-
-function hamterm(args...)
-    return HamiltonianTerm(Matrix{ComplexF64}([args...]))
-end
-
-struct SimpleModel <: AbstractModel
-    oneloc::Vector{Matrix{ComplexF64}}
-    twoloc::Vector{Matrix{ComplexF64}}
-    lin::Vector{Matrix{ComplexF64}}
-end
-SimpleModel() = SimpleModel([], [], [])
-
-struct ModelData <: AbstractModel
-    xdata::Array{ComplexF64,6}
-    ydata::Array{ComplexF64,6}
-end
-
-macro model(ex...)
-    rv = quote
-        xd, yd = @infliouvillian $ex
-        Model(xd, yd)
-    end
-    return rv
-end
-
-macro defmodel(rules_ex, equation_ex...)
-    return defmodel(rules_ex, equation_ex...)
-end
-
-function defmodel(rules_ex::Expr, equation_ex...)
-    rules_block = MacroTools.postwalk(rules_ex) do x
-        @capture(x, A_ => B_) || return x
-        return :($A = $(esc(B)))
-    end
-    rules_block.head = :block
-
-    rules_tuple = MacroTools.postwalk(rules_ex) do x
-        @capture(x, A_ => B_) || return x
-        return :($(string(A)) * " = " * (string($(esc(B)))))
-        # return :($(string(A)) => $(esc(B)))
-    end
-    rules_tuple.head = :vcat
-
-    str_param = string.(rules_tuple.args)
-    str_H = string(unblock(equation_ex[1]))
-    str_Ls = [string.(unblock(equation_ex[2:end]))...]
-
-    rv = quote
-        let
-            $rules_block
-            data_x, data_y = @infliouvillian($(equation_ex[1]), $(equation_ex[2:end]...))
-            Model(data_x, data_y, $rules_tuple, $str_H, $str_Ls)
-        end
-    end
-    return rv
-end
-function Base.show(io::IO, model::Model)
-    if all(x -> isdefined(model, x), fieldnames(Model))
-        params_to_print = []
-
-        ham = model.hamiltonian
-
-        for param_str in model.param
-            param = Meta.parse(param_str)
-
-            if param.args[2] == 0
-                rem = "(?>" * string(param.args[1]) * ")"
-                re = "($(rem).*?)([\\+\\-](?![^\\[]*\\])|\$)\\s*"
-                ham = replace(ham, Regex(re) => "")
-            else
-                push!(params_to_print, param_str)
-            end
-        end
-
-        # Remove trailing +/-
-        ham = replace(ham, r"[\+\-]\s*$" => "")
-
-        println("Liouvillian data of type Matrix{ComplexF64} generated from:")
-        println(io, "  Hamiltonian:")
-        println("    ", ham)
-        println(io, "  Lindblad operators: ")
-        foreach(iv -> println("    ", iv[1], ". ", iv[2]), enumerate(model.linops))
-        println("  where:")
-        foreach(x -> println("    ", x), params_to_print)
-    else
-        println("Unknown model data of type Matrix{ComplexF64}:")
-        show(io, model.xdata)
-        show(io, model.ydata)
-    end
-    return nothing
-end
-
-function lrtno()
-    # 1 -> do nothing 2-> conventional path 3-> unconventional path 4-> fin
-    # (L,D) -> (R,U)
-    # -----------
-    # 1,1,1,1 = I
-    # 1,2,1,2 = I
-    # 2 1 2 4 = I
-    # 1 4 1 4 = I
-    # 4 1 4 4 = I
-    # -----------
-    # 1 1 1 2 = A
-    # 1 1 2 4 = A
-    # 1 2 2 4 = I
-    # 1 2 4 4 = B
-    # 2 1 4 4 = B
-    # -----------
-    # 3 1 3 4 = I
-    # 3 2 4 4 = I
-    # 1 1 3 4 = B
-    # -----------
-    # TE (L,D) -> (R,U)
-    # -----------
-    # 1,1,1,1 = I
-    # 1,2,1,2 = I
-    # 2 1 2 4 = I
-    # 1 4 1 4 = I
-    # 4 1 4 4 = I
-    # -----------
-    # 1 1 1 2 = A
-    # 1 1 2 4 = A
-    # 1 2 2 4 = I
-    # 1 2 4 4 = B
-    # 2 1 4 4 = B
-    # -----------
-    # 3 1 3 4 = I
-    # 3 2 4 4 = I
-    # 1 1 3 4 = B
-    # -----------
-end
-
-macro nterm(expr)
-    @capture(expr, NTuple{Num_,TermType_})
-    termtypes = [Expr(:curly, TermType, N) for N in 1:Num]
-    vectortypes = map(termtypes) do term
-        return Expr(:curly, :Vector, term)
-    end
-    return Expr(:curly, :Tuple, vectortypes...)
+    return MPO(A, B, C, D)
 end

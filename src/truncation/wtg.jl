@@ -113,6 +113,10 @@ function wtg!(
     mul!(u0, u, x)
     mul!(v0, y, v)
 
+    # normalize!(st)
+
+    println(convert(Array, st))
+
     # Test if the metric is gauged correctly.
     if test == true
         left, right = wtg_test(u0, st, v0, Y)
@@ -124,7 +128,6 @@ function wtg!(
         end
     end
 
-    # normalize!(st)
 
     return u0, copy!(s0, st), v0
 
