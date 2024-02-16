@@ -45,7 +45,14 @@ export LindbladEquation, HamiltonianTerm, LongRangeTerm, LindbladTerm
 export ham, lin
 
 #generic 
-include("model.jl")
+## MODEL AND EQUATION
+include("model/abstractterm.jl")
+include("model/hamiltonianterm.jl")
+include("model/longrangeterm.jl")
+include("model/lindbladterm.jl")
+include("model/equation.jl")
+include("model/mpo.jl")
+
 include("utils.jl")
 include("linalg.jl")
 include("convergenceinfo.jl")
