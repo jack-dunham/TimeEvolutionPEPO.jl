@@ -70,86 +70,6 @@ function slice(ind::NTuple{N,Int}, sp::ProductSpace{S,N₁}) where {N,N₁,S<:In
     return *(one(S), one(S), (sp[i] for i in ind)...)
 end
 
-westbond(t::AbstractTensorMap) = codomain(t)[1]
-southbond(t::AbstractTensorMap) = codomain(t)[2]
-downbond(t::AbstractTensorMap) = codomain(t)[3]
-
-eastbond(t::AbstractTensorMap) = domain(t)[1]
-northbond(t::AbstractTensorMap) = domain(t)[2]
-upbond(t::AbstractTensorMap) = domain(t)[3]
-
-# Alt permute() 
-function _permute(t::AbstractTensorMap{<:IndexSpace,N,M}, p::Tuple) where {N,M}
-    if !(length(p) == N + M)
-        throw(DimensionMismatch())
-    else
-        return permute(t, p[1:N], p[(N + 1):(N + M)])
-    end
-end
-
-# Swap codomain and domain (Base.transpose reverses indices)
-function _transpose(tsrc::AbsTen{N,M}) where {N,M}
-    p1 = NTuple{M,Int}((N + 1):(N + M))
-    p2 = NTuple{N,Int}(1:N)
-    return permute(tsrc, p1, p2)
-end
-
-# TODO move to ITC
-function permutecod(t::ITC.TensorPair, p::NTuple{M,Int}) where {M}
-    return ITC.TensorPair(permutecod(t.top, p), permutecod(t.bot, p))
-end
-
-function permutecod(t::AbsTen{N,M}, p::NTuple{N,Int}) where {N,M}
-    p2 = NTuple{M,Int}((N + 1):(M + N))
-    return permute(t, p, p2)
-end
-
-function permutecod!(tdst, tsrc::AbsTen{N,M}, p::NTuple{N,Int}) where {N,M}
-    p2 = NTuple{M,Int}((N + 1):(M + N))
-    return permute!(tdst, tsrc, (p, p2))
-end
-
-# TODO move to ITC
-function permutedom(t::ITC.TensorPair, p::NTuple{M,Int}) where {M}
-    return ITC.TensorPair(permutedom(t.top, p), permutedom(t.bot, p))
-end
-
-function permutedom(t::AbsTen{N,M}, p::NTuple{M,Int}) where {N,M}
-    p1 = NTuple{N,Int}(1:N)
-    p2 = map(x -> x + N, p)
-    return permute(t, p1, p2)
-end
-
-function permutedom!(tdst, tsrc::AbsTen{N,M}, p::NTuple{M,Int}) where {N,M}
-    p1 = NTuple{N,Int}(1:N)
-    p2 = map(x -> x + N, p)
-    return permute!(tdst, tsrc, (p1, p2))
-end
-
-function _leftorth(t::AbsTen{N,2}) where {N}
-    p1 = NTuple{N + 1,Int}((1:N..., N + 2))
-    p2 = NTuple{N,Int}(1:N)
-
-    Q, R = leftorth(t, p1, (N + 1,))
-
-    t_out = permute(Q, p2, (N + 2, N + 1))
-    r_out = permute(R, (), (2, 1))
-
-    return t_out, r_out
-end
-
-function _rightorth(t::AbsTen{N,2}) where {N}
-    p1 = NTuple{N + 1,Int}((1:N..., N + 1))
-    p2 = NTuple{N,Int}(2:(N + 1))
-
-    L, Q = rightorth(t, (N + 2,), p1)
-
-    t_out = permute(Q, p2, (N + 2, 1))
-    l_out = permute(L, (), (2, 1))
-
-    return l_out, t_out
-end
-
 ftsvd(t::TensorMap; trunc::TensorKit.TruncationScheme=notrunc()) = tsvd(t; trunc=trunc)
 function ftsvd(t::TensorMap{ComplexSpace}; trunc::TensorKit.TruncationSpace)
     T = eltype(t)
@@ -172,27 +92,6 @@ function ftsvd(t::TensorMap{ComplexSpace}; trunc::TensorKit.TruncationSpace)
     copyto!(V.data, ci(v'), v', ci(v'))
 
     return U, S, V
-end
-
-function hermitianize!(t::AbsTen{2,4})
-    t_adj = cj(permutecod(t, (2, 1)))
-    dual_swap = isometry(codomain(t), codomain(t_adj))
-    axpby!(1//2, dual_swap * t_adj, 1//2, t)
-    return t
-end
-
-function posapprox(t; tol=10.0 * eps())
-    D, V = eigh(t)
-
-    for (_, v) in blocks(D)
-        v[v .< tol] .= 0
-    end
-
-    rv = V * D * V'
-
-    err = norm(t - rv)
-
-    return V * D * V', err
 end
 
 function shownested(io::IO, m::MIME"text/plain", sim::T) where {T}
