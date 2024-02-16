@@ -38,7 +38,6 @@ export Local, Global
 export SU, NTU, FET, VGU
 export Simulation, simulate!, simulate
 
-
 export dynamicalmpo, MPO
 
 export LindbladEquation, HamiltonianTerm, LongRangeTerm, LindbladTerm
@@ -52,9 +51,19 @@ include("linalg.jl")
 include("convergenceinfo.jl")
 include("abstractlattice.jl")
 # MPS
-include("abstractpepo.jl")
+
+## PEPO OBJECTS
+include("pepo/weights.jl")
+include("pepo/abstractpepo.jl")
 include("pepo.jl")
-#
+
+### UPDATABLE PEPOS
+include("pepo/abstractupdatablepepo.jl")
+include("pepo/localpepo.jl")
+include("pepo/globalpepo.jl")
+
+### MINIMAL CANONICAL FORM
+include("pepo/mcf.jl")
 
 include("contract/vumps.jl")
 include("contract/ctmrg.jl")
