@@ -1,17 +1,16 @@
 module PEPOKit
 
+import TensorKit.AdjointTensorMap
+import TensorKit.IndexTuple
+
+using Combinatorics
+using InfiniteTensorContractions
+using KrylovKit
+using LinearAlgebra
+using MacroTools
 using Random
 using TensorKit
-using LinearAlgebra
-using KrylovKit
-using MacroTools
-using TrotterMacros
-using InfiniteTensorContractions
-using Combinatorics
 using TupleTools
-
-import LowRankApprox: psvd
-import TensorKit.IndexTuple, TensorKit.AdjointTensorMap
 
 const ITC = InfiniteTensorContractions
 

@@ -70,30 +70,6 @@ function slice(ind::NTuple{N,Int}, sp::ProductSpace{S,N₁}) where {N,N₁,S<:In
     return *(one(S), one(S), (sp[i] for i in ind)...)
 end
 
-ftsvd(t::TensorMap; trunc::TensorKit.TruncationScheme=notrunc()) = tsvd(t; trunc=trunc)
-function ftsvd(t::TensorMap{ComplexSpace}; trunc::TensorKit.TruncationSpace)
-    T = eltype(t)
-
-    d = trunc.space
-
-    S = TensorMap(zeros, T, d, d)
-
-    U = TensorMap(zeros, T, codomain(t), codomain(S))
-    V = TensorMap(zeros, T, domain(S), domain(t))
-
-    u, s, v = psvd(t.data; rank=dim(d))
-
-    ci = x -> CartesianIndices(x)
-
-    ds = Diagonal(s)
-
-    copyto!(U.data, ci(u), u, ci(u))
-    copyto!(S.data, ci(ds), ds, ci(ds))
-    copyto!(V.data, ci(v'), v', ci(v'))
-
-    return U, S, V
-end
-
 function shownested(io::IO, m::MIME"text/plain", sim::T) where {T}
     level = get(io, :nesting_level, 0)
 
@@ -107,22 +83,3 @@ function shownested(io::IO, m::MIME"text/plain", sim::T) where {T}
     end
     return nothing
 end
-
-# function fsvd(t::TensorMap{D}; trunc::TensorKit.TruncationSpace) where {D<:IndexSpace}
-#     d = trunc.space
-#
-#     S = similar(t, d, d)
-#
-#     U = similar(t, codomain(t), codomain(S))
-#     V = similar(t, domain(S), domain(t))
-#
-#     for c in sectors(d)
-#         println(dim(c))
-#         u, s, v = psvd(TensorKit.block(t, c); rank=dim(c))
-#         copy!(U.data[c], u)
-#         copy!(S.data[c], diagm(s))
-#         copy!(V.data[c], v')
-#     end
-#
-#     return U, S, V
-# end
