@@ -1,26 +1,26 @@
 """
-    ConvergenceInfo
+    SimulationInfo
 
-A mutable struct that holds information about the convergence progress of an algorithm
+A mutable struct that holds information about the convergence progress of a simulation
 # Fields
-- `converged::Bool`: a boolean stating if an algorithm has converged or not
-- `error::Float64`: stores the current error
+- `isconverged::Bool`: whether the simulation has convergeced to a steady state
+- `convergence::Float64`: stores the current numerical convergence
 - `iterations::Int`: stores the number of interations so far
 - `finished::Bool`: whether or not the algorithm has finished running
 """
-@kwdef mutable struct ConvergenceInfo
-    converged::Bool = false
-    error::Float64 = Inf
+@kwdef mutable struct SimulationInfo
+    isconverged::Bool = false
+    convergence::Float64 = Inf
     iterations::Int = 0
     finished::Bool = false
 end
 
-isconverged(conv::ConvergenceInfo) = conv.converged
-geterror(conv::ConvergenceInfo) = conv.error
-numiter(conv::ConvergenceInfo) = conv.iterations
-isfinished(conv::ConvergenceInfo) = conv.finished
+isconverged(conv::SimulationInfo) = conv.isconverged
+convergence(conv::SimulationInfo) = conv.convergence
+numiter(conv::SimulationInfo) = conv.iterations
+isfinished(conv::SimulationInfo) = conv.finished
 
-function reset!(conv::ConvergenceInfo)
+function reset!(conv::SimulationInfo)
     conv.finished = false
     return conv
 end

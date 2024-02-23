@@ -1,6 +1,6 @@
 struct Simulation{E<:AbstractTimeEvolution,P<:AbstractPEPO,L<:AbstractTimeStepper,T}
     initialstate::Tuple{P,P}
-    info::ConvergenceInfo
+    info::SimulationInfo
     stepper::Tuple{L,L}
     method::E
     state::Tuple{P,P}
@@ -14,7 +14,7 @@ function Base.show(io::IO, m::MIME"text/plain", sim::Simulation)
     println("")
     println("INFO")
     print("≡≡≡≡")
-    for name in fieldnames(ConvergenceInfo)
+    for name in fieldnames(SimulationInfo)
         println("")
         print(name, ": ", getfield(sim.info, name))
     end
@@ -96,7 +96,7 @@ function Simulation(
 
     initialstate = deepcopy(state)
 
-    sim = Simulation(initialstate, ConvergenceInfo(), stepper, method, state, truncators)
+    sim = Simulation(initialstate, SimulationInfo(), stepper, method, state, truncators)
 
     return sim
 end
