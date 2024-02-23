@@ -42,6 +42,10 @@ export dynamicalmpo, MPO
 
 export LindbladEquation, HamiltonianTerm, LongRangeTerm, LindbladTerm
 
+export DensityMatrix, ReducedDensityMatrix
+export trace, partialtrace
+export expval, negativity, correlator
+
 export ham, lin
 
 include("utils.jl")
