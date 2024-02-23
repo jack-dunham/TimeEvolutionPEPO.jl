@@ -15,19 +15,6 @@ abstract type AbstractTruncatorState end
 # Most basic algorithm for truncating bonds
 struct SimpleUpdateState <: AbstractTruncatorState end
 
-# Nearest neighbourhood update
-struct NeighbourhoodUpdateState{N<:NTUState} <: AbstractTruncatorState
-    x::N
-    y::N
-end
-
-# Full enviornment truncation
-struct FullEnvironmentState{E<:InfiniteContraction} <: AbstractTruncatorState
-    x::E
-    y::E
-end
-
-
 # SU, FET, NTU
 abstract type AbstractTruncationScheme end
 
@@ -37,16 +24,16 @@ function Base.show(io::IO, m::MIME"text/plain", sim::AbstractTruncationScheme)
 end
 
 # TRUNCATION SCHEMES
-@kwdef struct FET{BAlg<:AbstractBoundaryAlgorithm} <: AbstractTruncationScheme
+@kwdef mutable struct FET{BAlg<:AbstractBoundaryAlgorithm} <: AbstractTruncationScheme
     gauge::Bool = true
     ξ::Float64 = Inf
     rankreduce = true
-    alg::BAlg
+    const alg::BAlg
 end
 
 showheader(::Type{<:FET}) = "Full environment truncation (FET)"
 
-@kwdef struct NTU <: AbstractTruncationScheme
+@kwdef mutable struct NTU <: AbstractTruncationScheme
     gauge::Bool = false
     ξ::Float64 = Inf
     rankreduce = true
@@ -54,13 +41,13 @@ end
 
 showheader(::Type{<:NTU}) = "Neighbourhood tensor update (NTU)"
 
-@kwdef struct SU <: AbstractTruncationScheme
+@kwdef mutable struct SU <: AbstractTruncationScheme
     ξ::Float64 = Inf
 end
 
 showheader(::Type{<:SU}) = "Simple update"
 
-@kwdef struct VGU <: AbstractTruncationScheme
+@kwdef mutable struct VGU <: AbstractTruncationScheme
     ξ::Float64 = Inf
 end
 
