@@ -14,7 +14,7 @@ function initevolution(
     return pepo
 end
 function _initevolution(pepo::AbstractPEPO, ::WIIPEPO, ::VGU)
-    return GlobalUpdatablePEPO(pepo, deepcopy(getstate(pepo)), Ref(false))
+    return GlobalUpdatablePEPO(pepo, deepcopy(getstate(pepo)), false)
 end
 function _initevolution(pepo::AbstractPEPO, map::WIIPEPO, ::SU)
     function useful_f(x, l)
