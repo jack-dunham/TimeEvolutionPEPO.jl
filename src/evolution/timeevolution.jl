@@ -20,9 +20,9 @@ function newevolution(pepo::AbstractPEPO, map::LocalStepper)
         return left, right
     end
 
-    firstbond = Ref(Bond(CartesianIndex(1, 1), CartesianIndex(2, 1)))
+    firstbond = Bond(CartesianIndex(1, 1), CartesianIndex(2, 1))
 
-    return LocalUpdatablePEPO(pepo, evolved, firstbond, Ref(false))
+    return LocalUpdatablePEPO(pepo, evolved, firstbond, false)
 end
 
 function newevolution(pepo::AbstractPEPO, map::GlobalStepper)
@@ -41,7 +41,7 @@ function newevolution(pepo::AbstractPEPO, map::GlobalStepper)
         return tensor
     end
 
-    return GlobalUpdatablePEPO(pepo, evolved, Ref(false))
+    return GlobalUpdatablePEPO(pepo, evolved, false)
 end
 
 # One full cycle of the trotter evolution. That is, t -> t + τ
