@@ -1,13 +1,13 @@
-struct LocalUpdatablePEPO{G,PType,CType} <: AbstractUpdatablePEPO
-    parent::PEPO{G,PType,CType}
-    evolved_tensors::Lattice{G,Tuple{PType,PType},Matrix{Tuple{PType,PType}}}
-    bond::Ref{Bond}
-    isevolved::Ref{Bool}
+mutable struct LocalUpdatablePEPO{G,PType,CType} <: AbstractUpdatablePEPO
+    const parent::PEPO{G,PType,CType}
+    const evolved_tensors::Lattice{G,Tuple{PType,PType},Matrix{Tuple{PType,PType}}}
+    bond::Bond
+    isevolved::Bool
 end
 
 currentbond(p::LocalUpdatablePEPO) = p.bond.x::Bond
 function setcurrentbond!(p::LocalUpdatablePEPO, bond::Bond)
-    p.bond.x = bond
+    p.bond = bond
     return p
 end
 

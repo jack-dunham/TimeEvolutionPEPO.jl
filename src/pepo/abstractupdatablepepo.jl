@@ -10,10 +10,10 @@ latticetensors(p::AbstractUpdatablePEPO) = latticetensors(getpepo(p))
 evolvedtensors(p::AbstractUpdatablePEPO) = p.evolved_tensors
 
 # Check if PEPO is in an evolved state (i.e. if `getevolved` outputs the current state.)
-isevolved(p::AbstractUpdatablePEPO) = p.isevolved[]
+isevolved(p::AbstractUpdatablePEPO) = p.isevolved
 
 # Set evolved state.
-setisevolved!(p::AbstractUpdatablePEPO, bool::Bool) = p.isevolved.x = bool
+setisevolved!(p::AbstractUpdatablePEPO, bool::Bool) = p.isevolved = bool
 
 function _getindex(p::AbstractUpdatablePEPO, bond::Bond, ::Val{false})
     return getindex(latticetensors(p), bond)

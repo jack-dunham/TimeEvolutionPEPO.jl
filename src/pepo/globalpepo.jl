@@ -1,7 +1,7 @@
-struct GlobalUpdatablePEPO{G,PType,CType} <: AbstractUpdatablePEPO
-    parent::PEPO{G,PType,CType}
-    evolved_tensors::Lattice{G,PType,Matrix{PType}}
-    isevolved::Ref{Bool}
+mutable struct GlobalUpdatablePEPO{G,PType,CType} <: AbstractUpdatablePEPO
+    const parent::PEPO{G,PType,CType}
+    const evolved_tensors::Lattice{G,PType,Matrix{PType}}
+    isevolved::Bool
 end
 
 #? intermediate tensors
