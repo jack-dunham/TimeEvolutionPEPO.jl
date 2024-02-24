@@ -17,7 +17,7 @@ end
 
 function Base.show(io::IO, ::MIME"text/plain", mpo::MPO)
     chi = size(mpo.A, 1)
-    return print(io, "MatrixProductOperator with χ = $chi")
+    return print(io, "Matrix product operator with χ = $chi")
 end
 
 function MPO(A::T, B::T, C::T, D::T) where {T}
@@ -38,7 +38,6 @@ function MPO(A::T, B::T, C::T, D::T) where {T}
 
     return MPO(A, B, C, D, data)
 end
-
 
 function MPO(eqn::LindbladEquation)
     Id = Matrix{ComplexF64}(I, 2, 2)
@@ -107,12 +106,7 @@ function dynamicalmpo(eqn::LindbladEquation, dt::Number, order::Integer; kwargs.
 end
 
 function dynamicalmpo(
-    H::MPO,
-    dt::Number,
-    order::Integer;
-    extend=true,
-    compress=true,
-    approx=true,
+    H::MPO, dt::Number, order::Integer; extend=true, compress=true, approx=true
 )
     N = order
 
