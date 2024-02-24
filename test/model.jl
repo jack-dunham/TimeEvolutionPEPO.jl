@@ -1,4 +1,4 @@
-import PEPOKit: lazypower, curly
+import PEPOKit: lazypower, curly, dynamicalmpo
 
 function xyzlindblad(; Jx=0.5, Jy=1.2, Jz=1.0, Γ=1.0)
     X, Y, Z = PAULI
@@ -10,7 +10,7 @@ function xyzlindblad(; Jx=0.5, Jy=1.2, Jz=1.0, Γ=1.0)
 end
 
 @testset verbose = true "Time evolution MPO" begin
-    H = MatrixProductOperator(xyzlindblad())
+    H = MPO(xyzlindblad())
 
     cur = (args...) -> curly(H, args...)
 
@@ -71,13 +71,13 @@ end
 
     @testset verbose = true "Loopback" begin
         @testset "First order" begin
-            M = TimeEvolutionMPO{1}(H, dt; extend=false, compress=false, approx=false)
+            M = dynamicalmpo(H, dt, 1; extend=false, compress=false, approx=false)
 
             @test M ≈ WI
         end
 
         @testset "Equation (32)" begin
-            M = TimeEvolutionMPO{2}(H, dt; extend=false, compress=false, approx=false)
+            M = dynamicalmpo(H, dt, 2; extend=false, compress=false, approx=false)
 
             @test M[1, 1] ≈ Id + dt * D + dt^2 / 2 * kron(D, D)
             @test M[2, 1] ≈ dt / 2 * B + dt^2 / 2 * kron(D, B)
@@ -89,13 +89,13 @@ end
     end
     @testset verbose = true "Exact compression" begin
         @testset "First order" begin
-            M = TimeEvolutionMPO{1}(H, dt; extend=false, compress=true, approx=false)
+            M = dynamicalmpo(H, dt, 1; extend=false, compress=true, approx=false)
 
             @test M ≈ WI
         end
 
         @testset "Equation (39)" begin
-            M = TimeEvolutionMPO{2}(H, dt; extend=false, compress=true, approx=false)
+            M = dynamicalmpo(H, dt, 2; extend=false, compress=true, approx=false)
 
             @test M[1, 1] ≈ Id + dt * D + dt^2 / 2 * kron(D, D)
             @test M[2, 1] ≈ dt * B + dt^2 / 2 * (kron(D, B) + kron(B, D))
@@ -117,12 +117,12 @@ end
     end
     @testset verbose = true "Extension and exact compression" begin
         @testset "First order" begin
-            M = TimeEvolutionMPO{1}(H, dt; extend=true, compress=true, approx=false)
+            M = dynamicalmpo(H, dt, 1; extend=true, compress=true, approx=false)
 
             @test M ≈ WII
         end
         @testset "Equation (43)" begin
-            M = TimeEvolutionMPO{2}(H, dt; extend=true, compress=true, approx=false)
+            M = dynamicalmpo(H, dt, 2; extend=true, compress=true, approx=false)
 
             @test M[1, 1] ≈ Id + dt * D + dt^2 / 2 * kron(D, D) + dt^3 / 6 * kron(D, D, D)
             @test M[2, 1] ≈ dt * B + dt^2 / 2 * cur(:D, :B) + dt^3 / 6 * cur(:B, :D, :D)
