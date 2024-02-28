@@ -9,14 +9,34 @@ struct DensityMatrix{P<:AbstractLattice,T<:InfiniteContraction}
     function DensityMatrix(data::P, env::T) where {P<:AbstractLattice,T<:InfiniteContraction}
         tensors = deepcopy(data)
         tracenormalize!(tensors, env)
-        return new{P,T}(tensors, env)
+
+        trval = trace(tensors, env)
+        if !all(trval .≈ one(scalartype(trval)))
+            @warn "unable to normalize state to unit trace" trace = trval
+        end
+
+        new{P,T}(tensors, env)
     end
+end
+function Base.show(io::IO, rho::DensityMatrix)
+    if get(io, :compact, false)
+        summary(rho)
+        return nothing
+    end
+    println(io, "DensityMatrix of unit cell size $(size(rho.data)) normalized using:")
+    show(io,rho.environment.algorithm)
+    return nothing
+end
+function Base.summary(rho::DensityMatrix)
+    print("$(size(rho.data))-DensityMatrix")
+    return nothing
 end
 
 tracenormalize(object, normalizer) = tracenormalize!(deepcopy(object), normalizer)
 
 function tracenormalize!(tensors::AbstractLattice, boundary)
     norms = trace(tensors, boundary)
+    @debug "" norms
     broadcast(tensors, norms) do t, n
         rmul!(t, 1 / n)
     end
@@ -36,7 +56,7 @@ end
 
 function DensityMatrix(tensors::AbstractLattice, alg::AbstractBoundaryAlgorithm; kwargs...)
     env = newcontraction(alg, contractphysical(tensors); kwargs...)
-    run!(env)
+    runcontraction!(env)
     return DensityMatrix(tensors, env)
 end
 
@@ -50,6 +70,10 @@ effort is made to esnure the resulting object representes a physical density mat
 struct ReducedDensityMatrix{S,N,T<:AbstractTensorMap{S,N,N}} <: AbstractTensorMap{S,N,N}
     data::T
     inds::NTuple{N,CartesianIndex{2}}
+    function ReducedDensityMatrix(data::T, inds::NTuple{N,Union{CartesianIndex{2},NTuple{2}}}) where {S,N,T<:AbstractTensorMap{S,N,N}}
+        inds_cartesian = map(CartesianIndex, inds)
+        return new{S,N,T}(data, inds_cartesian)
+    end
 end
 
 function Base.show(io::IO, rho::ReducedDensityMatrix)
@@ -208,11 +232,8 @@ Note, if `rho` is constructed properly, then `trace(rho) .≈ one(scalartype(rho
 trace(rho::DensityMatrix) = trace(rho.data, rho.environment)
 function trace(network::AbstractLattice, contractor)
     rv = similar(network, scalartype(network))
-    vals = map(i -> trace(network, contractor, i), uniqueindices(network))
+    vals = map(i -> trace(network, contractor, i), CartesianIndices(network))
     copyto!(rv, vals)
-    if issymmetric(rv)
-        copysymmetric!(rv)
-    end
     return rv
 end
 function trace(network::AbstractLattice, contractor, ind)
@@ -223,7 +244,7 @@ function trace(network::AbstractLattice, contractor, ind)
 
     boundary = get_contraction_boundary(contractor, x:x, y:y)
 
-    trval = _partialtrace(rv, boundary..., network, Val((false)))::typeof(rv)
+    trval = _partialtrace(rv, boundary..., network[x:x,y:y], Val((false)))::typeof(rv)
 
     return trval
 end
@@ -558,5 +579,89 @@ end
     quote
         @tensoropt $e_out = $e_einsum
         return rv
+    end
+end
+
+# tempoary
+function contract(tensors, network)
+    inds = collect(CartesianIndices(network))
+
+    RT = promote_type(scalartype(tensors), scalartype(network))
+
+    rv = similar(network, RT)
+
+    rv .= contract.(Ref(tensors), Ref(network), inds)
+    return rv
+end
+
+contract(tensors, network, i1::Int, i2::Int) = contract(tensors, network, i1:i1, i2:i2)
+contract(tensors, network, inds) = contract(tensors, network, inds[1], inds[2])
+
+function contract(vumps::VUMPSRuntime, network, i1::UnitRange, i2::UnitRange)
+    if length(i2) > 1
+        throw(
+            ArgumentError(
+                "Cannot contract a VUMPS boundary around more than one vertical tensor."
+            ),
+        )
+    else
+        i2 = i2[begin]
+    end
+
+    _, _, AR, AC = ITC.unpack(vumps.mps)
+
+    fixed_points = vumps.fixedpoints
+
+    l = i1[begin]
+    r = i1[end]
+
+    FL = fixed_points.left[l, i2]
+    FR = fixed_points.right[r, i2]
+
+    ACU = AC[l, i2]
+    ACD = AC[l, i2 + 1]'
+
+    ARU = tuple((AR[i, i2] for i in (l + 1):r)...)
+    ARD = tuple((AR[i, i2 + 1]' for i in (l + 1):r)...)
+
+    return _contractall(FL, FR, ACU, ARU, ACD, ARD, network[i1, i2])
+end
+
+@generated function _contractall(
+    FL,
+    FR,
+    ACU::T1,
+    ARU::NTuple{N,T1},
+    ACD::T2,
+    ARD::NTuple{N,T2},
+    MS::AbstractArray{<:AbsTen{0}},
+) where {N,T1,T2}
+    symb = (s, i) -> Symbol("$(s)_$i")
+
+    e_ARU = [
+        Expr(:ref, Expr(:ref, :ARU, i), symb(:n, i + 1), symb(:u, i + 1), symb(:u, i)) for
+        i in 1:N
+    ]
+    e_ARD = [
+        Expr(:ref, Expr(:ref, :ARD, i), symb(:d, i + 1), symb(:d, i), symb(:s, i + 1)) for
+        i in 1:N
+    ]
+
+    e_MS = [
+        Expr(
+            :ref, Expr(:ref, :MS, i), symb(:h, i), symb(:s, i), symb(:h, i - 1), symb(:n, i)
+        ) for i in 1:(N + 1)
+    ]
+
+    e_ACU = Expr(:ref, :ACU, symb(:n, 1), symb(:u, 1), symb(:u, 0))
+    e_ACD = Expr(:ref, :ACD, symb(:d, 1), symb(:d, 0), symb(:s, 1))
+    e_FL = Expr(:ref, :FL, symb(:h, 0), symb(:u, 0), symb(:d, 0))
+    e_FR = Expr(:ref, :FR, symb(:h, N + 1), symb(:u, N + 1), symb(:d, N + 1))
+
+    e_einsum = Expr(:call, :*, e_FL, e_FR, e_ACU, e_ACD, e_MS..., e_ARU..., e_ARD...)
+
+    quote
+        # @tensoropt rv = scalar($e_einsum)
+        @tensoropt rv = $e_einsum
     end
 end

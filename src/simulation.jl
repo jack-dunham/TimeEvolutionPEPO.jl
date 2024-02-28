@@ -146,7 +146,7 @@ function simulate!(callback, sim::Simulation)
 
         method.verbose && @info "Steady state convergence: $tol after $numiter iterations."
 
-        info.error = tol
+        info.convergence = tol
         info.iterations = numiter
 
         # User specified function for post-step processing
@@ -223,7 +223,7 @@ function negativityhook!(sim::Simulation)
 
     obs_env = newcontraction(alg, trace(pepo).data)
 
-    run!(obs_env)
+    runcontraction!(obs_env)
 
     normalize!(pepo, obs_env.runtime)
 

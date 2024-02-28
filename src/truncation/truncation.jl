@@ -92,12 +92,12 @@ newtruncators(st::SimpleUpdateState) = st
 
 function renormalize!(env::InfiniteContraction, network)
     ITC.recycle!(env, network)
-    ITC.run!(env)
+    ITC.runcontraction!(env)
     return env
 end
 function renormalize!(env::InfiniteContraction)
     ITC.reset!(env)
-    ITC.run!(env)
+    ITC.runcontraction!(env)
     return env
 end
 
