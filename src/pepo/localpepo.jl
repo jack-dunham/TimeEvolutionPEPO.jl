@@ -5,7 +5,7 @@ mutable struct LocalUpdatablePEPO{G,PType,CType} <: AbstractUpdatablePEPO
     isevolved::Bool
 end
 
-currentbond(p::LocalUpdatablePEPO) = p.bond.x::Bond
+currentbond(p::LocalUpdatablePEPO) = p.bond::Bond
 function setcurrentbond!(p::LocalUpdatablePEPO, bond::Bond)
     p.bond = bond
     return p
