@@ -85,7 +85,7 @@ end
 
 # Single site update step
 function quickupdate!(
-    pepo::GlobalUpdatablePEPO, truncator; gauge=false, mcf=true, xi=Inf
+    pepo::GlobalUpdatablePEPO, truncator; gauge=true, mcf=false, xi=Inf
 )
     onlybond = getbonds(pepo)[1, 1]
 
@@ -97,10 +97,6 @@ function quickupdate!(
 
     renormalize!(truncator)
 
-    if mcf
-        minimalcanonicalform!(src_site)
-    end
-
     iso = isometries(pepo, truncator, onlybond; gauge=gauge, xi=xi, rankreduce=false)
 
     setweights!(pepo, normalize(iso.s), onlybond)
@@ -108,9 +104,9 @@ function quickupdate!(
     temp = partialtruncate(src_site, iso)
     rv = partialtruncate(iso, temp)
 
-    # if mcf
-    #     minimalcanonicalform!(rv)
-    # end
+    if mcf
+        minimalcanonicalform!(rv)
+    end
 
     copy!(dst_site, rv)
 
@@ -132,7 +128,7 @@ function updatestep!(pepo::GlobalUpdatablePEPO, truncator, stepper; truncalg, re
     pepo = evolve!(pepo, stepper)
 
     if size(bonds, 1) == 1
-        quickupdate!(pepo, truncator)
+        quickupdate!(pepo, truncator; gauge=truncalg.gauge, xi=truncalg.ξ)
     else
         interpepo = copyevolved(pepo)
 
