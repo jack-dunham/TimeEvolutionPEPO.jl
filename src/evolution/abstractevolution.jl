@@ -70,7 +70,9 @@ function applystepper!(pepo::GlobalUpdatablePEPO, stepper::GlobalStepper)
     # pin = getstate(pepo)
     # pev = getevolved(pepo)
 
-    broadcast(latticetensors(pepo), evolvedtensors(pepo), currentstepper(stepper)) do pin, pev, mpo
+    broadcast(
+        latticetensors(pepo), evolvedtensors(pepo), currentstepper(stepper)
+    ) do pin, pev, mpo
         # mpo = currentstepper(op)
         @tensoropt begin
             pout[ok ob; e ee s w ww n] := mpo[ok ob ik ib; ee ww] * pin[ik ib; e s w n]
