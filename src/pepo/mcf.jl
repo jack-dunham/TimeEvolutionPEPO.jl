@@ -1,4 +1,4 @@
-function minimalcanonicalform!(tensor::AbsTen{2,4}; tol=1e-12, maxiter=10000)
+function minimalcanonicalform!(tensor::AbsTen{2,4}; tol=1e-6, maxiter=1000)
     hor = id(domain(tensor)[1])
     ver = id(domain(tensor)[2])
     T = deepcopy(tensor)
