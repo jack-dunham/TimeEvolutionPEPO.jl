@@ -115,6 +115,8 @@ function wtg!(
 
     # normalize!(st)
 
+    st = st / tr(st)
+
     println(convert(Array, st))
 
     # Test if the metric is gauged correctly.

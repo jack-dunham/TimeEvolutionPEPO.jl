@@ -84,9 +84,7 @@ function trotterstep!(pepo, truncator, stepper; reverse, kwargs...)
 end
 
 # Single site update step
-function quickupdate!(
-    pepo::GlobalUpdatablePEPO, truncator; gauge=true, mcf=false, xi=Inf
-)
+function quickupdate!(pepo::GlobalUpdatablePEPO, truncator; gauge=true, mcf=true, xi=Inf)
     onlybond = getbonds(pepo)[1, 1]
 
     src_pepo = evolvedtensors(pepo)
@@ -99,7 +97,7 @@ function quickupdate!(
 
     iso = isometries(pepo, truncator, onlybond; gauge=gauge, xi=xi, rankreduce=false)
 
-    setweights!(pepo, normalize(iso.s), onlybond)
+    setweights!(pepo, iso.s, onlybond)
 
     temp = partialtruncate(src_site, iso)
     rv = partialtruncate(iso, temp)
@@ -144,7 +142,7 @@ function updatestep!(pepo::GlobalUpdatablePEPO, truncator, stepper; truncalg, re
 
                 iso = isometries(interpepo, truncator, bond, truncalg)
 
-                setweights!(pepo, normalize(iso.s), bond)
+                setweights!(pepo,iso.s, bond)
 
                 interstate = evolvedtensors(interpepo)
 
@@ -209,15 +207,10 @@ function updatestep!(pepo::LocalUpdatablePEPO, truncator, map; reverse=false, kw
     for col in eachcol(bonds)
         for bond in col
 
-            # truncator = renormalize(getstate(pepo), truncator)
+            # truncator = renormalize(latticetensors(pepo), truncator)
             renormalize!(truncator)
             # Update the states lying on the bond
             updatebond!(pepo, truncator, map, bond; kwargs...)
-
-            hermitianize!(pepo)
-
-            # Quick normalization for algorithm stability. Does not ensure tr(ρ) = 1
-            quicknormalize!(pepo)
 
             if symmetric
                 deepcopysymmetric!(latticetensors(pepo))
@@ -228,6 +221,11 @@ function updatestep!(pepo::LocalUpdatablePEPO, truncator, map; reverse=false, kw
             break
         end
     end
+
+    # Quick normalization for algorithm stability. Does not ensure tr(ρ) = 1
+    quicknormalize!(pepo)
+
+    hermitianize!(pepo)
 
     return pepo
 end

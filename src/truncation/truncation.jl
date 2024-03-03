@@ -165,9 +165,9 @@ function _truncate!(pepo::LocalUpdatablePEPO, iso::TruncationIsometries)
     # Truncate the right site with an isometry on the left bond
     truncateto!(old_right, sqrt(iso.s) * iso.v, new_right)
 
-    setweights!(pepo, normalize(iso.s), bond)
+    setweights!(pepo, iso.s, bond)
 
-    @debug "" weight = normalize(iso.s)
+    @debug "" weight = iso.s
 
     return pepo
 end
