@@ -19,7 +19,8 @@ getbonds(pepo::AbstractPEPO, args...) = getbonds(latticetensors(pepo), args...)
 
 function changeaxis(pepo::AbstractPEPO)
     pepo_permuted = broadcast(latticetensors(pepo)) do tensor
-        permute(tensor, (1, 2), (4, 3, 6, 5))
+        pten = permute(tensor, ((1, 2), (4, 3, 6, 5)); copy=true)
+        return pten
     end
     return PEPO(permutedims(pepo_permuted), changeaxis(getweights(pepo)))
 end
