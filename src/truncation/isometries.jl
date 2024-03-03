@@ -20,7 +20,9 @@ function isometries(pepo, environment, bond; D=bondspace(pepo, bond), rankreduce
         tmetric = metric(pepo, environment, bond)
         left0, right0 = isometryinit(tmetric)
     end
-    iso = metricoptimise(left0, right0, tmetric, truncspace(D); rankreduce=rankreduce, gauge=gauge, xi=xi)
+    iso = metricoptimise(
+        left0, right0, tmetric, truncspace(D); rankreduce=rankreduce, gauge=gauge, xi=xi
+    )
 
     # iso = TruncationIsometries(pepo, u, s, v)
     #
@@ -70,12 +72,32 @@ function rankreduce(left_site::AbstractTensorMap, right_site::AbstractTensorMap)
 end
 
 function leftrankreduce(p::AbsTen{2,4})
-    Q, R = leftorth(p, (1, 2, 4, 5, 6), (3,))
+    Q, R = try
+        leftorth(p, (1, 2, 4, 5, 6), (3,); alg=Polar())
+    catch e
+        if e isa AssertionError && e.msg == "V ≅ domain(t)"
+            @error """
+            potential bad choice of bond dimension sectors; try different sectors or
+            setting `rankreduce=false` if you insist on these sectors
+            """
+        end
+        rethrow()
+    end
     P = permute(Q, ((1, 2), (6, 3, 4, 5)))
     return P, R
 end
 function rightrankreduce(p::AbsTen{2,4})
-    L, Q = rightorth(p, (5,), (1, 2, 3, 4, 6))
+    L, Q = try
+        rightorth(p, (5,), (1, 2, 3, 4, 6); alg=Polar())
+    catch e
+        if e isa AssertionError && e.msg == "V ≅ domain(t)"
+            @error """
+            potential bad choice of bond dimension sectors; try different sectors or
+            setting `rankreduce=false` if you insist on these sectors
+            """
+        end
+        rethrow()
+    end
     P = permute(Q, ((2, 3), (4, 5, 1, 6)))
     return L, P
 end
@@ -97,12 +119,23 @@ end
 function isometryinit(metric::AbsTen{2,2})
     η_left = domain(metric)[1]      # Upper left index
     η_right = codomain(metric)[1]   # Upper right index
+    
+    left = id(η_left)
+    right = id(η_right)
+    normalize!(left)
+    normalize!(right)
 
-    # left = id(η_left)
-    # right = id(η_right)
+    # initmat = TensorMap(randn, eltype(metric), η_left, η_right)
+    # normalize!(initmat)
+    # u, s, v = tsvd!(initmat; alg=TensorKit.SVD())
+    # left = u * sqrt(s)
+    # right = sqrt(s) * v
 
-    left = TensorMap(randn, eltype(metric), η_left, η_left)
-    right = TensorMap(randn, eltype(metric), η_right, η_right)
+    # left = TensorMap(randn, eltype(metric), η_left, η_left)
+    # right = TensorMap(randn, eltype(metric), η_right, η_right)
+
+    # normalize!(left)
+    # normalize!(right)
 
     return left, right
 end
@@ -147,9 +180,9 @@ function metricoptimise(
 
     hermiticity = norm(Y - Y')
 
-    htol = 1e-10
+    # htol = 1e-10
     # htol = 0.0 # force SU
-    # htol = Inf # force update
+    htol = Inf # force update
 
     hermiticity > htol &&
         @warn "Metric not hermitian! non-hermiticity:  $hermiticity, tolerance $htol"
@@ -170,7 +203,6 @@ function metricoptimise(
 
     # This is type unstable and making things slow
     # Y, err = posapprox(Y)
-
     # @info "Positive approximation error: $err"
 
     # Construct the cost function to measure convergence.
@@ -178,12 +210,16 @@ function metricoptimise(
     cf = (x, y) -> new_costfunc(x, y, Y, LR0)
 
     F0 = scalar(LR0' * Y * LR0)
-    @debug "Minimal tolerance: $(cf(left , right)). Normalisation check: $F0"
+    @debug "Minimal infidelity: $(cf(left , right)). Normalisation check: $F0"
 
     # Proceed with metric optimisation.
     u, s, v = optiso(cf, left, right, Y, trunc, left0, right0; kwargs...)
 
+    s = s / tr(s)
+
     iso = TruncationIsometries(metric, u, s, v)
+
+    permute!(metric, Y, ((4, 1), (3, 2)))
 
     wtg!(iso, metric, Val(gauge))
     if xi < Inf
@@ -220,7 +256,13 @@ function optiso(
 
     Y_LR = Y * LR0
 
-    u_su, s_su, v_su = tsvd(left0 * right0; trunc=trunc)
+    u_su, s_su, v_su = try
+        tsvd(left0 * right0; trunc=trunc)
+    catch e
+        @warn "gesdd failed; trying gesvd:"
+        tsvd(left0 * right0; trunc=trunc, alg=TensorKit.SVD())
+    end
+
     @debug "Simple update error: $(cf(u_su * sqrt(s_su), sqrt(s_su) * v_su))"
 
     # Perform EAT if we want to.
@@ -231,7 +273,16 @@ function optiso(
     end
 
     # Initialise isometries for optimisation.
-    u0, s0, Mb0 = tsvd(Ma0 * Mb0; trunc=trunc)
+    u0, s0, Mb0 = try
+        tsvd(Ma0 * Mb0; trunc=trunc)
+    catch e
+        if e isa LAPACKException
+            @warn "gesdd failed; trying gesvd:"
+            tsvd(Ma0 * Mb0; trunc=trunc, alg=TensorKit.SVD())
+        else
+            rethrow()
+        end
+    end
 
     ϵ0 = cf(u0 * sqrt(s0), sqrt(s0) * Mb0)
     @debug "Initial (post optional EAT) error: $ϵ0"
@@ -248,7 +299,8 @@ function optiso(
     δϵ = 1.0
     ϵ = ϵ0
     print("Optimising isometries: [")
-    while !(counter > maxiter || δϵ < 10 * eps())
+    while !(counter > maxiter || δϵ < 1e-6)
+        # while !(counter > maxiter || δϵ < 10 * eps())
         s_old = s
 
         ϵ_old = ϵ
@@ -270,7 +322,7 @@ function optiso(
         # calculate convergence measure
         ϵ = norm(s - s_old)
         # Calculate truncation error (this is slow)
-        ϵ = cf(u * sqrt(s), sqrt(s) * Mb)
+        # ϵ = cf(u * sqrt(s), sqrt(s) * Mb)
 
         # Calculate convergence measure.
         δϵ = abs(ϵ - ϵ_old)
@@ -285,23 +337,32 @@ function optiso(
     @debug "Post-optimisation error: $ϵ"
     # Return new isometries for transformation to the WTG
     if ϵ0 < ϵ
-        @info "Isometries could not be improved from a tolerance of $ϵ0 after $counter iterations"
+        @info "Isometries could not be improved from an infidelity of $ϵ0 after $counter iterations"
         return u0, s0, Mb0
     else
-        @info "Isometries optimised to a tolerance of: $ϵ from $ϵ0 after $counter iterations."
+        @info "Isometries optimised to an infidelity of: $ϵ from $ϵ0 after $counter iterations."
         return u, s, Mb
     end
 end
 
 function optsingleiso(id_Mb, Y, Y_LR)
+
     # temp = id_Mb' * Y
 
     # slow bit
     g = id_Mb' * Y * id_Mb
+
+    # See docs for `pinv`
+    rtol = sqrt(eps(real(float(oneunit(eltype(g))))))
     #
     j = id_Mb' * Y_LR
 
-    Ma_max = pinv(g; rtol=1e-7) * j
+    Ma_max = try
+        pinv(g; rtol=rtol) * j
+    catch e
+        @error "Failed to invert:" g
+        throw(e)
+    end
 
     # ϵ_j = scalar(Ma_max' * j)
     # ϵ = scalar(Ma_max' * g * Ma_max) - ϵ_j - ϵ_j' + ϵ0
