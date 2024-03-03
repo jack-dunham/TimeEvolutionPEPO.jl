@@ -187,22 +187,25 @@ function testthermal(D)
     return sim.output
 end
 function measurehook!(sim::Simulation, A=PAULI[1])
-
     pepo = getpepo(sim)
 
     alg = VUMPS(; maxiter=200, bonddim=16, verbose=true)
 
     dm = DensityMatrix(pepo, alg)
-     
+
     rhos = map(ind -> ReducedDensityMatrix(dm, ind), uniqueindices(pepo))
 
     expt = map(x -> expval(x, A), rhos)
 
-    return expt[1], expt[2]
+    if length(expt) == 2
+        return expt[1], expt[2]
+    else
+        return expt[1], expt[1]
+    end
 end
 
 function measurehook!(output::Tuple, args...)
-    f = sim -> begin 
+    f = sim -> begin
         exp1, exp2 = measurehook!(sim, args...)
         push!(output[1], exp1)
         push!(output[2], exp2)
@@ -210,8 +213,14 @@ function measurehook!(output::Tuple, args...)
     end
 end
 
-errorhook!(output::AbstractVector) = sim -> push!(output, sim.info.error)
-
+function errorhook!(output)
+    f = sim -> begin 
+        println(getweights(getpepo(sim)).horizontal[1,1])
+        push!(output[1], sim.info.convergence)
+        push!(output[2], sim.info.convergence)
+    end
+    return f
+end
 function negativityhook!(sim::Simulation)
     # if sim.info.iterations < 1
     #     return sim
