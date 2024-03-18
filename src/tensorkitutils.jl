@@ -82,10 +82,11 @@ function contractphysical(tsrc::AbstractTensorMap{S,2,4}) where {S}
     tdst = similar(tsrc, one(S), domain(tsrc))
     return contractphysical!(tdst, tsrc)
 end
-function contractphysical(tsrc_1::AbstractTensorMap{S, 2,4}, tsrc_2::AbstractTensorMap{S, 4,2}) where {S}
-    
-    DomType = ProductSpace{S, 8}
-    
+function contractphysical(
+    tsrc_1::AbstractTensorMap{S,2,4}, tsrc_2::AbstractTensorMap{S,4,2}
+) where {S}
+    DomType = ProductSpace{S,8}
+
     outdom = DomType(map((x, y) -> x * y', domain(tsrc_1), codomain(tsrc_2)))
     out = similar(tsrc_1, one(S), outdom)
 
@@ -100,7 +101,7 @@ function contractphysical!(tdst::AbsTen{0,4}, tsrc::AbsTen{2,4})
 end
 
 function mergevirtual(t::AbstractTensorMap{S,0,8}) where {S}
-    DomType = ProductSpace{S, 4}
+    DomType = ProductSpace{S,4}
 
     outdom = DomType(map(i -> fuse(domain(t, i) * domain(t, i + 1)), 1:2:8))
 
@@ -119,16 +120,26 @@ function hermitianize!(t::AbsTen{2,4})
     return t
 end
 
-function posapprox(t::AbsTen{N,N}; tol=10.0 * eps()) where {N}
-    D, V = eigh(t)
-
-    for (_, v) in blocks(D)
-        v[v .< tol] .= zero(scalartype(t))
+function posapprox!(t::AbsTen{N,N}; tol=1e3 * eps(), verbose=true) where {N}
+    if verbose
+        told = deepcopy(t)
     end
 
-    rv = V * D * V'
+    D, V = eigh!(t)
 
-    err = norm(t - rv)
+    for (_, v) in blocks(D)
+        T = scalartype(D)
+        @assert T <: Real
+        v[v .< tol] .= zero(T)
+    end
 
-    return V * D * V', err
+    copy!(t, V * D * V')
+
+    if verbose
+        normalize!(told)
+        err = norm(told - normalize(t))
+        @info "positive approximation error $err from tolerance $tol"
+    end
+
+    return t
 end
