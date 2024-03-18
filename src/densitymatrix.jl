@@ -219,7 +219,7 @@ Calculate the two-point correlator of `rho` between observables `A1` and `A2` on
 end `i2` respectively.
 """
 function correlator(rho::DensityMatrix, A1, i1, A2, i2)
-    dm = ReducedDensityMatrix(rho, A1, A2; inds=(i1, i2))
+    dm = ReducedDensityMatrix(rho, i1, i2)
     return expval(dm, A1, A2)
 end
 
