@@ -12,13 +12,13 @@
               └─────────────────────┘
 
 All of this still obeys newly defined convention convention 
-                ┌───────────────┐          ┌─────┐
-                │               │     j◄───┤1   3│◄───i
-                │◄───3 i j 1◄───┤          │     │
-                │               │  =       │     │
-                │───►2 i'j'4───►│          │     │
-                │               │    j'───►│4   2├───►i' 
-                └───────────────┘          └─────┘
+                ┌───────────────┐             ┌─────┐
+                │               │     v  j◄───┤1   3│◄───i u
+                │◄───3 i j 1◄───┤             │     │
+                │               │  =          │     │
+                │───►2 i'j'4───►│             │     │
+                │               │    v' j'───►│4   2├───►i' u'
+                └───────────────┘             └─────┘
 
 s is the bond matrix (i think)
 
@@ -48,13 +48,13 @@ function wtg!(
     test=true,
 ) where {S<:IndexSpace}
     # who knows if this works
-    if test == true
-        skip = wtg_test(u0, s0, v0, Y)
-        if skip[1] && skip[2]
-            @info "Already in weighted trace gauge"
-            return u0, s0, v0
-        end
-    end
+    # if test == true
+    #     skip = wtg_test(u0, s0, v0, Y)
+    #     if skip[1] && skip[2]
+    #         @info "Already in weighted trace gauge"
+    #         return u0, s0, v0
+    #     end
+    # end
 
     u = u0 * sqrt(s0)
     v = sqrt(s0) * v0
@@ -62,7 +62,7 @@ function wtg!(
     s_vals = [convert(Array, s0)[i, i] for i in 1:dim(codomain(s0))]
     s_min = minimum(abs.(s_vals))
 
-    s_min < 1e-14 ? (@info "Skipped gauge fixing"; return u0, s0, v0) : nothing
+    s_min < 1e-10 ? (@info "Skipped gauge fixing"; return u0, s0, v0) : nothing
 
     @debug "Singular values: " s_vals
 
@@ -74,28 +74,39 @@ function wtg!(
 
     yf = permute(yiso, (2, 4), (3, 1))
 
-    yf = (1//2 * (yf + yf'))
+    yf = (0.5 * (yf + yf'))
 
-    # yf, err = posapprox(yf)
-    # @debug "WTG positive approx error: $err"
+    posapprox!(yf)
 
     permute!(yiso, yf, ((4, 1), (3, 2)))
 
     γm = permute(yiso, ((1, 4), (3, 2))) # Transform to matrix
     @tensor γN = γm[a b; a b] # Y_ji
     γm = γm / γN
-    # γold = γm
+
+    # val,vec=eigen(γm)
+    # println(val)
 
     # γmr = γm * (s ⊗ permute(s', (2,), (1,)))
     ri = Tensor(randn, ComplexF64, domain(γm))
-    _, rs, _ = eigsolve(x -> γm * x, ri, 1, :LM; eager=true, ishermitian=false)
+    re, rs, _ = eigsolve(x -> γm * x, ri, 1, :LM; eager=true, ishermitian=false)
 
     li = TensorMap(randn, ComplexF64, one(codomain(γm)), codomain(γm))
     # γml = (s ⊗ permute(s', (2,), (1,))) * γm
-    _, ls, _ = eigsolve(x -> x * γm, li, 1, :LM; eager=true, ishermitian=false)
+    le, ls, _ = eigsolve(x -> x * γm, li, 1, :LM; eager=true, ishermitian=false)
+
+
+    # println("re: ", re)
+    # println("le: ", le)
 
     l0 = permute(ls[1], (2,), (1,))
     r0 = permute(rs[1], (1,), (2,))
+
+    println(norm(l0 - cj(l0')))
+    println(norm(r0 - cj(r0')))
+
+    # dl, ul = eigen!(0.5 * (l0 + cj(l0')))
+    # dr, ur = eigen!(0.5 * (r0 + cj(r0')))
 
     dl, ul = eigen!(l0)
     dr, ur = eigen!(r0)
@@ -104,18 +115,25 @@ function wtg!(
     sp = sqrt(dl) * ul' * ur * sqrt(dr)
     vl, st, vrt = tsvd!(sp)
 
-    # x = vl' * sqrt(dl) * ul' 
-    # y = ur * sqrt(dr) * vrt'
+    x = vl' * sqrt(dl) * ul'
+    y = ur * sqrt(dr) * vrt'
 
-    x = ul * 1 / sqrt(dl) * vl
-    y = vrt * 1 / sqrt(dr) * ur'
+    # x = ul * inv(sqrt(dl)) * vl
+    # y = vrt * inv(sqrt(dr)) * ur'
 
-    mul!(u0, u, x)
-    mul!(v0, y, v)
+    mul!(u0, u, inv(x))
+    mul!(v0, inv(y), v)
 
     # normalize!(st)
 
-    st = st / tr(st)
+    for (_, v) in blocks(st)
+        max = zero(scalartype(st))
+        vmax = maximum(abs.(v))
+        if vmax > max
+            max = vmax
+        end
+        rmul!(st, 1/max)
+    end
 
     println(convert(Array, st))
 
@@ -192,11 +210,13 @@ function wtg_test(
         left = true
     else
         left = false
+        @warn "" diff =γl / γlN -  one(γl)
     end
     if isapprox(γr / γrN, one(γr))
         right = true
     else
         right = false
+        @warn "" diff = norm(γr / γrN -  one(γr))
     end
     return left, right
 end
