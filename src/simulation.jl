@@ -197,7 +197,7 @@ function measurehook!(sim::Simulation, A=PAULI[1])
 
     expt = map(x -> expval(x, A), rhos)
 
-    if length(expt) == 2
+    if length(expt) > 1
         return expt[1], expt[2]
     else
         return expt[1], expt[1]
@@ -230,15 +230,11 @@ function negativityhook!(sim::Simulation)
 
     alg = VUMPS(; maxiter=100, bonddim=10, verbose=true)
 
-    obs_env = newcontraction(alg, trace(pepo).data)
+    dm = DensityMatrix(pepo, alg)
+    rdm = PEPOKit.ReducedDensityMatrix(dm, (1,1),(3,1))
 
-    runcontraction!(obs_env)
 
-    normalize!(pepo, obs_env.runtime)
-
-    reduceddm = trace(latticetensors(pepo), obs_env, 1, 2)
-
-    return negativity(reduceddm)
+    return negativity(rdm)
 end
 function negativityhook!(output::AbstractVector)
     return sim -> push!(output, negativityhook!(sim))
