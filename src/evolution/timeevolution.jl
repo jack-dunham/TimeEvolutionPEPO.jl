@@ -84,7 +84,7 @@ function trotterstep!(pepo, truncator, stepper; reverse, kwargs...)
 end
 
 # Single site update step
-function quickupdate!(pepo::GlobalUpdatablePEPO, truncator; gauge=true, mcf=true, xi=Inf)
+function quickupdate!(pepo::GlobalUpdatablePEPO, truncator; gauge=false, mcf=false, xi=Inf)
     onlybond = getbonds(pepo)[1, 1]
 
     src_pepo = evolvedtensors(pepo)
@@ -142,7 +142,7 @@ function updatestep!(pepo::GlobalUpdatablePEPO, truncator, stepper; truncalg, re
 
                 iso = isometries(interpepo, truncator, bond, truncalg)
 
-                setweights!(pepo,iso.s, bond)
+                setweights!(pepo, iso.s, bond)
 
                 interstate = evolvedtensors(interpepo)
 
@@ -211,6 +211,10 @@ function updatestep!(pepo::LocalUpdatablePEPO, truncator, map; reverse=false, kw
             renormalize!(truncator)
             # Update the states lying on the bond
             updatebond!(pepo, truncator, map, bond; kwargs...)
+
+            quicknormalize!(pepo)
+
+            hermitianize!(pepo)
 
             if symmetric
                 deepcopysymmetric!(latticetensors(pepo))
