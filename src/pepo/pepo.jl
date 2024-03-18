@@ -53,6 +53,11 @@ function pepodata(a::Vector, east, south, west, north)
     data = @. pepositedata($Ref(an), dim(east), dim(south), dim(west), dim(north))
     return data
 end
+function pepodata(a::Matrix{<:Vector}, east, south, west, north)
+    an = normalize(a)
+    data = @. pepositedata(an, dim(east), dim(south), dim(west), dim(north))
+    return data
+end
 
 function pepodata(::ThermalState, east, south, west, north)
     data = @. pepositedata($Ref([0, 0, 0]), dim(east), dim(south), dim(west), dim(north))
