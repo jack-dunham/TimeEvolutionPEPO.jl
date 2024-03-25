@@ -84,7 +84,7 @@ function trotterstep!(pepo, truncator, stepper; reverse, kwargs...)
 end
 
 # Single site update step
-function quickupdate!(pepo::GlobalUpdatablePEPO, truncator; gauge=false, mcf=false, xi=Inf)
+function _ssquickupdate!(pepo::GlobalUpdatablePEPO, truncator; truncalg)
     onlybond = getbonds(pepo)[1, 1]
 
     src_pepo = evolvedtensors(pepo)
@@ -95,26 +95,110 @@ function quickupdate!(pepo::GlobalUpdatablePEPO, truncator; gauge=false, mcf=fal
 
     renormalize!(truncator)
 
-    iso = isometries(pepo, truncator, onlybond; gauge=gauge, xi=xi, rankreduce=false)
+    iso = isometries(pepo, truncator, onlybond, truncalg)
 
     setweights!(pepo, iso.s, onlybond)
 
     temp = partialtruncate(src_site, iso)
     rv = partialtruncate(iso, temp)
 
-    if mcf
-        minimalcanonicalform!(rv)
-    end
+    truncalg.gauge isa MCF && minimalcanonicalform!(rv)
 
     copy!(dst_site, rv)
 
     return pepo
 end
 
+function ssquickupdate!(pepo::GlobalUpdatablePEPO, truncator; truncalg)
+    onlybond = getbonds(pepo)[1, 1]
+
+    src_pepo = evolvedtensors(pepo)
+    dst_pepo = latticetensors(pepo)
+
+    src_site = src_pepo[1, 1]
+    dst_site = dst_pepo[1, 1]
+
+    D = bondspace(pepo, onlybond)
+
+    w = getweights(pepo)
+
+    src_site, _ = absorbweights!(src_site, deepcopy(src_site), w, onlybond; inverse=false)
+    P1, R, L, _ = rankreduce(src_site, src_site)
+
+    u,s,v = tsvd!(R * L; trunc=truncspace(D), alg=TensorKit.SVD())
+
+    maxnormalize!(s)
+
+    #
+    # temp = _partialtruncate(P1, u * sqrt(s))
+    #
+    # _, R, L, P2 = rankreduce(src_site, temp)
+    #
+    # u,s,v = tsvd!(R * L; trunc=truncspace(D))
+    #
+    # rv = _partialtruncate(sqrt(s) * v, P2)
+
+    l = pinv(R) * u * sqrt(s)
+    r = sqrt(s) * v * pinv(L)
+
+    src_site, _ = absorbweights!(src_site, deepcopy(src_site), w, onlybond; inverse=true)
+
+    truncateto!(dst_site, src_site, l, r)
+
+    # truncalg.gauge isa MCF && minimalcanonicalform!(dst_site)
+
+    setweights!(pepo, s, onlybond)
+
+    # copy!(dst_site, rv)
+
+    return pepo
+end
+
+function quickupdate!(pepo::GlobalUpdatablePEPO, truncator; truncalg)
+    # if truncalg.rankreduce == true
+    #     throw(ErrorException("Cannot do rank reduction when updating in parallel"))
+    # end
+
+    bonds = uniquebonds(pepo)
+
+    srcpepo = evolvedtensors(pepo)
+    dstpepo = latticetensors(pepo)
+
+    renormalize!(truncator)
+
+    infidelity = similar(bonds, Float64)
+
+    isoms = broadcast(enumerate(bonds)) do ebond
+        i, bond = ebond
+        iso, infid = isometries(pepo, truncator, bond, truncalg)
+
+        infidelity[i] = infid
+
+        setweights!(pepo, iso.s, bond)
+
+        return iso
+    end
+
+    us = map(iso -> iso.u, isoms)
+    vs = map(iso -> iso.v, circshift(isoms, (1, 0)))
+
+    foreach(dstpepo, srcpepo, us, vs) do dst, src, u, v
+        truncateto!(dst, src, u, v)
+    end
+
+    if issymmetric(pepo)
+        # If our unitcell is symmetric, then copy the updated bond to all
+        # other columns with an appropriate shift
+        deepcopysymmetric!(dstpepo)
+    end
+
+    truncalg.gauge isa MCF && minimalcanonicalform!(dstpepo)
+
+    return pepo, infidelity
+end
+
 function updatestep!(pepo::GlobalUpdatablePEPO, truncator, stepper; truncalg, reverse)
     # Evolve, all sites
-
-    symmetric = issymmetric(pepo)
 
     bonds = getbonds(pepo)
 
@@ -125,45 +209,44 @@ function updatestep!(pepo::GlobalUpdatablePEPO, truncator, stepper; truncalg, re
 
     pepo = evolve!(pepo, stepper)
 
-    if size(bonds, 1) == 1
-        quickupdate!(pepo, truncator; gauge=truncalg.gauge, xi=truncalg.ξ)
-    else
-        interpepo = copyevolved(pepo)
+    _, infid = quickupdate!(pepo, truncator; truncalg=truncalg)
 
-        # Calculate the truncator for the first time.
-        # truncator = renormalize(interpepo, truncator)
-
-        for col in eachcol(bonds)
-            for bond in col
-                # Tensors have changed bond dimensions so need to construct new env
-                truncator = renormalize(interpepo, truncator)
-
-                left_site, right_site = interpepo[bond]
-
-                iso = isometries(interpepo, truncator, bond, truncalg)
-
-                setweights!(pepo, iso.s, bond)
-
-                interstate = evolvedtensors(interpepo)
-
-                #  = A = ->  = A -
-                interstate[bond.left] = partialtruncate(left_site, iso)
-                #  = B = ->  - B =
-                interstate[bond.right] = partialtruncate(iso, right_site)
-
-                if symmetric
-                    # If our unitcell is symmetric, then copy the updated bond to all
-                    # other columns with an appropriate shift
-                    copysymmetric!(interstate)
-                end
-            end
-            if symmetric
-                break
-            end
-        end
-
-        truncateinto!(pepo, interpepo)
-    end
+    # symmetric = issymmetric(pepo)
+    #     interpepo = copyevolved(pepo)
+    #
+    #     # Calculate the truncator for the first time.
+    #     # truncator = renormalize(interpepo, truncator)
+    #
+    #     for col in eachcol(bonds)
+    #         for bond in col
+    #             # Tensors have changed bond dimensions so need to construct new env
+    #             truncator = renormalize(interpepo, truncator)
+    #
+    #             left_site, right_site = interpepo[bond]
+    #
+    #             iso = isometries(interpepo, truncator, bond, truncalg)
+    #
+    #             setweights!(pepo, iso.s, bond)
+    #
+    #             interstate = evolvedtensors(interpepo)
+    #
+    #             #  = A = ->  = A -
+    #             interstate[bond.left] = partialtruncate(left_site, iso)
+    #             #  = B = ->  - B =
+    #             interstate[bond.right] = partialtruncate(iso, right_site)
+    #
+    #             if symmetric
+    #                 # If our unitcell is symmetric, then copy the updated bond to all
+    #                 # other columns with an appropriate shift
+    #                 copysymmetric!(interstate)
+    #             end
+    #         end
+    #         if symmetric
+    #             break
+    #         end
+    #     end
+    #
+    #     truncateinto!(pepo, interpepo)
 
     quicknormalize!(pepo)
 
@@ -212,9 +295,9 @@ function updatestep!(pepo::LocalUpdatablePEPO, truncator, map; reverse=false, kw
             # Update the states lying on the bond
             updatebond!(pepo, truncator, map, bond; kwargs...)
 
-            quicknormalize!(pepo)
-
-            hermitianize!(pepo)
+            # quicknormalize!(pepo)
+            #
+            # hermitianize!(pepo)
 
             if symmetric
                 deepcopysymmetric!(latticetensors(pepo))
@@ -241,12 +324,12 @@ function updatebond!(
     evolve!(pepo, stepper, bond)
 
     # Find the truncation isometries.
-    isoms = isometries(pepo, truncator, bond, truncalg; kwargs...)
+    isoms, infid = isometries(pepo, truncator, bond, truncalg; kwargs...)
 
     # Truncate the pepo according to the truncation isometries
     truncate!(pepo, isoms)
 
-    return pepo
+    return pepo, infid
 end
 
 function evolve!(pepo::LocalUpdatablePEPO, stepper::LocalStepper, bond)
