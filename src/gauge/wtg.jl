@@ -24,47 +24,79 @@ s is the bond matrix (i think)
 
 =#
 
-# Vectorised form
-
-rescale!(S, ξ) = S .= rescale.(S, ξ)
-function rescale(s, ξ)
-    sclm = diagm([exp(-(i - 1) / ξ) for i in 1:dim(codomain(s))])
-    sclt = TensorMap(sclm, codomain(s), domain(s))
-    s = s * sclt
-    return s
+fixgauge!(iso, _, gauge::NoGauge) = iso
+function fixgauge!(iso, metric, gauge::WTG)
+    iso = wtg!(iso, metric; test=gauge.test, skiptol=gauge.skiptol, postol=gauge.postol)
+    return iso
 end
 
-wtg!(iso, metric, ::Val{false}) = iso, metric
-function wtg!(iso, metric, ::Val{true})
+function rescale!(iso, xi)
+    s = iso.s
+    D = dim(codomain(s))
+
+    prevu = iso.u * inv(sqrt(s))
+    prevv = inv(sqrt(s)) * iso.v
+
+    sclm = zeros(scalartype(s), D)
+
+    if iszero(xi)
+        sclm[begin] = 1
+    else
+        for i in eachindex(sclm)
+            p = -(i - 1) / xi
+            sclm[i] = exp(p)
+        end
+    end
+    sclt = TensorMap(diagm(sclm), codomain(s), domain(s))
+
+    si = s * sclt
+
+    maxnormalize!(si)
+
+    mul!(iso.u, prevu, sqrt(si))
+    mul!(iso.v, sqrt(si), prevv)
+
+    copy!(iso.s, si)
+
+    return iso
+end
+function rescale!(dst, s, ξ)
+    sclm = diagm([exp(-(i - 1) / ξ) for i in 1:dim(codomain(s))])
+    sclt = TensorMap(sclm, codomain(s), domain(s))
+
+    mul!(dst, s, sclt)
+
+    return dst
+end
+
+function wtg!(iso, metric; kwargs...)
     @info "Fixing to weighted trace gauge..."
-    return wtg!(iso.u, iso.s, iso.v, metric)
+    return wtg!(iso.u, iso.s, iso.v, metric; kwargs...)
 end
 
 function wtg!(
-    u0::TensorMap{S,1,1}, # u[x] 
-    s0::TensorMap{S,1,1}, # s[x]
-    v0::TensorMap{S,1,1}, # v[x+1]
+    u::TensorMap{S,1,1}, # u[x] 
+    s::TensorMap{S,1,1}, # s[x]
+    v::TensorMap{S,1,1}, # v[x+1]
     Y::TensorMap{S,2,2}; # γ[x]
     test=true,
+    skiptol=1e-10,
+    postol=eps(),
 ) where {S<:IndexSpace}
-    # who knows if this works
-    # if test == true
-    #     skip = wtg_test(u0, s0, v0, Y)
-    #     if skip[1] && skip[2]
-    #         @info "Already in weighted trace gauge"
-    #         return u0, s0, v0
-    #     end
-    # end
+    if test == true && verifywtg(u, s, v, Y; verbose=false)
+        @info "Already in weighted trace gauge"
+        return u, s, v
+    end
 
-    u = u0 * sqrt(s0)
-    v = sqrt(s0) * v0
+    svals = diag(convert(Array, s))
+    smin = minimum(abs.(svals))
 
-    s_vals = [convert(Array, s0)[i, i] for i in 1:dim(codomain(s0))]
-    s_min = minimum(abs.(s_vals))
+    if smin < skiptol
+        @info "Skipped gauge fixing"
+        return u, s, v
+    end
 
-    s_min < 1e-10 ? (@info "Skipped gauge fixing"; return u0, s0, v0) : nothing
-
-    @debug "Singular values: " s_vals
+    @debug "Singular values: " svals
 
     # @tensoropt γi[-1 -2; -3 -4] :=
     #     γ[1 2 3 4; 5 6 7 8] * u[5 6; -3] * v[-1; 1 2] * (u')[-2; 3 4] * (v')[7 8; -4]
@@ -76,7 +108,7 @@ function wtg!(
 
     yf = (0.5 * (yf + yf'))
 
-    posapprox!(yf)
+    posapprox!(yf; tol=postol)
 
     permute!(yiso, yf, ((4, 1), (3, 2)))
 
@@ -95,15 +127,14 @@ function wtg!(
     # γml = (s ⊗ permute(s', (2,), (1,))) * γm
     le, ls, _ = eigsolve(x -> x * γm, li, 1, :LM; eager=true, ishermitian=false)
 
-
     # println("re: ", re)
     # println("le: ", le)
 
     l0 = permute(ls[1], (2,), (1,))
     r0 = permute(rs[1], (1,), (2,))
 
-    println(norm(l0 - cj(l0')))
-    println(norm(r0 - cj(r0')))
+    @debug norm(l0 - cj(l0'))
+    @debug norm(r0 - cj(r0'))
 
     # dl, ul = eigen!(0.5 * (l0 + cj(l0')))
     # dr, ur = eigen!(0.5 * (r0 + cj(r0')))
@@ -121,51 +152,29 @@ function wtg!(
     # x = ul * inv(sqrt(dl)) * vl
     # y = vrt * inv(sqrt(dr)) * ur'
 
-    mul!(u0, u, inv(x))
-    mul!(v0, inv(y), v)
+    maxnormalize!(s)
 
-    # normalize!(st)
-
-    for (_, v) in blocks(st)
-        max = zero(scalartype(st))
-        vmax = maximum(abs.(v))
-        if vmax > max
-            max = vmax
-        end
-        rmul!(st, 1/max)
-    end
-
-    println(convert(Array, st))
+    utemp = u * inv(x)
+    vtemp = inv(y) * v
 
     # Test if the metric is gauged correctly.
-    if test == true
-        left, right = wtg_test(u0, st, v0, Y)
-        if !left
-            @warn "Left gauge condition was not met"
-        end
-        if !right
-            @warn "Right gauge condition was not met"
-        end
-    end
+    test && verifywtg(utemp, st, vtemp, Y)
 
+    copy!(s, st)
 
-    return u0, copy!(s0, st), v0
+    mul!(u, utemp, sqrt(s))
+    mul!(v, sqrt(s), vtemp)
 
-    #### this is an approach for complex space
-    # eigr = eigh(γm; sortby = x -> -abs(x))
-
-    # rδ = Tensor(zeros, ComplexF64, domain(eigr[1]))
-    # rδ[1] = 1
-
-    # r = eigr[2]*rδ 
-    ####
-
-    # @tensoropt Lm[-1 2; 3 -4] := γi[1 2; 3 4] * s[-1; 1] * (s')[4; -4]
+    return u, s, v
 end
 
 #TODO: Tidy this once I am sure it is working.
-function wtg_test(
-    u::TensorMap{S,1,1}, s::TensorMap{S,1,1}, v::TensorMap{S,1,1}, γ::TensorMap{S,2,2}
+function verifywtg(
+    u::TensorMap{S,1,1},
+    s::TensorMap{S,1,1},
+    v::TensorMap{S,1,1},
+    γ::TensorMap{S,2,2};
+    verbose=true,
 ) where {S<:IndexSpace}
     @tensoropt γin[-1 -2; -3 -4] :=
         γ[1 2; 3 4] * u[3; -3] * v[-1; 1] * (u')[-2; 2] * (v')[4; -4]
@@ -206,17 +215,24 @@ function wtg_test(
     # else
     #     right = false
     # end
-    if isapprox(γl / γlN, one(γl))
-        left = true
-    else
-        left = false
-        @warn "" diff =γl / γlN -  one(γl)
+
+    isgauged = true
+
+    if γl / γlN ≉ one(γl)
+        isgauged = false
+        if verbose
+            diff = norm(γl / γlN - one(γl))
+            @warn "Left gauge condition was not met: δ = $diff"
+        end
     end
-    if isapprox(γr / γrN, one(γr))
-        right = true
-    else
-        right = false
-        @warn "" diff = norm(γr / γrN -  one(γr))
+
+    if γr / γrN ≉ one(γr)
+        isgauged = false
+        if verbose
+            diff = norm(γr / γrN - one(γr))
+            @warn "Right gauge condition was not met: δ = $diff"
+        end
     end
-    return left, right
+
+    return isgauged
 end

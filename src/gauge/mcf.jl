@@ -1,3 +1,14 @@
+fixgauge!(x, gauge::MCF) = minimalcanonicalform!(x; gauge.tol, gauge.maxiter)
+
+function minimalcanonicalform!(lat::AbstractLattice; kwargs...)
+    if size(lat) > (1, 1)
+        throw(ArgumentError("Minimal canonical form for unit-cells of size > (1,1) not currently supported"))
+    else
+        minimalcanonicalform!.(lat)
+    end
+    return lat
+end
+
 function minimalcanonicalform!(tensor::AbsTen{2,4}; tol=1e-10, maxiter=1000)
     hor = id(domain(tensor)[1])
     ver = id(domain(tensor)[2])
