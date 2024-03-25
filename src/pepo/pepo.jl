@@ -48,14 +48,12 @@ function PEPO(
     )
 end
 
-function pepodata(a::Vector, east, south, west, north)
-    an = normalize(a)
-    data = @. pepositedata($Ref(an), dim(east), dim(south), dim(west), dim(north))
+function pepodata(a, east, south, west, north)
+    data = @. pepositedata($Ref(a), dim(east), dim(south), dim(west), dim(north))
     return data
 end
-function pepodata(a::Matrix{<:Vector}, east, south, west, north)
-    an = normalize(a)
-    data = @. pepositedata(an, dim(east), dim(south), dim(west), dim(north))
+function pepodata(a::AbstractMatrix, east, south, west, north)
+    data = @. pepositedata(a, dim(east), dim(south), dim(west), dim(north))
     return data
 end
 
