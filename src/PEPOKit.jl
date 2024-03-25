@@ -7,7 +7,6 @@ using Combinatorics
 using InfiniteTensorContractions
 using KrylovKit
 using LinearAlgebra
-using MacroTools
 using Random
 using TensorKit
 using TupleTools
@@ -36,6 +35,8 @@ export TEBD, DMPO
 export LocalUpdate, GlobalUpdate
 export SU, NTU, FET, VGU
 export Simulation, simulate!, simulate
+
+export EVB, DZM, WTG, MCF, NoGauge
 
 export dynamicalmpo, MPO
 
@@ -72,16 +73,19 @@ include("pepo/localpepo.jl")
 include("pepo/globalpepo.jl")
 
 ### OTHER
-include("pepo/mcf.jl")
 include("pepo/hilbertschmidt.jl")
 
 include("contract/vumps.jl")
 include("contract/ctmrg.jl")
 
-include("truncation/wtg.jl")
+include("gauge/abstractgauge.jl")
+include("gauge/wtg.jl")
+include("gauge/mcf.jl")
+
 include("truncation/clu/clu.jl")
 include("truncation/truncation.jl")
 include("truncation/isometries.jl")
+
 
 include("evolution/abstractevolution.jl")
 include("evolution/dynamicalmap.jl")

@@ -8,6 +8,8 @@ struct Simulation{E<:AbstractTimeEvolution,P<:AbstractPEPO,L<:AbstractTimeSteppe
 end
 
 function Base.show(io::IO, m::MIME"text/plain", sim::Simulation)
+    # pepo = getpepo(sim)
+    # map(b -> bondspace(pepo ,b ), uniquebonds(pepo)) |> display
     println("METHOD")
     println("≡≡≡≡≡≡")
     show(io, m, sim.method)
@@ -189,7 +191,7 @@ end
 function measurehook!(sim::Simulation, A=PAULI[1])
     pepo = getpepo(sim)
 
-    alg = VUMPS(; maxiter=200, bonddim=16, verbose=true)
+    alg =VUMPS(; tol=1e-10, maxiter=100, bonddim=16, verbose=true)
 
     dm = DensityMatrix(pepo, alg)
 
