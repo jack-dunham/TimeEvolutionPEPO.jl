@@ -153,5 +153,6 @@ function uniqueindices(L::Lattice)
         return CartesianIndices((Nx, Ny))
     end
 end
+uniquebonds(L; kwargs...) = getbonds(L, kwargs...)[uniqueindices(L)]
 
 contractphysical(l::AbstractLattice) = contractphysical.(l)
