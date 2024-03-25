@@ -83,3 +83,68 @@ function shownested(io::IO, m::MIME"text/plain", sim::T) where {T}
     end
     return nothing
 end
+showheader(x::DataType) = "$x"
+
+function safepinv(t::AbstractTensorMap; kwargs...)
+    rv = try
+        mpinv(t; alg=TensorKit.SDD(), kwargs...)
+    catch e
+        if e isa LAPACKException
+            mpinv(t; alg=TensorKit.SVD(), kwargs...)
+            @warn "Pseudo-inverse failed using `gesdd` trying `gesvd`..."
+        else
+            rethrow()
+        end
+    end
+    return rv
+end
+
+function mpinv(t::AbstractTensorMap; alg=TensorKit.SDD(), kwargs...)
+    calg = convert_svd_alg(alg)
+    if sectortype(t) === Trivial
+        return TensorMap(
+            mpinv(block(t, Trivial()); alg=calg, kwargs...), domain(t) ← codomain(t)
+        )
+    else
+        data = empty(t.data)
+        for (c, b) in blocks(t)
+            data[c] = mpinv(b; alg=calg, kwargs...)
+        end
+        return TensorMap(data, domain(t) ← codomain(t))
+    end
+end
+
+convert_svd_alg(::TensorKit.SDD) = LinearAlgebra.DivideAndConquer()
+convert_svd_alg(::TensorKit.SVD) = LinearAlgebra.QRIteration()
+convert_svd_alg(::LinearAlgebra.DivideAndConquer) = LinearAlgebra.DivideAndConquer()
+convert_svd_alg(::LinearAlgebra.QRIteration) = LinearAlgebra.QRIteration()
+
+function mpinv(
+    A::AbstractMatrix{T};
+    atol::Real=0.0,
+    rtol::Real=(eps(real(float(oneunit(T)))) * min(size(A)...)) * iszero(atol),
+    alg=LinearAlgebra.DivideAndConquer(),
+) where {T}
+    m, n = size(A)
+    Tout = typeof(zero(T) / sqrt(oneunit(T) + oneunit(T)))
+    if m == 0 || n == 0
+        return similar(A, Tout, (n, m))
+    end
+    if isdiag(A)
+        indA = diagind(A)
+        dA = view(A, indA)
+        maxabsA = maximum(abs, dA)
+        tol = max(rtol * maxabsA, atol)
+        B = fill!(similar(A, Tout, (n, m)), 0)
+        indB = diagind(B)
+        B[indB] .= (x -> abs(x) > tol ? pinv(x) : zero(x)).(dA)
+        return B
+    end
+    SVD = svd(A; alg=alg)
+    tol2 = max(rtol * maximum(SVD.S), atol)
+    Stype = eltype(SVD.S)
+    Sinv = fill!(similar(A, Stype, length(SVD.S)), 0)
+    index = SVD.S .> tol2
+    Sinv[index] .= pinv.(view(SVD.S, index))
+    return SVD.Vt' * (Diagonal(Sinv) * SVD.U')
+end

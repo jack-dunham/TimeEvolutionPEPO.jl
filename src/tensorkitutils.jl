@@ -120,7 +120,10 @@ function hermitianize!(t::AbsTen{2,4})
     return t
 end
 
-function posapprox!(t::AbsTen{N,N}; tol=1e3 * eps(), verbose=true) where {N}
+function posapprox!(t::AbsTen{N,N}; tol=1e3 * eps(), verbose=false) where {N}
+
+    tol ≥ -Inf || return t
+
     if verbose
         told = deepcopy(t)
     end
