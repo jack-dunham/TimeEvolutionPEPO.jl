@@ -1,3 +1,29 @@
+abstract type AbstractIsometryOptimisation{G<:Union{NoGauge,WTG}} end
+
+function Base.show(io::IO, m::MIME"text/plain", sim::AbstractIsometryOptimisation)
+    return shownested(io, m, sim)
+end
+
+@kwdef struct EVB{G} <: AbstractIsometryOptimisation{G}
+    maxiter::Int = 100
+    verbose::Bool = false
+    pinvtol::Float64 = sqrt(eps())
+    isotol::Float64 = 1e-8
+    randomness::Float64 = 1e-3
+    gauge::G = WTG()
+end
+
+@kwdef struct DZM{G} <: AbstractIsometryOptimisation{G}
+    maxiter::Int = 100
+    verbose::Bool = false
+    pinvtol::Float64 = sqrt(eps())
+    isotol::Float64 = 1e-8
+    randomness::Float64 = 0.0
+    EAT::Bool = true
+    check::Bool = false
+    gauge::G = NoGauge()
+end
+
 struct TruncationIsometries{T<:AbsTen{1,1}}
     u::T
     s::T
@@ -24,24 +50,30 @@ function Base.show(io::IO, m::MIME"text/plain", sim::AbstractTruncationScheme)
 end
 
 # TRUNCATION SCHEMES
-@kwdef mutable struct FET{BAlg<:AbstractBoundaryAlgorithm} <: AbstractTruncationScheme
-    gauge::Bool = true
+@kwdef mutable struct FET{
+    BAlg<:AbstractBoundaryAlgorithm,OAlg<:AbstractIsometryOptimisation,G<:Union{NoGauge,MCF}
+} <: AbstractTruncationScheme
     ξ::Float64 = Inf
-    rankreduce = true
+    rankreduce::Bool = true
+    optalg::OAlg = EVB()
+    gauge::G = NoGauge()
     const alg::BAlg
 end
 
 showheader(::Type{<:FET}) = "Full environment truncation (FET)"
 
-@kwdef mutable struct NTU <: AbstractTruncationScheme
-    gauge::Bool = false
+@kwdef mutable struct NTU{OAlg<:AbstractIsometryOptimisation,G<:Union{NoGauge,MCF}} <:
+                      AbstractTruncationScheme
     ξ::Float64 = Inf
-    rankreduce = true
+    rankreduce::Bool = true
+    optalg::OAlg = DZM()
+    gauge::G = NoGauge()
 end
 
 showheader(::Type{<:NTU}) = "Neighbourhood tensor update (NTU)"
 
-@kwdef mutable struct SU <: AbstractTruncationScheme
+@kwdef mutable struct SU{G<:Union{NoGauge,MCF}} <: AbstractTruncationScheme
+    gauge::G = NoGauge()
     ξ::Float64 = Inf
 end
 
@@ -159,11 +191,10 @@ function _truncate!(pepo::LocalUpdatablePEPO, iso::TruncationIsometries)
     new_left, new_right = evolvedpair(pepo)
     old_left, old_right = parentpair(pepo, bond)
 
-
     # Truncate the left site with an isometry on the right bond
-    truncateto!(old_left, new_left, iso.u * sqrt(iso.s))
+    truncateto!(old_left, new_left, iso.u)
     # Truncate the right site with an isometry on the left bond
-    truncateto!(old_right, sqrt(iso.s) * iso.v, new_right)
+    truncateto!(old_right, iso.v, new_right)
 
     setweights!(pepo, iso.s, bond)
 
@@ -172,8 +203,8 @@ function _truncate!(pepo::LocalUpdatablePEPO, iso::TruncationIsometries)
     return pepo
 end
 
-partialtruncate(site::AbsTen, iso) = _partialtruncate(site, iso.u * sqrt(iso.s))
-partialtruncate(iso, site::AbsTen) = _partialtruncate(sqrt(iso.s) * iso.v, site)
+partialtruncate(site::AbsTen, iso) = _partialtruncate(site, iso.u)
+partialtruncate(iso, site::AbsTen) = _partialtruncate(iso.v, site)
 
 function _partialtruncate(arg1, arg2)
     site_pt = similar_but_truncated(arg1, arg2)
@@ -198,14 +229,9 @@ end
 function _truncate!(pepo::GlobalUpdatablePEPO, iso::TruncationIsometries)
     @assert size(latticetensors(pepo)) == (1, 1)
 
-    # Absorb weights into the isometries `u`.
-    u = iso.u * sqrt(iso.s)
-
-    v = sqrt(iso.s) * iso.v
-
     # Truncate all bonds simultaneously.
 
-    _truncate!.(latticetensors(pepo), evolvedtensors(pepo), Ref(u), Ref(v))
+    _truncate!.(latticetensors(pepo), evolvedtensors(pepo), Ref(iso.u), Ref(iso.v))
 
     return pepo
 end
