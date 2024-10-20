@@ -1,5 +1,5 @@
 function approx_sum_as_exp(α, n; N=50)
-    f = N -> 1 / (N)^(α)
+    f = N -> 1 / (N + 1)^(α)
     F = zeros(Float64, N - n + 1, n)
 
     for r in axes(F, 1)
@@ -30,6 +30,11 @@ function approx_sum_as_exp(α, n; N=50)
     return sol, Λ
 end
 
-powerlaw(x; α=3) = 1 / (x)^(α)
+function plotapprox(α, n; N=50)
+    x,λ = approx_sum_as_exp(α, n; N=N)
+    return k -> sum(@. x * λ^k)
+end
+
+powerlaw(x; α=3) = 1 / (x + 1)^(α)
 
 

@@ -1,125 +1,446 @@
+# function autodiffoptimise(left, right, metric::AbsTen{2,2}; trunc, rankreduce, xi, optalg)
+#     gauge = optalg.gauge
+#
+#     if rankreduce
+#         left0 = left
+#         right0 = right
+#     else
+#         left0 = id(codomain(left))
+#         right0 = id(domain(right))
+#     end
+#
+#     LR0 = permute(left0 * right0, (1, 2), ())
+#
+#     Y = permute(metric, (2, 4), (3, 1))
+#
+#     F0 = scalar(LR0' * Y * LR0)
+#
+#     stablizemetric!(Y, F0)
+#
+#     infid = (u, v) -> 1.0 - _fidelity(u, v, Y, LR0; trunc=trunc)
+#
+#     # optimizer = LBFGS(4; maxiter=1000, gradtol=1e-4, verbosity=1)
+#     optimizer = LBFGS(4; gradtol=1e-8, maxiter=200, verbosity=1)
+#     # optimizer = ConjugateGradient(; maxiter=200, gradtol=1e-8, verbosity=1)
+#
+#     # Initialize
+#     u, s2, v = tsvd!(left0 * right0; trunc=trunc)
+#
+#     ut = u * sqrt(s2)
+#     vt = sqrt(s2) * v
+#
+#     s1old = id(domain(ut))
+#     s2old = id(domain(ut))
+#
+#     numiter = 0
+#
+#     f1old = Inf
+#
+#     while numiter < 10
+#         numiter += 1
+#
+#         x0 = ITC.randnt!(similar(ut))
+#
+#         Rm, _ = optimize(ut * s2, optimizer; inner=(_, x, y) -> real(dot(x, y))) do R0
+#             rv = withgradient(u -> infid(u, vt), R0)
+#             return rv.val, only(rv.grad)
+#         end
+#
+#         u, s1, v = safetsvd!(Rm; trunc=trunc)
+#
+#         # mul!(ut, u, v)
+#         mul!(ut, u, s1)
+#
+#         x0 = ITC.randnt!(similar(vt))
+#
+#         Rm, f1, _ = optimize(s1 * vt, optimizer; inner=(_, x, y) -> real(dot(x, y))) do R0
+#             rv = withgradient(v -> infid(ut, v), R0)
+#             return rv.val, only(rv.grad)
+#         end
+#
+#         u, s2, v = safetsvd!(Rm; trunc=trunc)
+#
+#         # mul!(vt, u, v)
+#         mul!(vt, s2, v)
+#
+#         ϵ1 = norm(normalize(s1) - normalize(s1old))
+#         ϵ2 = norm(normalize(s2) - normalize(s2old))
+#
+#         copy!(s1old, s1)
+#         copy!(s2old, s2)
+#
+#         ϵ = max(ϵ1, ϵ2)
+#
+#         ϵ = (f1 - f1old) / f1
+#
+#         f1old = f1
+#
+#         println(ϵ)
+#
+#         ϵ < 1e-3 && break
+#     end
+#
+#     # x0 = ITC.randnt!(similar(ut))
+#     # #
+#     # Rm, _ = optimize(ut * s2, optimizer; inner=(_, x, y) -> real(dot(x, y))) do R0
+#     #     rv = withgradient(u -> infid(u, vt), R0)
+#     #     return rv.val, only(rv.grad)
+#     # end
+#     #
+#     # u, s, v = safetsvd!(Rm)
+#     #
+#     # maxnormalize!(s)
+#     #
+#     # println(s)
+#
+#
+#     # l = u * sqrt(s) * v
+#     # r = vt' * v' * sqrt(s) * v
+#     #
+#     # copy!(vt, r')
+#     # iso = TruncationIsometries(l, s, vt)
+#
+#     u, s, v = safetsvd!(ut * vt; trunc=trunc)
+#     l = u * sqrt(s)
+#     r = sqrt(s) * v
+#
+#     maxnormalize!(s)
+#
+#
+#     println(s)
+#
+#
+#     iso = TruncationIsometries(l, s, r)
+#
+#     permute!(metric, Y, ((4, 1), (3, 2)))
+#
+#     fixgauge!(iso, metric, gauge)
+#     #
+#     # if xi < Inf
+#     #     rescale!(iso, xi)
+#     #     fixgauge!(iso, metric, gauge)
+#     # end
+#
+#     return iso, 0
+# end
+function autodiffoptimise(left, right, pair::Pair, environment, bond::Bond; 
+                          trunc, 
+                          rankreduce, 
+                          xi, optalg)
+    gauge = optalg.gauge
+
+    if rankreduce
+        left0 = left
+        right0 = right
+    else
+        left0 = id(codomain(left))
+        right0 = id(domain(right))
+    end
+
+    infid = ntu_total_infidelity(pair, environment, bond; trunc=trunc)
+    # optimizer = LBFGS(4; maxiter=1000, gradtol=1e-4, verbosity=1)
+    optimizer = LBFGS(4; gradtol=1e-8, maxiter=200, verbosity=2)
+    # optimizer = GradientDescent(; maxiter=200, gradtol=1e-8, verbosity=1)
+    # optimizer = ConjugateGradient(; maxiter=200, gradtol=1e-4, verbosity=2)
+
+    # Initialize
+    u, s2, v = tsvd!(left0 * right0; trunc=trunc)
+
+    ut = u * sqrt(s2)
+    vt = sqrt(s2) * v
+
+    x0 = ITC.randnt!(similar(ut * vt))
+
+
+    D = dim(codomain(s2))
+
+    sv = diagm([exp10(-i) for i in 0:(D - 1)])
+    
+    s2 = TensorMap(sv, codomain(s2), domain(s2))
+
+    x0 = convert(typeof(x0), u * s2 * v)
+
+    # Compile
+    @time withgradient(uv -> infid(uv), x0)
+
+    maxvec = x0
+    
+    rv, _  = optimize(x0, optimizer; inner=(_,x,y)->real(dot(x,y))) do R0
+        rv = withgradient(uv -> infid(uv), R0)
+        return rv.val, only(rv.grad)
+    end
+    copy!(maxvec, rv)
+
+    u, s, v = safetsvd!(maxvec; trunc=trunc)
+    l = u * sqrt(s)
+    r = sqrt(s) * v
+
+    maxnormalize!(s)
+    
+    iso = TruncationIsometries(l, s, r)
+
+
+    yiso = ntu_total_wtg(pair, environment, bond, iso)
+
+    # println(iso.s)
+
+    wtg2!(iso.u,iso.s,iso.v, yiso)
+
+    println(iso.s)
+
+    return iso, 0
+end
+
+function autodiffoptimise(left, right, metric::AbsTen{2,2}; trunc, rankreduce, xi, optalg)
+    gauge = optalg.gauge
+
+    if rankreduce
+        left0 = left
+        right0 = right
+    else
+        left0 = id(codomain(left))
+        right0 = id(domain(right))
+    end
+
+    LR0 = permute(left0 * right0, (1, 2), ())
+
+    Y = permute(metric, (2, 4), (3, 1))
+
+    F0 = scalar(LR0' * Y * LR0)
+
+    stablizemetric!(Y, F0)
+
+    infid = uv -> 1.0 - _fidelity(uv, Y, LR0; trunc=trunc)
+
+    # optimizer = LBFGS(4; maxiter=1000, gradtol=1e-4, verbosity=1)
+    optimizer = LBFGS(4; gradtol=1e-8, maxiter=200, verbosity=1)
+    # optimizer = GradientDescent(; maxiter=200, gradtol=1e-8, verbosity=1)
+    # optimizer = ConjugateGradient(; maxiter=200, gradtol=1e-8, verbosity=1)
+
+    # Initialize
+    u, s2, v = tsvd!(left0 * right0; trunc=trunc)
+
+    ut = u * sqrt(s2)
+    vt = sqrt(s2) * v
+
+    s1old = id(domain(ut))
+    s2old = id(domain(ut))
+
+    numiter = 0
+
+    f1old = Inf
+
+    x0 = ITC.randnt!(similar(ut * vt))
+
+
+    D = dim(codomain(s2))
+
+    sv = diagm([exp10(-i) for i in 0:(D - 1)])
+    
+    s2 = TensorMap(sv, codomain(s2), domain(s2))
+
+    x0 = convert(typeof(x0), u * s2 * v)
+
+    Rm, _ = optimize(x0, optimizer; inner=(_,x,y)->real(dot(x,y))) do R0
+        rv = withgradient(uv -> infid(uv), R0)
+        return rv.val, only(rv.grad)
+    end
+
+    u, s, v = safetsvd!(Rm; trunc=trunc)
+    l = u * sqrt(s)
+    r = sqrt(s) * v
+
+    maxnormalize!(s)
+
+    
+
+    iso = TruncationIsometries(l, s, r)
+
+    permute!(metric, Y, ((4, 1), (3, 2)))
+
+    fixgauge!(iso, metric, gauge)
+    #
+    # if xi < Inf
+    #     rescale!(iso, xi)
+    #     fixgauge!(iso, metric, gauge)
+    # end
+
+    println(iso.s)
+
+    return iso, 0
+end
+function my_inner(_, x, y)
+    x1, x2 = x
+    y1, y2 = y
+
+    xx = dot(x[1], y[1])
+    yy = dot(x[2], y[2])
+
+    return real(xx + yy)
+end
+
+function my_retract(x, eta, alpha)
+    x1, x2 = x
+
+    y1 = similar(x1)
+    y2 = similar(x2)
+
+    y1 = x1 + alpha * eta[1]
+    y2 = x2 + alpha * eta[2]
+
+    return (y1, y2)
+end
+
+function my_scale!(x, beta)
+    rmul!(x[1], beta)
+    rmul!(x[2], beta)
+    return x
+end
+
+function my_add!(x, y, beta)
+    LinearAlgebra.axpy!(beta, x[1], y[1])
+    LinearAlgebra.axpy!(beta, x[2], y[2])
+    return x
+end
+
+function _fidelity(AB, Y, LR; trunc=trunc)
+
+    u, s, v = tsvd(AB; trunc=trunc)
+
+    AB = permute(u * s * v, (1, 2), ())
+
+    f = tr(AB' * Y * LR) * tr(LR' * Y * AB) / tr(AB' * Y * AB)
+
+    # @tensor f[x;y] := AB[x y]
+    ignore_derivatives() do
+        @debug "imaginary part of fidelity: $(imag(f))"
+    end
+
+    return real(f)
+end
+
 function isometries(pepo::AbstractPEPO, environment, bond::Bond, truncalg::Union{FET,NTU})
+    return _generic_environment_isometries(
+        pepo, environment, bond, truncalg; parallel=false
+    )
+end
+function parallelisometries(
+    buffer, environment, bond::Bond, truncalg::Union{FET,NTU}; kwargs...
+)
+    return parallelisometries(buffer[bond],
+        pepo, environment, bond, truncalg; parallel=true, kwargs...
+    )
+end
+function parallelisometries(
+    pair::Pair, environment, bond::Bond, truncalg::Union{FET,NTU}; kwargs...
+)
+    return _generic_environment_isometries(
+        pair, environment, bond, truncalg; parallel=true, kwargs...
+    )
+end
+function _generic_environment_isometries(
+    pair, environment, bond, truncalg; parallel, kwargs...
+)
     rankreduce = truncalg.rankreduce
     optalg = truncalg.optalg
     xi = truncalg.ξ
 
-    iso, infid = isometries(pepo, environment, bond;  optalg=optalg, rankreduce=rankreduce, xi=xi)
-
-    return iso, infid
-end
-
-function isometries(pepo::AbstractPEPO, ::SimpleUpdateState, bond::Bond, truncalg::SU)
-    absorbweights!(pepo, bond; inverse=false)
-    iso, infid = isometries(pepo, bond)
-    absorbweights!(pepo, bond; inverse=true)
-    return iso, infid
-end
-
-function isometries(pepo, environment, bond; D=bondspace(pepo, bond), rankreduce, optkwargs...)
-    if rankreduce
-        left0, right0 = rankreduce!(pepo, bond)
-        tmetric = metric(pepo, environment, bond)
-    else
-        tmetric = metric(pepo, environment, bond)
-        left0, right0 = isometryinit(tmetric, D)
-    end
-    iso, infid = metricoptimise(
-        left0,
-        right0,
-        tmetric;
-        trunc=truncspace(D),
-        rankreduce=rankreduce,
-        optkwargs...
+    iso, s, infid = single_bond_metric_isometries!(
+        pair,
+        environment,
+        bond;
+        parallel=parallel,
+        optalg=optalg,
+        doreduction=rankreduce,
+        xi=xi,
+        kwargs...,
     )
 
-    if pepo isa GlobalUpdatablePEPO && rankreduce
-        copy!(iso.u, pinv(left0) * iso.u)
-        copy!(iso.v, iso.v  * pinv(right0))
-    end
-
-    return iso, infid
-end
-function absorbweights!(pepo::LocalUpdatablePEPO, bond::Bond; kwargs...)
-    left, right = evolvedpair(pepo, bond)
-    return absorbweights!(left, right, getweights(pepo), bond; kwargs...)
-end
-function absorbweights!(pepo::GlobalUpdatablePEPO, ::Bond; kwargs...)
-
-    ev = evolvedtensors(pepo)
-
-    weights = getweights(pepo)
-
-    foreach(uniqueindices(pepo)) do ind
-        absorbweights!(ev[ind], weights, ind; kwargs...)
-    end
-
-    if issymmetric(pepo)
-        # If our unitcell is symmetric, then copy the updated bond to all
-        # other columns with an appropriate shift
-        deepcopysymmetric!(ev)
-    end
-    return pepo
+    return iso, s, infid
 end
 
-function absorbweights!(left, right, weights, bond; inverse=false)
-    lind = bond.left
-    rind = bond.right
-
-    ll = prevbond(bond)
-    rr = nextbond(bond)
-
-    dl = Bond(lind, lind + CartesianIndex(0, 1))
-    dr = Bond(rind, rind + CartesianIndex(0, 1))
-
-    ul = prevbond(dl)
-    ur = prevbond(dr)
-
-    if inverse
-        gw = x -> inv(sqrt(weights[x]))
+function single_bond_metric_isometries!(
+    pair,
+    environment,
+    bond;
+    D=bondspace(buffer, bond),
+    doreduction,
+    parallel,
+    optkwargs...,
+)
+    if doreduction
+        if parallel
+            pair, (u0, v0) = rankreduce(pair)
+        else
+            (u0, v0) = rankreduce!(pair)
+        end
     else
-        gw = x -> sqrt(weights[x])
+        _, (u0, v0) = rankreduce(pair)
+        u0 = one(u0)
+        v0 = one(v0)
+        # u0, v0 = isometryinit(truncmetric, D)
     end
 
-    sll = gw(ll)
-    srr = gw(rr)
+    truncmetric = metric(pair, environment, bond)
 
-    sdl = gw(dl)
-    sdr = gw(dr)
+    iso, infid = metricoptimise(
+        u0, v0, truncmetric; trunc=truncspace(D), doreduction=doreduction, optkwargs...
+    )
+    # iso, infid = autodiffoptimise(
+    #     u0, v0, truncmetric; trunc=truncspace(D), rankreduce=doreduction, optkwargs...
+    # )
+    # iso, infid = autodiffoptimise(
+    #     u0, v0,pair, environment, bond; trunc=truncspace(D), rankreduce=doreduction, optkwargs...
+    # )
 
-    sul = gw(ul)
-    sur = gw(ur)
-
-    newl = deepcopy(left)
-    newr = deepcopy(right)
-
-    @tensor begin
-        left[k b; e ss ww nn] = newl[k b; e s w n] * sdl[s; ss] * sll[ww; w] * sul[nn; n]
-        right[k b; ee ss w nn] = newr[k b; e s w n] * sdr[s; ss] * srr[e; ee] * sur[nn; n]
+    if parallel && doreduction
+        copy!(iso.u, pinv(u0) * iso.u)
+        copy!(iso.v, iso.v * pinv(v0))
     end
 
-    return left, right
+    return (iso.u, iso.v), iso.s, infid
 end
 
-function absorbweights!(site, weights, ind; inverse=false)
+function allisometries(pepo, truncator, truncalg; kwargs...)
+    buffer = currentbuffer(pepo)
 
-    d = Bond(ind, ind + CartesianIndex(0, 1))
-    u = prevbond(d)
+    infidelity = similar(buffer, Float64)
 
-    if inverse
-        gw = x -> inv(sqrt(weights[x]))
-    else
-        gw = x -> sqrt(weights[x])
+    xtrunc, ytrunc = truncator
+
+    xiso, xvals, _ = axialisometries(buffer, xtrunc, truncalg)
+
+    permbuffer = network(ytrunc)
+
+    yiso, yvals, _ = permutedims(transpose, axialisometries(permbuffer, ytrunc, truncalg))
+
+    isometries = Isometries(xiso, yiso)
+    weights = EdgeLattice(xvals, yvals)
+
+    return isometries, weights
+end
+
+function axialisometries(tensors, truncator, truncalg; axis=1, kwargs...)
+    lattice = currentbuffer(pepo)
+
+    infidelity = similar(lattice, Float64)
+
+    bonds = uniquebonds(tensors; axis=axis)
+
+    data = map(bonds) do bond
+        (u, v), s, infid = parallelisometries(tensors, truncator, truncalg, bond; kwargs...)
+
+        infidelity[first(bond)] = infid
+
+        return (u=u, v=v, s=s)
     end
 
-    sdl = gw(d)
+    uiso = map(data -> data.u, data)
+    viso = map(data -> data.v, circshift(data, (1, 0)))
 
-    sul = gw(u)
+    weights = map(data -> data.s, data)
 
-    @tensor begin
-        site[k b; e ss w nn] = deepcopy(site)[k b; e s w n] * sdl[s; ss] * sul[nn; n]
-    end
-
-    return site
+    return AxialIsometries(uiso, viso), weights, infidelity
 end
 
 # function absorball!(site, weights, ind; inverse=false)
@@ -150,115 +471,127 @@ end
 #     return site
 # end
 
-# Simple update
-function isometries(pepo::LocalUpdatablePEPO, bond; D=bondspace(pepo, bond))
-    left, right = rankreduce!(pepo, bond)
-
-    u, s, v, err = safetsvd!(left * right; trunc=truncspace(D))
-
-    maxnormalize!(s)
-
-    ui = u * sqrt(s)
-    vi = sqrt(s) * v
-
-    f = fidelity(ui, vi, evolvedpair(pepo)..., left, right)
-
-    iso = TruncationIsometries(pepo, ui, s, vi)
-
-    return iso, 1 - f
-end
-
-# Simple update
-function isometries(pepo::GlobalUpdatablePEPO, bond; D=bondspace(pepo, bond))
-    left, right = evolvedtensors(pepo)[bond]
-
-    P, u0, v0, Q = rankreduce(left, right)
-
-    u, s, v, err = safetsvd!(u0 * v0; trunc=truncspace(D))
-
-    maxnormalize!(s)
-    
-    li = u * sqrt(s)
-    ri = sqrt(s) * v
-
-    f = fidelity(li, ri, P, Q, u0, v0)
-
-    l =  pinv(u0) * li
-    r =  ri * pinv(v0)
-
-    iso = TruncationIsometries(pepo, l, s, r)
-
-    return iso, 1 - f
-end
-
 function fidelity(u, v, P, Q, u0, v0)
-    f0 = overlap(u0,v0,P,Q,u0,v0)
-    f = overlap(u,v,P,Q,u0,v0) * overlap(u0,v0,P,Q,u,v) / overlap(u,v,P,Q,u,v)
-    return real(f/f0)
+    f0 = overlap(u0, v0, P, Q, u0, v0)
+    f =
+        overlap(u, v, P, Q, u0, v0) * overlap(u0, v0, P, Q, u, v) /
+        overlap(u, v, P, Q, u, v)
+    return real(f / f0)
 end
 function overlap(ua, va, P, Q, ub, vb)
-    @tensoropt rv = P[k1 b1; ea s1 w1 n1] * (P')[eb s1 w1 n1;k1 b1] * ua[ea; a] * va[a; wa] *
-        (ub')[b; eb] * (vb')[wb; b] * Q[k2 b2; e2 s2 wa n2] * (Q')[e2 s2 wb n2;k2 b2]
+    @tensoropt rv =
+        P[k1 b1; ea s1 w1 n1] *
+        (P')[eb s1 w1 n1; k1 b1] *
+        ua[ea; a] *
+        va[a; wa] *
+        (ub')[b; eb] *
+        (vb')[wb; b] *
+        Q[k2 b2; e2 s2 wa n2] *
+        (Q')[e2 s2 wb n2; k2 b2]
     return rv
 end
 
-function rankreduce!(pepo::LocalUpdatablePEPO, bond::Bond)
-    left, right = evolvedpair(pepo, bond)
-    P1, R, L, P2 = rankreduce(left, right)
-    setevolvedpair!(pepo, P1, P2, bond)
-    return R, L
-end
-function rankreduce!(pepo::GlobalUpdatablePEPO, bond::Bond)
-    left, right = evolvedtensors(pepo)[bond]
-    _, R, L, _ = rankreduce(left, right)
-    return R, L
-end
+function rankreduce!(lattice::AbstractLattice, bond::Bond; copy=true)
+    input = lattice[bond]
 
-function rankreduce!(lattice::AbstractLattice, bond::Bond)
-    left, right = lattice[bond]
+    axis = bondaxis(bond)
 
-    P1, R, L, P2 = rankreduce(left, right)
+    if copy
+        _, matrices = rankreduce!(input; axis=axis)
+    else
+        output, matrices = rankreduce(input; axis=axis)
+        lattice[bond] = output
+    end
 
-    lattice[bond] = P1, P2
-
-    return R, L
+    return matrices
 end
 
-function rankreduce(left_site::AbstractTensorMap, right_site::AbstractTensorMap)
-    P1, R = leftrankreduce(left_site)
-    L, P2 = rightrankreduce(right_site)
+function rankreduce(tensors::Pair{T,T}; axis=1) where {T<:AbsTen{2,4}}
+    uten, vten = tensors
 
-    return P1, R, L, P2
+    if axis == 1
+        i1, i2 = 1, 3
+    else
+        i1, i2 = 2, 4
+    end
+
+    P1, R = leftrankreduce(uten, i1)
+    L, P2 = rightrankreduce(vten, i2)
+
+    return P1 => P2, R => L
 end
 
-function leftrankreduce(p::AbsTen{2,4})
+function rankreduce!(tensors::Pair{T,T}; axis=1) where {T<:AbsTen{2,4}}
+    uten, vten = tensors
+
+    if axis == 1
+        i1, i2 = 1, 3
+    else
+        i1, i2 = 2, 4
+    end
+
+    P1, R = leftrankreduce!(uten, i1)
+    L, P2 = rightrankreduce!(vten, i2)
+
+    return P1 => P2, R => L
+end
+
+function _leftrankreduce(p::AbsTen{2,4}, ind)
+    codind = TupleTools.deleteat((1, 2, 3, 4, 5, 6), ind + 2)
+
     Q, R = try
-        leftorth(p, (1, 2, 4, 5, 6), (3,); alg=Polar())
+        leftorth(p, codind, (ind + 2,); alg=Polar())
     catch e
         if e isa AssertionError && e.msg == "V ≅ domain(t)"
             @error """
-            potential bad choice of bond dimension sectors; try different sectors or
+            potential bad choice of bond dimension sectors; try different sectors, or
             setting `rankreduce=false` if you insist on these sectors
             """
         end
         rethrow()
     end
-    P = permute(Q, ((1, 2), (6, 3, 4, 5)))
+    perm = TupleTools.insertafter((3, 4, 5), ind - 1, (6,))
+    return Q, R, perm
+end
+function leftrankreduce(P::AbsTen{2,4}, ind=1)
+    Q, R, perm = _leftrankreduce(P, ind)
+    P = permute(Q, ((1, 2), perm))
     return P, R
 end
-function rightrankreduce(p::AbsTen{2,4})
+
+function leftrankreduce!(P::AbsTen{2,4}, ind=1)
+    Q, R, perm = _leftrankreduce(P, ind)
+    permute!(P, Q, ((1, 2), perm))
+    return P, R
+end
+
+function _rightrankreduce(p::AbsTen{2,4}, ind)
+    domind = TupleTools.deleteat((1, 2, 3, 4, 5, 6), ind + 2)
+
     L, Q = try
-        rightorth(p, (5,), (1, 2, 3, 4, 6); alg=Polar())
+        rightorth(p, (ind + 2,), domind; alg=Polar())
     catch e
         if e isa AssertionError && e.msg == "V ≅ domain(t)"
             @error """
-            potential bad choice of bond dimension sectors; try different sectors or
+            potential bad choice of bond dimension sectors; try different sectors, or
             setting `rankreduce=false` if you insist on these sectors
             """
         end
         rethrow()
     end
-    P = permute(Q, ((2, 3), (4, 5, 1, 6)))
+
+    perm = TupleTools.insertafter((4, 5, 6), ind - 1, (1,))
+
+    return L, Q, perm
+end
+function rightrankreduce(P::AbsTen{2,4}, ind=3)
+    L, Q, perm = _rightrankreduce(P, ind)
+    P = permute(Q, ((2, 3), perm))
+    return L, P
+end
+function rightrankreduce!(P::AbsTen{2,4}, ind=3)
+    L, Q, perm = _rightrankreduce(P, ind)
+    permute!(P, Q, ((2, 3), perm))
     return L, P
 end
 
@@ -302,24 +635,24 @@ function fidelity(A, B, Y, LR)
 
     f = scalar(AB' * Y * LR) * scalar(LR' * Y * AB) / scalar(AB' * Y * AB)
 
-    @debug "imaginary part of fidelity: $(imag(f))"
+    ignore_derivatives() do
+        @debug "imaginary part of fidelity: $(imag(f))"
+    end
 
     return real(f)
 end
 
-
 function cycle_entropy(iso, metric)
-
     u = iso.u
     s = iso.s
     v = iso.v
 
-    L = (iso.u * sqrt(s))  ⊗ transpose(sqrt(s) * iso.v)
+    L = (iso.u * sqrt(s)) ⊗ transpose(sqrt(s) * iso.v)
     R = (iso.u * inv(sqrt(s))) ⊗ transpose(inv(sqrt(s)) * iso.v)
 
     Y = L' * permute(metric, (2, 4), (3, 1)) * R
 
-    D,_ = eigen!(Y)
+    D, _ = eigen!(Y)
 
     vals = diag(convert(Array, D))
 
@@ -327,21 +660,18 @@ function cycle_entropy(iso, metric)
 
     println(vals)
 
-    ent = -sum( @. vals * log2(vals))
+    ent = -sum(@. vals * log2(vals))
 
     @info "Cycle entropy: $ent"
 
     return ent
-
 end
 
-
 # Optimise the isometries `left` and `right` with respect to `metric`.
-function metricoptimise(left, right, metric::AbsTen{2,2}; trunc, rankreduce, xi, optalg)
-
+function metricoptimise(left, right, metric::AbsTen{2,2}; trunc, doreduction, xi, optalg)
     gauge = optalg.gauge
 
-    if rankreduce
+    if doreduction
         left0 = left
         right0 = right
     else
@@ -396,7 +726,7 @@ function metricoptimise(left, right, metric::AbsTen{2,2}; trunc, rankreduce, xi,
 
     infid = infidelity(iso.u, iso.v)
 
-    @info "Optimised to an infidelity: $(indif)"
+    @info "Optimised to an infidelity: $(infid)"
 
     # cycle_entropy(iso, metric)
 
@@ -432,17 +762,16 @@ function dzmtsvd!(cf, iso, u0, v0, min=Inf; trunc, check=false)
 end
 
 function safetsvd!(m; trunc=notrunc())
-    u, s, v, err = try
-        tsvd!(m; trunc=trunc)
+    try
+        return tsvd!(m; trunc=trunc)
     catch e
         if e isa LAPACKException
             @warn "LAPACK routine `gesdd` failed; trying `gesvd`..."
-            tsvd!(m; trunc=trunc, alg=TensorKit.SVD())
+            return tsvd!(m; trunc=trunc, alg=TensorKit.SVD())
         else
             rethrow()
         end
     end
-    return u, s, v, err
 end
 
 function dzmcheck!(cf, iso, u, s, v, min)
@@ -508,8 +837,11 @@ function dziarmaga(
     vt = similar(v)
     ut = similar(u)
 
-    u = (1 - randomness) * u * sqrt(s) + randomness * ITC.randnt!(similar(u))
-    v = randomness * ITC.randnt!(similar(v)) + (1 - randomness) * sqrt(s) * v
+    # u = (1 - randomness) * u * sqrt(s) + randomness * ITC.randnt!(similar(u))
+    # v = randomness * ITC.randnt!(similar(v)) + (1 - randomness) * sqrt(s) * v
+
+    u = (1 - randomness) * u + randomness * ITC.randnt!(similar(u))
+    v = randomness * ITC.randnt!(similar(v)) + (1 - randomness) * v
 
     while counter < maxiter && ϵ ≥ isotol
         s_old = s
@@ -527,7 +859,7 @@ function dziarmaga(
         # Calculate convergence measure as the change in singular values
         ϵ = norm(s - s_old)
 
-        verbose && @info "\tIteration: $numiter, ϵ: $ϵ"
+        verbose && @info "\tIteration: $counter, ϵ: $ϵ"
 
         counter += 1
     end
@@ -541,7 +873,7 @@ function dziarmaga(
         mul!(iso.v, sqrt(s), v)
     end
 
-    @info "...done; iterations: $numiter, ϵ: $ϵ"
+    @info "...done; iterations: $counter, ϵ: $ϵ"
 
     return iso
 end
@@ -601,7 +933,7 @@ function evenbly(
 
     u, s, v = tsvd(u0 * v0; trunc=trunc)
 
-    iso = TruncationIsometries(metric, u * sqrt(s), s, sqrt(s)* v)
+    iso = TruncationIsometries(metric, u * sqrt(s), s, sqrt(s) * v)
 
     ut = (1 - randomness) * u * sqrt(s) + randomness * ITC.randnt!(similar(u))
     vt = randomness * ITC.randnt!(similar(v)) + (1 - randomness) * sqrt(s) * v
@@ -615,6 +947,9 @@ function evenbly(
     P1 = similar(metric, η * D', one(S))
     P2 = similar(metric, D * η', one(S))
 
+    RM1 = similar(P1)
+    RM2 = similar(P2)
+
     R1 = similar(P1, η, D)
     R2 = similar(P2, D, η)
 
@@ -625,30 +960,69 @@ function evenbly(
     ϵ = Inf
     numiter = 0
 
+    maxmethod = :pinv
+    # maxmethod = :linsolve
+
+    totaltime = 0
+
     while numiter < maxiter
-        @tensor begin
-            B1[i j; k l] = transpose(vt')[j; α] * metric[i α; k β] * transpose(vt)[β; l]
-            P1[i; j] = transpose(vt')[j; α] * metric[i α; β1 β2] * u0[β1; β] * v0[β; β2]
+        totaltime += @elapsed begin
+            @tensoropt P1[i j] =
+                transpose(vt')[j; α] * metric[i α; β1 β2] * u0[β1; β] * v0[β; β2]
+
+            if maxmethod === :pinv
+                @tensoropt B1[i j; k l] =
+                    transpose(vt')[j; α] * metric[i α; k β] * transpose(vt)[β; l]
+
+                # B1 is hermitian
+                axpby!(0.5, B1', 0.5, B1)
+
+                mul!(RM1, safepinv(B1; rtol=pinvtol), P1)
+
+            elseif maxmethod === :linsolve
+                RM, _ = linsolve(P1; ishermitian=true) do x
+                    RM = similar(P1)
+                    @tensoropt RM[i j] =
+                        transpose(vt')[j; α] *
+                        metric[i α; k β] *
+                        transpose(vt)[β; l] *
+                        x[k l]
+                    return RM
+                end
+
+                copy!(RM1, RM)
+            end
+
+            permute!(R1, RM1, ((1,), (2,)))
+
+            u1, s1, v1 = safetsvd!(R1)
+            copy!(ut, u1 * v1)
+
+            @tensoropt P2[i j] = (ut')[i; α] * metric[α j; β1 β2] * u0[β1; β] * v0[β; β2]
+
+            if maxmethod === :pinv
+                @tensoropt B2[i j; k l] = (ut')[i; α] * metric[α j; β l] * ut[β; k]
+
+                axpby!(0.5, B2', 0.5, B2)
+
+                mul!(RM2, safepinv(B2; rtol=pinvtol), P2)
+
+            elseif maxmethod === :linsolve
+                RM, _ = linsolve(P2; ishermitian=true) do x
+                    RM = similar(P2)
+                    @tensoropt RM[i j] =
+                        (ut')[i; α] * metric[α j; β l] * ut[β; k] * x[k l]
+                    return RM
+                end
+
+                copy!(RM2, RM)
+            end
+
+            permute!(R2, RM2, ((1,), (2,)))
+            u2, s2, v2 = safetsvd!(R2)
+
+            copy!(vt, u2 * v2)
         end
-
-        axpby!(0.5, B1', 0.5, B1)
-
-        permute!(R1, safepinv(B1; rtol=pinvtol) * P1, ((1,), (2,)))
-        u1, s1, v1 = safetsvd!(R1)
-
-        copy!(ut, u1 * v1)
-
-        @tensor begin
-            B2[i j; k l] = (ut')[i; α] * metric[α j; β l] * ut[β; k]
-            P2[i; j] = (ut')[i; α] * metric[α j; β1 β2] * u0[β1; β] * v0[β; β2]
-        end
-
-        axpby!(0.5, B2', 0.5, B2)
-
-        permute!(R2, safepinv(B2; rtol=pinvtol) * P2, ((1,), (2,)))
-        u2, s2, v2 = safetsvd!(R2)
-
-        copy!(vt, u2 * v2)
 
         ϵ1 = norm(normalize(s1) - normalize(s1old))
         ϵ2 = norm(normalize(s2) - normalize(s2old))
@@ -686,7 +1060,9 @@ function evenbly(
     copy!(iso.s, s)
     copy!(iso.v, r')
 
-    @info "...done; iterations: $numiter, ϵ: $ϵ"
+    itertime = totaltime / numiter
+
+    @info "...done; iterations: $numiter, ϵ: $ϵ, average iteration time: $(itertime)"
 
     return iso
 end
@@ -1259,7 +1635,6 @@ function optsingleiso(id_Mb, Y, Y_LR)
 end
 
 function eat(L, R, g, trunc; ptol=1e-8)
-
     @tensoropt G[-3 -4; -1 -2] :=
         L[3; -3] * R[-4; 4] * g[1 2; 3 4] * (L')[-1; 1] * (R')[2; -2]
 

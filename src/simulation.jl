@@ -1,9 +1,11 @@
-struct Simulation{E<:AbstractTimeEvolution,P<:AbstractPEPO,L<:AbstractTimeStepper,T}
-    initialstate::Tuple{P,P}
+struct Simulation{
+    E<:AbstractTimeEvolution,P<:AbstractPEPO,PB<:PEPOWithBuffer,L<:AbstractTimeStepper,T
+}
+    initialstate::P
     info::SimulationInfo
-    stepper::Tuple{L,L}
+    stepper::Schedule{L}
     method::E
-    state::Tuple{P,P}
+    state::PB
     truncators::Tuple{T,T}
 end
 
@@ -28,14 +30,14 @@ end
 
 Return the unwrapped `PEPO` object of `obj`. If `obj isa PEPO` then `getpepo(obj) === obj`.
 """
-getpepo(sim::Simulation) = getpepo(sim.state[1])
+pepo(sim::Simulation) = sim.state.parent
 
 """
     latticetensors(obj::Union{AbstractPEPO, DensityMatrix, Simulation}) -> AbstractLattice
 
 Return the `AbstractLattice` of underyling pepo tensors associated with `obj`.
 """
-latticetensors(sim::Simulation) = latticetensors(getpepo(sim))
+tensors(sim::Simulation) = tensors(pepo(sim))
 
 unitcellsize(x::AbstractMatrix) = size(x)
 unitcellsize(_) = (1, 1)
@@ -43,13 +45,11 @@ unitcellsize(_) = (1, 1)
 similar_matrix(A::AbstractMatrix, outsize) = Matrix{eltype(A)}(undef, outsize)
 similar_matrix(A, outsize) = Matrix{typeof(A)}(undef, outsize)
 
-function promotelattice(
-    model, args...; geometry::G=Square(), issymmetric::Bool=true
-) where {G}
+function promotelattice(model::NTuple, args...; geometry::G=Square()) where {G}
     shape = (x, i...) -> isa(x, AbstractMatrix) ? size(x, i...) : size([x;;], i...)
 
-    xs = map(x -> shape(x, 1), (model, args...))
-    ys = map(x -> shape(x, 2), (model, args...))
+    xs = map(x -> shape(x, 1), (model..., args...))
+    ys = map(x -> shape(x, 2), (model..., args...))
     outsize = (lcm(xs...), lcm(ys...))
 
     outmat = map(x -> similar_matrix(x, outsize), args)
@@ -64,29 +64,76 @@ function promotelattice(
             end
         end
 
-        return Lattice{G}(mat, issymmetric)
+        return Lattice{G}(mat)
     end
 
     return outlat
 end
 
+geometrytype(::Type{G}) where {G<:ITC.AbstractUnitCellGeometry} = G
+geometrytype(::Type{<:AbstractLattice{G}}) where {G} = G
+geometrytype(::Type{<:AbstractMatrix}) = Square
+geometrytype(T::DataType) = Square
+geometrytype(g) = geometrytype(typeof(g))
+
+promote_geometry_type(A::Type{G}, B::Type{G}) where {G<:ITC.AbstractUnitCellGeometry} = G
+promote_geometry_type(args...) = mapreduce(geometrytype, promote_geometry_type, args)
+function promote_geometry(A::Type, B::Type)
+    throw(ErrorException("TODO: incompatible lattice geometries"))
+end
+
 copyspaceto!(mat, arg::AbstractMatrix) = copyto!(mat, arg)
 copyspaceto!(mat, arg::TensorSpace) = copyto!(mat, [arg;;])
 
+model2matrix(m::AbstractVector) = map(model2matrix, m)
+model2matrix(m::AbstractMatrix) = m
+model2matrix(m::AbstractMatrix{<:Number}) = [m;;]
+model2matrix(m) = [m;;]
+
+function model2tuple(m::NTuple{N}) where {N}
+    println(typeof(m))
+    if N in (1, 2)
+        return map(model2matrix, m)
+    else
+        throw(ArgumentError("model tuple as too many elements for 2D simulation; got $N"))
+    end
+end
+model2tuple(m) = model2tuple((m,))
+
 function Simulation(
     model,
-    rho0,
+    rho0::Union{NTuple{3},Matrix,ThermalState},
     horizontal::Union{S,AbstractMatrix{S}},
     vertical::Union{S,AbstractMatrix{S}}=horizontal;
     method::AbstractTimeEvolution,
-    physical=physicalspace(S, model),
-    issymmetric=true,
+    physical=S,
 ) where {S}
-    physical, horizontal, vertical = promotelattice(
-        model, physical, horizontal, vertical; issymmetric=issymmetric
-    )
+    model = model2tuple(model)
 
-    pepo = PEPO(rho0, physical, horizontal, vertical)
+    # physical, horizontal, vertical = promotelattice(model, physical, horizontal, vertical)
+
+    G = promote_geometry_type(physical, horizontal, vertical)
+
+    println(typeof(physical))
+
+    stepper, physicalspace = newstepper(Lattice{G}([physical;;]), model, method)
+
+    pepo = PEPO([rho0;;], [physicalspace;;], [horizontal;;], [vertical;;])
+
+    # Construct the time evolving state
+    state = newevolution(pepo, stepper, method)
+
+    # Construct the truncators
+    truncators = newtruncators(state, stepper, method.truncalg)
+
+    initialstate = deepcopy(state)
+
+    sim = Simulation(initialstate, SimulationInfo(), stepper, method, state, truncators)
+
+    return sim
+end
+function Simulation(model, pepo::PEPO, method::AbstractTimeEvolution)
+    model = model2tuple(model)
 
     stepper = newstepper(pepo, model, method)
 
@@ -102,7 +149,6 @@ function Simulation(
 
     return sim
 end
-
 function initenvironment(network, alg::AbstractBoundaryAlgorithm; kwargs...)
     return ITC.initialize(alg, network; kwargs...)
 end
@@ -118,7 +164,8 @@ simulate(hook, sim::Simulation) = simulate!(hook, deepcopy(sim))
 
 simulate!(sim::Simulation) = simulate!(identity, sim)
 
-function simulate!(callback, sim::Simulation)
+function simulate!(callback, sim::Simulation; maxshots = 100)
+
     method = sim.method
     pepo = sim.state
     stepper = sim.stepper
@@ -132,28 +179,56 @@ function simulate!(callback, sim::Simulation)
     breaktol = method.breaktol
     order = method.trotterorder
 
+    r = range(start = 1, step = round(Int, numsteps/maxshots, RoundUp), stop = numsteps)
+    shotsat = collect(r)
+
     numiter = 0
     tol = Inf
 
     # Need to copy the weights otherwise they will mutate
-    prev_weights = deepcopy(getweights(pepo[1]))
+    prev_weights = deepcopy(weights(pepo))
+
+    info.iterations == 0 && callback(sim)
+    
+    timestep!(pepo, truncator, only(stepper.start), truncalg)
+
+    doshot = false
 
     while numiter < numsteps && tol ≥ breaktol
-        timestep!(pepo, truncator, stepper, order; truncalg=truncalg)
-
-        # Calculate the difference in pepo singular values between timesteps
-        tol = tolerance!(prev_weights, getweights(pepo[1]), timestep)
 
         numiter += 1
+
+        doshot = numiter in shotsat
+
+        itr = doshot ? stepper.finish : stepper.bulk
+
+        for stepper in itr
+            timestep!(pepo, truncator, stepper, truncalg)
+        end
+
+        # Calculate the difference in pepo singular values between timesteps
+        tol = tolerance!(prev_weights, weights(pepo), timestep)
+        # tol = 0.0
 
         method.verbose && @info "Steady state convergence: $tol after $numiter iterations."
 
         info.convergence = tol
-        info.iterations = numiter
+        info.iterations += 1
 
         # User specified function for post-step processing
-        callback(sim)
+        info.convergence < breaktol ? info.isconverged = true : info.isconverged = false
+
+        if doshot
+            callback(sim)
+            timestep!(pepo, truncator, only(stepper.start), truncalg)
+            doshot = false
+        end
     end
+
+    for stepper in stepper.finish
+        timestep!(pepo, truncator, stepper, truncalg)
+    end
+
     return sim
 end
 
@@ -182,44 +257,63 @@ function testthermal(D)
         alg=TEBD(; timestep=0.02, numsteps=100, truncalg=talg),
     )
 
-    rmul!.(latticetensors(sim.state), 0.5)
+    rmul!.(PEPOKit.tensors(sim.state), 0.5)
 
     simulate!(measurehook!, sim)
 
     return sim.output
 end
-function measurehook!(sim::Simulation, A=PAULI[1])
-    pepo = getpepo(sim)
+function measurehook!(sim::Simulation, A=PAULI[1]; env=nothing)
+    pepo = PEPOKit.pepo(sim)
 
-    alg =VUMPS(; tol=1e-10, maxiter=100, bonddim=16, verbose=true)
+    alg = VUMPS(; tol=1e-10, maxiter=200, bonddim=16, verbose=true)
+    # alg = CTMRG(; tol=1e-8, maxiter=200, bonddim=16, verbose=true)
+    #
+    # env = newcontraction(alg, contractphysical(PEPOKit.tensors(pepo)))
+    # renormalize!(env, contractphysical(PEPOKit.tensors(pepo)))
 
     dm = DensityMatrix(pepo, alg)
+    # dm = DensityMatrix(pepo, env)
 
     rhos = map(ind -> ReducedDensityMatrix(dm, ind), uniqueindices(pepo))
 
     expt = map(x -> expval(x, A), rhos)
+    return expt
 
-    if length(expt) > 1
-        return expt[1], expt[2]
-    else
-        return expt[1], expt[1]
-    end
+    # corr = [correlator(dm, A, (1, 1), A, (i, 1)) for i in 2:20]
+    # return corr
 end
 
-function measurehook!(output::Tuple, args...)
+function measurehook!(output::Vector, sim, args...)
+
+    # init
+    tensors = PEPOKit.tensors(sim.state.parent)
+
+    alg = CTMRG(; tol=1e-8, maxiter=200, bonddim=16, verbose=true)
+    # alg = VUMPS(; tol=1e-10, maxiter=200, bonddim=16, verbose=true)
+    # alg = CTMRG(; tol=1e-10, maxiter=100, bonddim=16, verbose=true)
+
+    env = newcontraction(alg, contractphysical(tensors))
+    runcontraction!(env)
+
+    r = round(Int, sim.method.numsteps / 100, RoundUp)
+
+    println(r)
+
     f = sim -> begin
-        exp1, exp2 = measurehook!(sim, args...)
-        push!(output[1], exp1)
-        push!(output[2], exp2)
+        if mod(sim.info.iterations, 0:(r - 1)) == 0
+            exp1 = measurehook!(sim, args...; env=env)
+            push!(output, exp1)
+        end
         return nothing
     end
+
+    return f
 end
 
 function errorhook!(output)
-    f = sim -> begin 
-        println(getweights(getpepo(sim)).horizontal[1,1])
-        push!(output[1], sim.info.convergence)
-        push!(output[2], sim.info.convergence)
+    f = sim -> begin
+        push!(output, sim.info.convergence)
     end
     return f
 end
@@ -228,16 +322,66 @@ function negativityhook!(sim::Simulation)
     #     return sim
     # end
 
-    pepo = latticetensors(sim)
+    pepo = tensors(sim)
 
-    alg = VUMPS(; maxiter=100, bonddim=10, verbose=true)
+    alg = CTMRG(; maxiter=100, bonddim=16, verbose=true)
 
     dm = DensityMatrix(pepo, alg)
-    rdm = PEPOKit.ReducedDensityMatrix(dm, (1,1),(3,1))
+    rdm1 = PEPOKit.ReducedDensityMatrix(dm, (1, 1), (2, 1))
+    rdm2 = PEPOKit.ReducedDensityMatrix(dm, (1, 1), (1, 2))
 
-
-    return negativity(rdm)
+    return (negativity(rdm1), negativity(rdm2))
 end
+
+function negativityhook!(output, sim::Simulation)
+
+    return sim -> push!(output, negativityhook!(sim))
+end
+
 function negativityhook!(output::AbstractVector)
     return sim -> push!(output, negativityhook!(sim))
+end
+
+
+function test_p2s!(out, op, mpo, us, vw, vn)
+    @tensoropt (
+        k => 2,
+        b => 2,
+        kk => 2,
+        bb => 2,
+        e1 => 4,
+        w1 =>4,
+        s1 => 4,
+        n1 =>4,
+        w =>4,
+        s => 4,
+        n =>4,
+        e2 => D,
+        w2 =>D,
+        s2 => D,
+        n2 =>D,
+    ) out[k b; e1 e2 s w n ] = op[kk bb; e1 s1 w1 n1] * 
+    mpo[k b kk bb; e2 s2 w2 n2] * us[s1 s2; s] * vw[w; w1 w2] * vn[n; n1 n2]
+    return out
+end
+function test_p2s(op, mpo, us, vw, vn)
+    @tensoropt (
+        k => 2,
+        b => 2,
+        kk => 2,
+        bb => 2,
+        e1 => 4,
+        w1 =>4,
+        s1 => 4,
+        n1 =>4,
+        w =>4,
+        s => 4,
+        n =>4,
+        e2 => D,
+        w2 =>D,
+        s2 => D,
+        n2 =>D,
+    ) out[k, b, e1, e2, s,  w,  n ] := op[kk, bb, e1, s1, w1, n1] * 
+    mpo[k, b, kk, bb, e2, s2, w2, n2] * us[s1, s2, s] * vw[w, w1, w2] * vn[n, n1, n2]
+    return out
 end

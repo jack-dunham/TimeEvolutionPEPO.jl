@@ -3,6 +3,7 @@ abstract type AbstractTerm{N} end
 # This only accepts concrete types
 function newterm(::Type{T}, term, args...) where {N,T<:AbstractTerm{N}}
     term = map(convert_if_identity, term)
+    args = map(ComplexF64, args)
     return T(term, args...)
 end
 

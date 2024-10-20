@@ -25,25 +25,32 @@ function axylindblad(; J = 1.0, Γ =1.0)
 end
 
 
-function isingthermal()
+function isingthermal(λ)
     _, _, Z = PAULI
+
+    βc = log(1 + sqrt(2)) / 2
 
     Id = one(Z)
     hk = kron(Z, Id)
     hb = kron(Id, Z)
 
-    T = BlockMatrix
+    T = Matrix{Matrix{ComplexF64}}
 
     A = T(undef, 2, 2)
     B = T(undef, 2, 1)
     C = T(undef, 1, 2)
     D = T(undef, 1, 1)
 
-    B[1, 1] = C[1, 1] = 1 / 2 * hk
-    B[2, 1] = C[1, 2] = hb
+    B[1, 1] = βc * hk
+    C[1, 1] = 1 / 2 * hk
+
+    B[2, 1] = βc * hb
+    C[1, 2] = 1 / 2 * hb
 
     A .= Ref(zero(hk))
     D .= Ref(zero(hk))
+
+    A[1, 1] = A[2, 2] = λ * kron(Id, Id)
 
     return MPO(A, B, C, D)
 end

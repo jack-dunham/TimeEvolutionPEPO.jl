@@ -40,6 +40,9 @@ function MPO(A::T, B::T, C::T, D::T) where {T}
 end
 
 function MPO(eqn::LindbladEquation)
+
+    isempty(eqn.linops) ? thermal  = true : thermal = false
+
     Id = Matrix{ComplexF64}(I, 2, 2)
 
     chi = 2 * (length(eqn.twolocal) + length(eqn.longrange))
@@ -57,11 +60,12 @@ function MPO(eqn::LindbladEquation)
     i = 1
 
     for term in eqn.twolocal
+
         X, Y = term.term
         a = term.coeff
 
-        B[i, 1] = -a * im * kron(X, Id)
-        B[i + 1, 1] = a * im * kron(Id, transpose(X))
+        B[i, 1] = -a * im * kron(X, Id) # ket
+        B[i + 1, 1] = a * im * kron(Id, transpose(X)) # bra
 
         C[1, i] = kron(Y, Id)
         C[1, i + 1] = kron(Id, transpose(Y))
@@ -70,17 +74,18 @@ function MPO(eqn::LindbladEquation)
     end
 
     for term in eqn.longrange
-        X, Y = term.term
-        a = term.coeff
 
-        B[i, 1] = -a * im * kron(X, Id)
-        B[i + 1, 1] = -a * im * kron(Id, transpose(X))
+        X, Y = term.term
+        alam = term.coeff
+
+        B[i, 1] = -alam * im * kron(X, Id)
+        B[i + 1, 1] = alam * im * kron(Id, transpose(X))
 
         C[1, i] = kron(Y, Id)
         C[1, i + 1] = kron(Id, transpose(Y))
 
-        A[i, i] = term.decay * Id
-        A[i + 1, i + 1] = term.decay * Id
+        A[i, i] = term.decay * kron(Id, Id)
+        A[i + 1, i + 1] = term.decay * kron(Id, Id)
 
         i += 2
     end
@@ -88,12 +93,16 @@ function MPO(eqn::LindbladEquation)
     # LOCAL TERMS
 
     D[1, 1] = 1 / 2 * sum(eqn.onelocal; init=D[1, 1]) do term
+        # Absorb coefficient
         H = Matrix{ComplexF64}(term)
+
         return -im * (kron(H, one(H)) - kron(one(H), transpose(H)))
     end
 
     D[1, 1] = 1 / 2 * sum(eqn.linops; init=D[1, 1]) do term
+        # Absorb coefficient
         L = Matrix{ComplexF64}(term)
+
         anticomm = kron(L' * L, one(L)) + kron(one(L), transpose(L' * L))
         return kron(L, transpose(L')) - 1 / 2 * anticomm
     end

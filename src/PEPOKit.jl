@@ -10,6 +10,11 @@ using LinearAlgebra
 using Random
 using TensorKit
 using TupleTools
+using Zygote
+using OptimKit
+using VectorInterface
+using ChainRulesCore
+using SparseArrayKit
 
 const ITC = InfiniteTensorContractions
 
@@ -28,7 +33,7 @@ export σ0, σ1, σ2, σ3, σp, σm, PAULI, LADDER
 export AbstractLattice, Lattice, SquareLattice
 # PEPO
 export ThermalState
-export AbstractPEPO, PEPO, Weights
+export AbstractPEPO, PEPO, EdgeLattice
 export Bond
 
 export TEBD, DMPO
@@ -53,6 +58,10 @@ include("tensorkitutils.jl")
 include("linalg.jl")
 include("convergenceinfo.jl")
 include("abstractlattice.jl")
+include("edgelattice.jl")
+include("updatestyle.jl")
+
+include("sparsetensormap.jl")
 
 ## MODEL AND EQUATION
 include("model/abstractterm.jl")
@@ -61,6 +70,7 @@ include("model/longrangeterm.jl")
 include("model/lindbladterm.jl")
 include("model/equation.jl")
 include("model/mpo.jl")
+include("model/pepso.jl")
 
 ## PEPO OBJECTS
 include("pepo/weights.jl")
@@ -85,17 +95,23 @@ include("gauge/mcf.jl")
 include("truncation/clu/clu.jl")
 include("truncation/truncation.jl")
 include("truncation/isometries.jl")
-
+include("truncation/simpleupdate.jl")
+include("truncation/iterative.jl")
 
 include("evolution/abstractevolution.jl")
 include("evolution/dynamicalmap.jl")
 include("evolution/timeevolution.jl")
+include("evolution/timestep.jl")
+
+include("model/heisenberg.jl")
+include("model/longrangeheisenberg.jl")
 
 include("simulation.jl")
 include("densitymatrix.jl")
 
 # include("dev/tno_evolve.jl")
 # include("dev/longrange.jl")
-# include("dev/beliefpropagation.jl")
+include("dev/beliefpropagation.jl")
+include("dev/vidalgauge.jl")
 
 end # module

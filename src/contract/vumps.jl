@@ -1,21 +1,19 @@
 function get_truncmetric_tensors(fp::FixedPoints, bond::Bond)
-    l = bond.left
-    r = bond.right
+    l, r = bond
     return fp.left[l], fp.right[r]
 end
 
 function get_truncmetric_tensors(mps::MPS, bond::Bond)
-    bond_1 = bond
-    # bond_2 = nextrow(bond)
+    uind, vind = bond
 
     AC = ITC.getcentral(mps)
     AR = ITC.getright(mps)
 
-    ac_u = AC[bond_1.left]
-    ac_d = AC[bond_1.left + CartesianIndex(0, 1)]
+    ac_u = AC[uind]
+    ac_d = AC[uind + CartesianIndex(0, 1)]
 
-    ar_u = AR[bond_1.right]
-    ar_d = AR[bond_1.right + CartesianIndex(0, 1)]
+    ar_u = AR[vind]
+    ar_d = AR[vind + CartesianIndex(0, 1)]
 
     return ac_u, ac_d, ar_u, ar_d
 end

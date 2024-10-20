@@ -31,6 +31,7 @@ function fixgauge!(iso, metric, gauge::WTG)
 end
 
 function rescale!(iso, xi)
+    @info "Rescaling singular values with xi = $(xi)..."
     s = iso.s
     D = dim(codomain(s))
 
@@ -152,13 +153,93 @@ function wtg!(
     # x = ul * inv(sqrt(dl)) * vl
     # y = vrt * inv(sqrt(dr)) * ur'
 
-    maxnormalize!(s)
+    maxnormalize!(st)
 
     utemp = u * inv(x)
     vtemp = inv(y) * v
 
     # Test if the metric is gauged correctly.
     test && verifywtg(utemp, st, vtemp, Y)
+
+    copy!(s, st)
+
+    mul!(u, utemp, sqrt(s))
+    mul!(v, sqrt(s), vtemp)
+
+    return u, s, v
+end
+
+function wtg2!(
+    u::TensorMap{S,1,1}, # u[x] 
+    s::TensorMap{S,1,1}, # s[x]
+    v::TensorMap{S,1,1}, # v[x+1]
+    Y::TensorMap{S,2,2}; # γ[x]
+    skiptol=1e-10,
+    postol=eps(),
+) where {S<:IndexSpace}
+
+    svals = diag(convert(Array, s))
+    smin = minimum(abs.(svals))
+
+    if smin < skiptol
+        @info "Skipped gauge fixing"
+        return u, s, v
+    end
+
+    @debug "Singular values: " svals
+
+    yf = permute(Y, (2, 4), (3, 1))
+
+    yf = (0.5 * (yf + yf'))
+
+    posapprox!(yf; tol=postol)
+
+    permute!(Y, yf, ((4, 1), (3, 2)))
+
+    γm = permute(Y, ((1, 4), (3, 2))) # Transform to matrix
+    @tensor γN = γm[a b; a b] # Y_ji
+    γm = γm / γN
+
+    # val,vec=eigen(γm)
+    # println(val)
+
+    # γmr = γm * (s ⊗ permute(s', (2,), (1,)))
+    ri = Tensor(randn, ComplexF64, domain(γm))
+    re, rs, _ = eigsolve(x -> γm * x, ri, 1, :LM; eager=true, ishermitian=false)
+
+    li = TensorMap(randn, ComplexF64, one(codomain(γm)), codomain(γm))
+    # γml = (s ⊗ permute(s', (2,), (1,))) * γm
+    le, ls, _ = eigsolve(x -> x * γm, li, 1, :LM; eager=true, ishermitian=false)
+
+    # println("re: ", re)
+    # println("le: ", le)
+
+    l0 = permute(ls[1], (2,), (1,))
+    r0 = permute(rs[1], (1,), (2,))
+
+    @debug norm(l0 - cj(l0'))
+    @debug norm(r0 - cj(r0'))
+
+    # dl, ul = eigen!(0.5 * (l0 + cj(l0')))
+    # dr, ur = eigen!(0.5 * (r0 + cj(r0')))
+
+    dl, ul = eigen!(l0)
+    dr, ur = eigen!(r0)
+
+    # sp = sqrt(dl) * ul' * s * ur * sqrt(dr)
+    sp = sqrt(dl) * ul' * ur * sqrt(dr)
+    vl, st, vrt = tsvd!(sp)
+
+    x = vl' * sqrt(dl) * ul'
+    y = ur * sqrt(dr) * vrt'
+
+    # x = ul * inv(sqrt(dl)) * vl
+    # y = vrt * inv(sqrt(dr)) * ur'
+
+    maxnormalize!(st)
+
+    utemp = u * inv(x)
+    vtemp = inv(y) * v
 
     copy!(s, st)
 

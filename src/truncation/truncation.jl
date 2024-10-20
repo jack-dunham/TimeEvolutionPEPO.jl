@@ -24,10 +24,123 @@ end
     gauge::G = NoGauge()
 end
 
-struct TruncationIsometries{T<:AbsTen{1,1}}
-    u::T
-    s::T
-    v::T
+# struct TruncationIsometries{T<:AbsTen{1,1}}
+#     u::T
+#     s::T
+#     v::T
+# end
+struct TruncationIsometries{TU,TS,TV}
+    u::TU
+    s::TS
+    v::TV
+end
+
+struct BondIsometries{Geom,U,S,V}
+    u::Lattice{Geom,U,Matrix{U}}
+    s::Lattice{Geom,S,Matrix{S}}
+    v::Lattice{Geom,V,Matrix{V}}
+end
+
+struct SiteIsometries{Geom,U,V}
+    ux::Lattice{Geom,U,Matrix{U}}
+    vx::Lattice{Geom,V,Matrix{V}}
+    uy::Lattice{Geom,U,Matrix{U}}
+    vy::Lattice{Geom,V,Matrix{V}}
+    function SiteIsometries(
+        ux::Lattice{Geom,U,Matrix{U}},
+        vx::Lattice{Geom,V,Matrix{V}},
+        uy::Lattice{Geom,U,Matrix{U}},
+        vy::Lattice{Geom,V,Matrix{V}},
+    ) where {Geom,U,V}
+        @assert size(ux) == size(vx) == size(uy) == size(vy)
+        return new{Geom,U,V}(ux, vx, uy, vy)
+    end
+end
+
+struct AxisView{T}
+    parent::T
+    axis::Int
+end
+
+unpack(iso::SiteIsometries) = ((iso.ux, iso.vx), (iso.uy, iso.vy))
+viewaxis(iso::SiteIsometries, axis) = AxisView(iso, axis)
+
+Base.iterate(iso::SiteIsometries, state=1) = iso[state], state + 1
+
+function Base.iterate(iso::AxisView, state=1)
+    next, state = iterate(iso.parent, state)
+    return next[iso.axis], state
+end
+Base.length(view::AxisView) = length(view.parent)
+
+unpack(iso::AxisView) = unpack(iso.parent)[iso.axis]
+
+function Base.getindex(iso::SiteIsometries, bond::Bond)
+    i1, i2 = bond
+
+    axis = bondaxis(bond)
+
+    if axis == 1
+        u = iso.ux[i1]
+        v = iso.vx[i2]
+    elseif axis == 2
+        u = iso.uy[i1]
+        v = iso.vy[i2]
+    end
+
+    return u => v
+end
+
+function Base.getindex(iso::SiteIsometries, I::Dims)
+    e = iso.ux[I]
+    w = iso.vx[I]
+
+    s = iso.uy[I]
+    n = iso.vy[I]
+
+    return e, s, w, n
+end
+
+function seperateweights(
+    horizontal::Lattice{G,Tuple{Pair{TU,TV},TS}}, vertical::Lattice{G,Tuple{Pair{TU,TV},TS}}
+) where {G,TU,TV,TS}
+    nxny = size(isometries)
+
+    uhlat = Lattice{G,TU}(undef, nxny)
+    vhlat = Lattice{G,TV}(undef, nxny)
+    shlat = Lattice{G,TS}(undef, nxny)
+
+    uvlat = Lattice{G,TU}(undef, nxny)
+    vvlat = Lattice{G,TV}(undef, nxny)
+    svlat = Lattice{G,TS}(undef, nxny)
+
+    hind = eachindex(horizontal)
+    vind = eachindex(vertical)
+
+    if hind != vind
+        throw(DimensionMismatch())
+    end
+
+    populate_isometries_weights!(uhlat, vhlat, shlat, horizontal; axis=1)
+    populate_isometries_weights!(uvlat, vvlat, svlat, vertical; axis=2)
+
+    return SiteIsometries(uhlat, vhlat, uvlat, vvlat), EdgeLattice(shlat, svlat)
+end
+
+function populate_isometries_weights!(ulat, vlat, slat, isometries; axis)
+    axisbonds = bonds(isometries, axis)
+
+    foreach(axisbonds) do bond
+        uind, vind = bond
+
+        (u, v), s = isometries[uind]
+
+        ulat[uind] = u
+        vlat[vind] = v
+        slat[vind] = s
+    end
+
+    return ulat, vlat, slat
 end
 
 function TruncationIsometries(pepo, u, s, v)
@@ -85,15 +198,21 @@ end
 
 ## Initalialize truncators for a full TD-PEPO
 function newtruncators(
-    pepo::NTuple{2,P}, ::NTuple{2,L}, truncalg::Union{FET,NTU}
-) where {P<:AbstractPEPO,L}
+    pepo::NTuple{2,P}, ::Vector{S}, truncalg::Union{FET,NTU}
+) where {P<:AbstractPEPO,S}
     xenv = newtruncators(pepo[1], truncalg)
     yenv = newtruncators(pepo[2], truncalg)
     return xenv, yenv
 end
-function newtruncators(::NTuple{2,P}, ::NTuple{2,L}, truncalg::SU) where {P<:AbstractPEPO,L}
+
+function newtruncators(::NTuple{2,P}, ::Vector{S}, truncalg::SU) where {P<:AbstractPEPO,S}
     return SimpleUpdateState(), SimpleUpdateState()
 end
+
+function newtruncators(::PEPOWithBuffer, ::Vector, ::SU)
+    return SimpleUpdateState(), SimpleUpdateState()
+end
+
 
 ## 
 
@@ -122,11 +241,17 @@ end
 newtruncators(tensors, st::SimpleUpdateState) = st
 newtruncators(st::SimpleUpdateState) = st
 
-function renormalize!(env::InfiniteContraction, network)
-    ITC.recycle!(env, network)
+function renormalize!(env::InfiniteContraction, network; copy=false)
+    if copy
+        elcopy!(env.network, network)
+        ITC.reset!(env)
+    else
+        ITC.recycle!(env, network)
+    end
     ITC.runcontraction!(env)
     return env
 end
+
 function renormalize!(env::InfiniteContraction)
     ITC.reset!(env)
     ITC.runcontraction!(env)
@@ -140,6 +265,16 @@ function renormalize(tensors, truncalg)
     truncs = newtruncators(tensors, truncalg)
     renormalize!(truncs)
     return truncs
+end
+
+function renormalize!(truncator::NTuple{2}, buffer)
+
+    truncx, truncy = truncator
+
+    renormalize!(truncx, buffer)
+    renormalize!(truncy, PermuteTranpose(buffer))
+
+    return truncator
 end
 
 """
@@ -159,12 +294,23 @@ function metric(state::Union{AbstractPEPO,AbstractLattice}, environment, bond::B
     return _metric(left, right, environment, bond)
 end
 
+function metric(
+    ::Union{AbstractPEPO,AbstractLattice}, environment::AbstractTensorMap, ::Bond
+)
+    return environment
+end
+function metric(pair::Pair, env, bond)
+    left, right = pair
+    return _metric(left, right, env, bond)
+end
 function _metric(left, right, env::InfiniteContraction, bond::Bond)
     return _metric(left, right, env.runtime, bond)
 end
 function _metric(left, right, env::NTUState, bond::Bond)
     return _metric(left, right, env.tensors, bond)
 end
+_metric(left, right, env::AbstractTensorMap, bond::Bond) = env
+_metric(left, right, env::AbstractLattice, bond::Bond) = env
 
 """
     truncate!(pepo::AbstractUpdatablePEPO, iso::TruncationIsometries)
@@ -183,7 +329,7 @@ function truncate!(pepo::AbstractUpdatablePEPO, iso)
 end
 
 # Truncate a locally evolving pepo
-function _truncate!(pepo::LocalUpdatablePEPO, iso::TruncationIsometries)
+function _truncate!(pepo::LocalUpdatablePEPO, iso::TruncationIsometries; axis...)
     bond = currentbond(pepo)
 
     @debug "Truncating bond $bond"
@@ -192,11 +338,11 @@ function _truncate!(pepo::LocalUpdatablePEPO, iso::TruncationIsometries)
     old_left, old_right = parentpair(pepo, bond)
 
     # Truncate the left site with an isometry on the right bond
-    truncateto!(old_left, new_left, iso.u)
+    truncateto!(old_left, new_left, iso.u; axis...)
     # Truncate the right site with an isometry on the left bond
-    truncateto!(old_right, iso.v, new_right)
+    truncateto!(old_right, iso.v, new_right; axis...)
 
-    setweights!(pepo, iso.s, bond)
+    setweight!(pepo, iso.s, bond)
 
     @debug "" weight = iso.s
 
@@ -227,11 +373,11 @@ function similar_but_truncated(iso::AbsTen{1,1}, pepo_tensor)
 end
 
 function _truncate!(pepo::GlobalUpdatablePEPO, iso::TruncationIsometries)
-    @assert size(latticetensors(pepo)) == (1, 1)
+    @assert size(tensors(pepo)) == (1, 1)
 
     # Truncate all bonds simultaneously.
 
-    _truncate!.(latticetensors(pepo), evolvedtensors(pepo), Ref(iso.u), Ref(iso.v))
+    _truncate!.(tensors(pepo), currentbuffer(pepo), Ref(iso.u), Ref(iso.v))
 
     return pepo
 end
@@ -243,30 +389,65 @@ end
 
 # Truncation macros.
 
-# East-bond truncation
-function truncateto!(p::AbsTen{2,4}, q::AbsTen{2,4}, u::AbsTen{1,1})
-    @tensoropt p[k b; e s w n] = q[k b; ee s w n] * u[ee; e]
+function truncate!(dstbuff, srcbuff, isometries, bond)
+    axis = bondaxis(bond)
+    return truncateto!(dstbuff[bond], srcbuff[bond], isometries; axis=axis)
+end
+
+function truncateto!(
+    dst::Pair{T,T}, src::Pair{T,T}, uv::Pair{S,S}; axis=1
+) where {T<:AbsTen{2,4},S<:AbsTen{1,1}}
+    p1, p2 = dst
+    q1, q2 = src
+
+    u, v = uv
+
+    truncateto!(p1, q1, u; axis=axis)
+    truncateto!(p2, v, q2; axis=axis)
+
+    return dst
+end
+
+function truncateto!(p::AbsTen{2,4}, q::AbsTen{2,4}, u::AbsTen{1,1}; axis=1)
+    if axis == 1
+        @tensor p[k b; e s w n] = q[k b; ee s w n] * u[ee; e]
+    elseif axis == 2
+        @tensor p[k b; e s w n] = q[k b; e ss w n] * u[ss; s]
+    end
     return p
 end
 
-# West bond truncation
-function truncateto!(p::AbsTen{2,4}, v::AbsTen{1,1}, q::AbsTen{2,4})
-    @tensoropt p[k b; e s w n] = v[w; ww] * q[k b; e s ww n]
+function truncateto!(p::AbsTen{2,4}, v::AbsTen{1,1}, q::AbsTen{2,4}; axis=1)
+    if axis == 1
+        @tensor p[k b; e s w n] = q[k b; e s ww n] * v[w; ww]
+    elseif axis == 2
+        @tensor p[k b; e s w n] = q[k b; e s w nn] * v[n; nn]
+    end
     return p
 end
 
 # Both
-function truncateto!(p::AbsTen{2,4}, q::AbsTen{2,4}, u::AbsTen{1,1}, v::AbsTen{1,1})
-    @tensoropt p[k b; e s w n] = v[w; ww] * q[k b; ee s ww n] * u[ee; e]
+function truncateto!(p::AbsTen{2,4}, q::AbsTen{2,4}, u, v; axis=1)
+    if axis == 1
+        @tensor p[k b; e s w n] = v[w; ww] * q[k b; ee s ww n] * u[ee; e]
+    elseif axis == 2
+        @tensor p[k b; e s w n] = v[n; nn] * q[k b; e ss w nn] * u[ss; s]
+    end
     return p
 end
+
+function truncate_swap!(p::AbsTen{2,4}, q::AbsTen{2,4}, u::AbsTen{1,1}, v::AbsTen{1,1})
+    @tensoropt p[k b; s e n w] = v[w; ww] * q[k b; ee s ww n] * u[ee; e]
+    return p
+end
+
 function truncateto!(
     p::AbsTen{2,4},     # dst
     q::AbsTen{2,4},     # src
     l::AbsTen{4,4},     # time-stepper
     u1::AbsTen{2,1},    # east
-    v1::AbsTen{2,1},    # west
     u2::AbsTen{2,1},    # south
+    v1::AbsTen{2,1},    # west
     v2::AbsTen{2,1},    # north
 )
     @tensoropt p[k b; e s w n] =
@@ -277,4 +458,165 @@ function truncateto!(
         u1[ee1 ee2; e] *
         u2[ss1 ss2; s]
     return p
+end
+
+function truncateto!(
+    p::AbsTen{2,4},     # dst
+    q::AbsTen{2,4},     # src
+    l::AbsTen{4,4},     # time-stepper
+    u1::AbsTen{2,1},    # east
+    u2::AbsTen{2,1},    # south
+    v1::AbsTen{1,2},    # west
+    v2::AbsTen{1,2},    # north
+)
+    @tensoropt p[k b; e s w n] =
+        v1[w; ww1 ww2] *
+        v2[n; nn1 nn2] *
+        q[kk bb; ee1 ss1 ww1 nn1] *
+        l[k b kk bb; ee2 ss2 ww2 nn2] *
+        u1[ee1 ee2; e] *
+        u2[ss1 ss2; s]
+    return p
+end
+
+# function truncateto(
+#     p::AbsTen{2,4},     # dst
+#     q::AbsTen{2,4},     # src
+#     l::SparseTensorMap{4,4},     # time-stepper
+#     u1::AbsTen{1,1},    # east
+#     u2::AbsTen{1,1},    # south
+#     v1::AbsTen{1,1},    # west
+#     v2::AbsTen{1,1},    # north
+# )
+#     p = sptensor(p)
+#     q = sptensor(q)
+#
+#     u1= sptensor(u1)
+#     u2= sptensor(u2)
+#     v1= sptensor(v1)
+#     v2= sptensor(v2)
+#
+#     D1, D2, D3, D4 = domain(q)
+#     η1, η2, η3, η4 = domain(l)
+#
+#     u1p = similar(u1, D1 * η1, D1)
+#     u2p = similar(u2, D2 * η2, D2)
+#
+#     v1p = similar(u1, D3', D3' * η3')
+#     v2p = similar(u2, D4', D4' * η4')
+#
+#     mergeinto!(u1p,u1)
+#     mergeinto!(u2p,u2)
+#
+#     mergeinto!(v1p,v1)
+#     mergeinto!(v2p,v2)
+#
+#     @tensoropt p[k b; e s w n] =
+#         v1p[w; ww1 ww2] *
+#         v2p[n; nn1 nn2] *
+#         q[kk bb; ee1 ss1 ww1 nn1] *
+#         l[k b kk bb; ee2 ss2 ww2 nn2] *
+#         u1p[ee1 ee2; e] *
+#         u2p[ss1 ss2; s]
+#
+#     droptol!(p)
+#
+#     return p
+# end
+
+function truncateto!(
+    p::AbsTen{2,4},     # dst
+    q::AbsTen{2,4},     # src
+    l::AbsTen{4,4},     # time-stepper
+    u1::AbsTen{1,1},    # east
+    u2::AbsTen{1,1},    # south
+    v1::AbsTen{1,1},    # west
+    v2::AbsTen{1,1},    # north
+)
+    D1, D2, D3, D4 = domain(q)
+    η1, η2, η3, η4 = domain(l)
+
+    u1p = similar(u1, D1 * η1, D1)
+    u2p = similar(u2, D2 * η2, D2)
+
+    v1p = similar(u1, D3', D3' * η3')
+    v2p = similar(u2, D4', D4' * η4')
+
+    mergeinto!(u1p,u1)
+    mergeinto!(u2p,u2)
+
+    mergeinto!(v1p,v1)
+    mergeinto!(v2p,v2)
+
+    @tensoropt (
+        k => 2,
+        b => 2,
+        kk => 2,
+        bb => 2,
+        e => D,
+        s => D,
+        w => D,
+        n => D,
+        ee2 => D^2,
+        ss2 => D^2,
+        ww2 => D^2,
+        nn2 => D^2,
+        ee1 => D,
+        ss1 => D,
+        ww1 => D,
+        nn1 => D,
+    ) p[k b; e s w n] =
+        v1p[w; ww1 ww2] *
+        v2p[n; nn1 nn2] *
+        q[kk bb; ee1 ss1 ww1 nn1] *
+        l[k b kk bb; ee2 ss2 ww2 nn2] *
+        u1p[ee1 ee2; e] *
+        u2p[ss1 ss2; s]
+    return p
+end
+function truncateto!(
+    p::AbsTen{2,4},     # dst
+    q::AbsTen{2,4},     # src
+    l::AbsTen{4,2},     # time-stepper
+    u1::AbsTen{2,1},    # east
+    u2::AbsTen{1,1},    # south
+    v1::AbsTen{1,2},    # west
+    v2::AbsTen{1,1},    # north
+)
+    @tensoropt p[k b; e s w n] =
+        v1[w; ww1 ww2] *
+        v2[n; nn1] *
+        q[kk bb; ee1 ss1 ww1 nn1] *
+        l[k b kk bb; ee2 ww2] *
+        u1[ee1 ee2; e] *
+        u2[ss1; s]
+    return p
+end
+
+function truncateto!(
+    p::AbsTen{2,4},     # dst
+    q::AbsTen{2,4},     # src
+    u1::AbsTen{1,1},    # east
+    u2::AbsTen{1,1},    # south
+    v1::AbsTen{1,1},    # west
+    v2::AbsTen{1,1},    # north
+)
+    @tensoropt p[k b; e s w n] =
+        v1[w; ww] * v2[n; nn] * q[k b; ee ss ww nn] * u1[ee; e] * u2[ss; s]
+    return p
+end
+
+function truncateto!(
+    p::AbsTen{2,4},     # dst
+    q::AbsTen{2,4},     # src
+    l::AbsTen{4,2},     # time-stepper
+    u1::AbsTen{2,1},    # east
+    v1::AbsTen{1,2},    # west
+)
+    @tensoropt p[k b; e s w n] =
+        v1[w; ww1 ww2] *
+        q[kk bb; ee1 s ww1 n] *
+        l[k b kk bb; ee2 ww2] *
+        u1[ee1 ee2; e] *
+        return p
 end

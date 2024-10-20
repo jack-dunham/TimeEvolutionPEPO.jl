@@ -67,9 +67,7 @@ function _metric(left, right, ctmrg::CornerMethodRuntime, bond)
     return ctmrg_trunctensors(left, right, ctmrg, bond)
 end
 function ctmrg_trunctensors(left, right, ctmrg, bond)
-    l = bond.left
-    # r = bond.right
-    r = l + CartesianIndex((1, 0))
+    l, r = bond
 
     i1 = l[1]:r[1]
     i2 = l[2]

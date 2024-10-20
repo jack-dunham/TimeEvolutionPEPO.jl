@@ -1,35 +1,21 @@
-struct Weights{G,CType<:AbsTen{1,1}}
-    horizontal::Lattice{G,CType,Matrix{CType}}
-    vertical::Lattice{G,CType,Matrix{CType}}
-end
+function setweight!(weights::EdgeLattice, value, bond::Bond; copy=true, axis=bondaxis(bond))
+    bond = axis == bondaxis(bond) ? bond : transpose(bond)
 
-function Base.getindex(weights::Weights, bond::Bond)
-    axis = getaxis(bond)
-    if axis == 1
-        return weights.horizontal[left(bond)]
-    elseif axis == 2
-        return weights.vertical[left(bond)]
+    if copy
+        copyindex!(weights, value, bond)
     else
-        throw(
-            ErrorException(
-                "Impossible `else` reached! Value of axis = $axis returned from `getaxis` neither 1 or 2",
-            ),
-        )
+        weights[bond] = value
     end
+
+    return weights
 end
 
-function TensorKit.truncspace(w::Weights, bond::Bond)
-    return TensorKit.TruncationSpace(codomain(w[bond])[1])
-end
+function tolerance!(buffer::W, weights::W, tau::Float64) where {W<:EdgeLattice}
+    tol = broadcast(buffer, weights) do dst, src
+        return _tolerance!(dst, src, tau)
+    end
 
-function changeaxis(weights::Weights)
-    return Weights(permutedims(weights.vertical), permutedims(weights.horizontal))
-end
-
-function tolerance!(weights::W, new_weights::W, tau::Float64) where {W<:Weights}
-    h = _tolerance!.(weights.horizontal, new_weights.horizontal, tau)
-    v = _tolerance!.(weights.vertical, new_weights.vertical, tau)
-    return max(h..., v...)
+    return maximum(tol[bond] for bond in bonditer(tol))
 end
 function _tolerance!(ow, nw, tau::Float64)
     rv = norm(ow - nw) / (tau * norm(nw) * dim(codomain(nw)))

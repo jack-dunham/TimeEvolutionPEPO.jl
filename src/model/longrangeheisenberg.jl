@@ -1,0 +1,281 @@
+struct LongRangeHeisenberg <: AbstractLindbladEquation
+    Jx::Float64
+    Jy::Float64
+    Jz::Float64
+    ax::Float64
+    ay::Float64
+    az::Float64
+    L::Vector{LindbladTerm}
+    nk::Int
+    N::Int
+end
+
+getparams(lr::LongRangeHeisenberg) = (lr.Jx, lr.Jy, lr.Jz, lr.ax, lr.ay, lr.az)
+
+function LongRangeHeisenberg(
+    L...; nk=6, N=200, Jx=0.0, Jy=0.0, Jz=0.0, ax=Inf, ay=Inf, az=Inf
+)
+    linops = map(L) do op
+        return op isa LindbladTerm ? op : lin(op)
+    end
+
+    return LongRangeHeisenberg(Jx, Jy, Jz, ax, ay, az, collect(linops), nk, N)
+end
+
+function (model::LongRangeHeisenberg)(physical, method::TEPEPSO)
+    (Jx, Jy, Jz, ax, ay, az) = getparams(model)
+
+    rv =
+        timestep -> begin
+            fsmlongrange(
+                Matrix.(model.L),
+                physical,
+                timestep;
+                extend=method.extend,
+                Jx=Jx,
+                Jy=Jy,
+                Jz=Jz,
+                ax=ax,
+                ay=ay,
+                az=az,
+                n=model.nk,
+                N=model.N,
+            )
+        end
+
+    return rv
+end
+function fsmlongrange(
+    linops,
+    space,
+    dt;
+    extend=true,
+    n=5,
+    N=50,
+    Jx=0.0,
+    Jy=0.0,
+    Jz=1.0,
+    ax=6.0,
+    ay=6.0,
+    az=6.0,
+)
+    T = Dict{NTuple{4,Int},Matrix{ComplexF64}}
+
+    rules = (A=T(), B=T(), C=T(), D=T())
+
+    D = mapreduce(+, linops) do L
+        acomm = kron(L' * L, one(L)) + kron(one(L), transpose(L' * L))
+        return kron(L, transpose(L')) - 1 / 2 * acomm
+    end
+
+    Js = (Jx, Jy, Jz)
+    as = (ax, ay, az)
+
+    rules.A[1, 1, 1, 1] = one(D)
+    rules.D[1, 1, 1, 1] = D
+
+    Js = (Jx, Jy, Jz)
+
+    terms = []
+    term_wks = []
+    term_mks = []
+    term_lks = []
+
+    for (op, J, a) in zip(PAULI, Js, as)
+        Id = one(op)
+
+        iszero(J) && continue
+
+        println(a)
+
+        wks, mks, lks = twodapprox(a, n; N=N)
+
+        push!(terms, (-im * J * kron(op, Id), kron(op, Id)))
+        push!(term_wks, wks)
+        push!(term_mks, mks)
+        push!(term_lks, lks)
+
+        push!(terms, (im * J * kron(Id, transpose(op)), kron(Id, transpose(op))))
+        push!(term_wks, wks)
+        push!(term_mks, mks)
+        push!(term_lks, lks)
+    end
+
+    # Get strides
+
+    hstr = 1
+    vstr = 1
+
+    for (mu, term) in enumerate(terms)
+        C, B = term
+
+        Id = one(C)
+
+        itr = zip(term_wks[mu], term_mks[mu], term_lks[mu])
+
+        for (wk, mks, lks) in itr
+            gapprox = zip(mks, lks)
+
+            for (nh, (mk, lk)) in enumerate(gapprox)
+                # mklk = mk * lk 
+
+                mklk = mk * lk
+
+                c = hstr + 2 * nh - 1
+                u = hstr + 2 * nh
+
+                # Start going east
+                rules.C[c, 1, 1, 1] = wk * mklk * C
+
+                # Finish going east
+                rules.B[1, 1, c, 1] = B
+                # Finish going west (unconventional)
+                rules.B[u, 1, 1, 1] = B
+
+                # Continue going east
+                rules.A[c, 1, c, 1] = lk * Id
+                # Continue going west (unconventional)
+                rules.A[u, 1, u, 1] = lk * Id
+
+                # Direction change rules
+                for nv in 1:length(gapprox)
+                    v = vstr + nv
+
+                    # Change from going north to going east
+                    rules.A[c, v, 1, 1] = mklk * Id
+                    # Change from going north to going west (unconventional)
+                    rules.A[1, v, u, 1] = mklk * Id
+                end
+            end
+            for (nv, (mk, lk)) in enumerate(gapprox)
+                v = vstr + nv
+                # Start going north
+                rules.C[1, 1, 1, v] = wk * mk * lk * C
+
+                # Finish going north
+                rules.B[1, v, 1, 1] = B
+
+                # Continue going north
+                rules.A[1, v, 1, v] = lk * Id
+            end
+
+            hstr += 2 * length(gapprox)
+            vstr += length(gapprox)
+        end
+    end
+
+    @info "TNO bond dimension: ($hstr,$vstr)"
+
+    d = space
+    di = dim(d)
+
+    Dx = reduce(oplus, fill(oneunit(d), hstr))
+    Dy = reduce(oplus, fill(oneunit(d), vstr))
+
+    data = zeros(ComplexF64, di, di', di', di, hstr, vstr, hstr, vstr)
+
+    fsmpepo!(data, rules, dt; extend=extend)
+
+    return TensorMap(data, d * d' * d' * d, Dx * Dy * Dx' * Dy')
+end
+
+function twodapprox(alpha, n::Int, ng::Int=2; kwargs...)
+    return twodapprox(alpha, n, fill(ng, n); kwargs...)
+end
+
+function twodapprox(alpha, n, ngs; N=50)
+    wks, lam = approx_as_sum_of_exp(ComplexF64, alpha / 2, n; N=N)
+
+    pks = -log.(lam)
+
+    mks = Vector{ComplexF64}[]
+    lks = Vector{ComplexF64}[]
+
+    for (pk, ng) in zip(pks, ngs)
+
+        # Need to find an approximation for each pm
+
+        f = r -> exp(-pk * r^2)
+
+        mkis, lkis = generalised_approx_as_sum_of_exp(f, ng; N=N)
+
+        afunc = abs.((x -> sum(@. mkis * lkis^x)).(1:N) - f.(1:N))
+
+        # println("Error for $(real(pk)): ", sum(afunc)/length(afunc))
+
+        push!(mks, mkis)
+        push!(lks, lkis)
+    end
+
+    return wks, mks, lks
+end
+
+function approx_as_sum_of_exp(alpha, n; kwargs...)
+    return approx_as_sum_of_exp(Float64, alpha, n; kwargs...)
+end
+function approx_as_sum_of_exp(T, α, n; N=50, offset=0, s=1.0)
+    f = N -> (s * (N + offset))^float(-α)
+    F = zeros(T, N - n + 1, n)
+
+    for r in axes(F, 1)
+        for c in axes(F, 2)
+            val = f(r + c - 1)
+            F[r, c] = val
+        end
+    end
+
+    QR = qr(F)
+    U = QR.Q
+    # V = QR.R
+
+    U1 = U[1:(N - n), 1:n]
+    U2 = U[2:end, 1:n]
+
+    Λ = eigen(pinv(U1) * U2).values
+
+    A = zeros(T, N, n)
+    for c in axes(A, 1)
+        A[c, :] .= Λ .^ (c)
+    end
+
+    invsol = [f(k) for k in 1:N]
+
+    sol = pinv(A) * invsol
+
+    # return k -> (A * sol)[k]
+    return sol, Λ
+end
+
+function generalised_approx_as_sum_of_exp(f, n; N=10)
+    F = zeros(ComplexF64, N - n + 1, n)
+
+    for c in axes(F, 2)
+        for r in axes(F, 1)
+            p = r + c - 1
+
+            val = f(p)
+            F[r, c] = val
+        end
+    end
+
+    QR = qr(F)
+    U = QR.Q
+    # V = QR.R
+
+    U1 = U[1:(N - n), 1:n]
+    U2 = U[2:end, 1:n]
+
+    Λ = eigen(pinv(U1) * U2).values
+
+    A = zeros(ComplexF64, N, n)
+    for c in axes(A, 1)
+        A[c, :] .= Λ .^ (c)
+    end
+
+    invsol = [f(k) for k in 1:N]
+
+    sol = pinv(A) * invsol
+
+    # return k -> (A * sol)[k]
+    return sol, Λ
+end

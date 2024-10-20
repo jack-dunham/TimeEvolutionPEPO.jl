@@ -1,24 +1,32 @@
-struct PEPO{G,PType<:AbsTen{2,4},CType} <: AbstractPEPO
+struct PEPO{G,PType<:TenAbs{4},CType} <: AbstractPEPO
     state::Lattice{G,PType,Matrix{PType}}
-    weights::Weights{G,CType}
+    weights::EdgeLattice{G,CType,Matrix{NTuple{2, CType}}}
 end
 
-latticetensors(pepo::PEPO) = pepo.state
+tensors(pepo::PEPO) = pepo.state
 
-getweights(pepo::PEPO) = pepo.weights
-getweights(pepo::PEPO, bond) = getweights(pepo)[bond]
+latticetype(::PEPO{G,P}) where {G,P} = Lattice{G,P,Matrix{P}}
 
-Base.getindex(p::PEPO, bond) = latticetensors(p)[bond]
+weights(pepo::PEPO) = pepo.weights
+getweight(pepo::PEPO, bond) = weights(pepo)[bond]
+
+Base.getindex(p::PEPO, bond::Bond) = tensors(p)[bond]
 
 bloch(a) = 1 / 2 * (I + sum(a * σ for (a, σ) in zip(a, PAULI)))
 
-function pepositedata(a, Dw::Int, Ds::Int, De::Int, Dn::Int)
-    m = bloch(a)
+function pepositedata(
+    a::Union{AbstractVector,NTuple{3,Number}}, Dw::Int, Ds::Int, De::Int, Dn::Int
+)
+    return pepositedata(bloch(a), Dw, Ds, De, Dn)
+end
 
-    tw = zeros(ComplexF64, Dw, 2, 2) # out, in
-    ts = zeros(ComplexF64, Ds, 2, 2)
-    te = zeros(ComplexF64, De, 2, 2)
-    tn = zeros(ComplexF64, Dn, 2, 2)
+function pepositedata(m::AbstractMatrix, Dw::Int, Ds::Int, De::Int, Dn::Int)
+    out, in = size(m)
+
+    tw = zeros(ComplexF64, Dw, out, in)
+    ts = zeros(ComplexF64, Ds, out, in)
+    te = zeros(ComplexF64, De, out, in)
+    tn = zeros(ComplexF64, Dn, out, in)
 
     tw[1, :, :] = ts[1, :, :] = te[1, :, :] = tn[1, :, :] = m
 
@@ -27,7 +35,6 @@ function pepositedata(a, Dw::Int, Ds::Int, De::Int, Dn::Int)
 
     return p
 end
-
 struct ThermalState end
 
 function PEPO(
@@ -48,18 +55,28 @@ function PEPO(
     )
 end
 
-function pepodata(a, east, south, west, north)
-    data = @. pepositedata($Ref(a), dim(east), dim(south), dim(west), dim(north))
-    return data
-end
-function pepodata(a::AbstractMatrix, east, south, west, north)
-    data = @. pepositedata(a, dim(east), dim(south), dim(west), dim(north))
-    return data
-end
-
+# function pepodata(
+#     a::Union{AbstractVecOrMat{<:Number},NTuple{3,Number}}, east, south, west, north
+# )
+#     data = @. pepositedata($Ref(a), dim(east), dim(south), dim(west), dim(north))
+#     return data
+# end
+# function pepodata(
+#     a::AbstractMatrix{T}, east, south, west, north
+# ) where {T<:Union{AbstractVecOrMat,NTuple{3,Number}}}
+#     data = @. pepositedata(a, dim(east), dim(south), dim(west), dim(north))
+#     return data
+# end
+#
+# function pepodata(::ThermalState, east, south, west, north)
+#     data = @. pepositedata($Ref([0, 0, 0]), dim(east), dim(south), dim(west), dim(north))
+#     return 2 * data
+# end
 function pepodata(::ThermalState, east, south, west, north)
-    data = @. pepositedata($Ref([0, 0, 0]), dim(east), dim(south), dim(west), dim(north))
-    return 2 * data
+    return 2 * pepositedata((0, 0, 0), dim(east), dim(south), dim(west), dim(north))
+end
+function pepodata(rho::Tuple, east, south, west, north)
+    return pepositedata(rho, dim(east), dim(south), dim(west), dim(north))
 end
 
 dimtospace(d::Int) = ℂ^d
@@ -77,8 +94,8 @@ function PEPO(
     return PEPO(a, physlat, eastbond, southbond)
 end
 function PEPO(
-    a,
-    physbond::AbstractLattice,
+    a::AbstractMatrix,
+    physbond::AbstractMatrix,
     eastbond::AbstractMatrix,
     southbond::AbstractMatrix=eastbond;
 )
@@ -87,7 +104,8 @@ function PEPO(
     south = dimtospace.(southbond)
     north = dimtospace.(circshift(southbond, (0, 1)))
 
-    data = pepodata(a, east, south, west, north)
+    # Generate data 
+    data = pepodata.(a, east, south, west, north)
 
     tensors = @. TensorMap(
         data, physbond * adjoint(physbond), east * south * adjoint(west) * adjoint(north)
@@ -100,7 +118,7 @@ function PEPO(tensors::AbstractLattice{G,<:AbsTen{2,4}}) where {G}
     horizontal_weights = @. id(getindex(domain(tensors), 1))
     vertical_weights = @. id(getindex(domain(tensors), 2))
 
-    weights = Weights(horizontal_weights, vertical_weights)
+    weights = EdgeLattice(horizontal_weights, vertical_weights)
 
     return PEPO(tensors, weights)
 end
@@ -123,7 +141,43 @@ end
 
 function mergeinto!(p_merged, p)
     @inbounds for c in blocksectors(p)
-        copy!(TensorKit.block(p_merged, c), TensorKit.block(p, c))
+        copyto!(TensorKit.block(p_merged, c), TensorKit.block(p, c))
     end
     return p_merged
+end
+
+mutable struct PEPOWithBuffer{G,PType,CType,StyleS,StyleT} <: AbstractPEPO
+    const parent::PEPO{G,PType,CType}
+    const buffer::Vector{Lattice{G,PType,Matrix{PType}}}
+    const stepstyle::StyleS
+    const truncstyle::StyleT
+    state::Int
+end
+
+stepstyle(pepo) = pepo.stepstyle
+truncstyle(pepo) = pepo.truncstyle
+
+weights(pepo::PEPOWithBuffer) = weights(pepo.parent)
+tensors(pepo::PEPOWithBuffer) = tensors(pepo.parent)
+
+currentbuffer(pepo::PEPOWithBuffer) = _current_buffer(pepo.parent, pepo.buffer, pepo.state)
+currentbuffer(pepo::PEPO) = tensors(pepo)
+currentbuffer(cell::AbstractUnitCell) = cell
+
+function truncate!(pepo::PEPOWithBuffer, isometries, weights)
+    ustyle = stepstyle(pepo)
+    tstyle = truncstyle(pepo)
+
+    truncate!(ustyle, tstyle, pepo, isometries, weights)
+    return pepo
+end
+
+function setaxis!(pepo::PEPOWithBuffer, axis)
+    pepo.state = axis
+
+    otheraxis = mod(axis + 1, 1:2)
+
+    permutetranspose!(getbuffer(pepo, axis - 1), getbuffer(pepo, otheraxis - 1))
+
+    return pepo
 end

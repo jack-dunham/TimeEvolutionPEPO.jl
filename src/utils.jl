@@ -86,17 +86,12 @@ end
 showheader(x::DataType) = "$x"
 
 function safepinv(t::AbstractTensorMap; kwargs...)
-    rv = try
-        mpinv(t; alg=TensorKit.SDD(), kwargs...)
-    catch e
-        if e isa LAPACKException
-            mpinv(t; alg=TensorKit.SVD(), kwargs...)
-            @warn "Pseudo-inverse failed using `gesdd` trying `gesvd`..."
-        else
-            rethrow()
-        end
+    try
+        return mpinv(t; alg=TensorKit.SDD(), kwargs...)
+    catch _
+        @warn "Pseudo-inverse failed using `gesdd` trying `gesvd`..."
+        return mpinv(t; alg=TensorKit.SVD(), kwargs...)
     end
-    return rv
 end
 
 function mpinv(t::AbstractTensorMap; alg=TensorKit.SDD(), kwargs...)

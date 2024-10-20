@@ -6,16 +6,23 @@ Concrete type representing a *normalized* density matrix with associated trace e
 struct DensityMatrix{P<:AbstractLattice,T<:InfiniteContraction}
     data::P
     environment::T
-    function DensityMatrix(data::P, env::T) where {P<:AbstractLattice,T<:InfiniteContraction}
-        tensors = deepcopy(data)
-        tracenormalize!(tensors, env)
+    function DensityMatrix(
+        data::P, env::T
+    ) where {P<:AbstractLattice,T<:InfiniteContraction}
+        data = deepcopy(data)
+        # tracenormalize!(data, env)
 
-        trval = trace(tensors, env)
-        if !all(trval .≈ one(scalartype(trval)))
-            @warn "unable to normalize state to unit trace" trace = trval
+        trval = trace(data, env)
+
+        if all(trval .≈ zero(scalartype(trval)))
+            @warn "state cannot be normalized" trace = trval
+        else
+            broadcast(data, trval) do t, n
+                rmul!(t, 1 / n)
+            end
         end
 
-        new{P,T}(tensors, env)
+        return new{P,T}(data, env)
     end
 end
 function Base.show(io::IO, rho::DensityMatrix)
@@ -24,7 +31,7 @@ function Base.show(io::IO, rho::DensityMatrix)
         return nothing
     end
     println(io, "DensityMatrix of unit cell size $(size(rho.data)) normalized using:")
-    show(io,rho.environment.algorithm)
+    show(io, rho.environment.algorithm)
     return nothing
 end
 function Base.summary(rho::DensityMatrix)
@@ -36,6 +43,7 @@ tracenormalize(object, normalizer) = tracenormalize!(deepcopy(object), normalize
 
 function tracenormalize!(tensors::AbstractLattice, boundary)
     norms = trace(tensors, boundary)
+    println(norms)
     @debug "" norms
     broadcast(tensors, norms) do t, n
         rmul!(t, 1 / n)
@@ -43,21 +51,36 @@ function tracenormalize!(tensors::AbstractLattice, boundary)
     return tensors
 end
 
-latticetensors(rho::DensityMatrix) = rho.data
+tensors(rho::DensityMatrix) = rho.data
 
 function DensityMatrix(
     pepo::Union{AbstractPEPO,Simulation,DensityMatrix},
     alg::AbstractBoundaryAlgorithm;
     kwargs...,
 )
-    tensors = latticetensors(pepo)
-    return DensityMatrix(tensors, alg; kwargs...)
+    data = tensors(pepo)
+    return DensityMatrix(data, alg; kwargs...)
+end
+function DensityMatrix(
+    pepo::Union{AbstractPEPO,Simulation,DensityMatrix}, env::InfiniteContraction, kwargs...
+)
+    data = tensors(pepo)
+    renormalize!(env, contractphysical(data ))
+    return DensityMatrix(data, env)
 end
 
 function DensityMatrix(tensors::AbstractLattice, alg::AbstractBoundaryAlgorithm; kwargs...)
     env = newcontraction(alg, contractphysical(tensors); kwargs...)
     runcontraction!(env)
     return DensityMatrix(tensors, env)
+end
+
+function renormalize!(rho::DensityMatrix)
+    tensors = rho.data
+    env = rho.environment
+    renormalize!(rho.environment, contractphysical(tensors))
+    tracenormalize!(tensors, env)
+    return rho
 end
 
 """
@@ -70,7 +93,9 @@ effort is made to esnure the resulting object representes a physical density mat
 struct ReducedDensityMatrix{S,N,T<:AbstractTensorMap{S,N,N}} <: AbstractTensorMap{S,N,N}
     data::T
     inds::NTuple{N,CartesianIndex{2}}
-    function ReducedDensityMatrix(data::T, inds::NTuple{N,Union{CartesianIndex{2},NTuple{2}}}) where {S,N,T<:AbstractTensorMap{S,N,N}}
+    function ReducedDensityMatrix(
+        data::T, inds::NTuple{N,Union{CartesianIndex{2},NTuple{2}}}
+    ) where {S,N,T<:AbstractTensorMap{S,N,N}}
         inds_cartesian = map(CartesianIndex, inds)
         return new{S,N,T}(data, inds_cartesian)
     end
@@ -238,13 +263,13 @@ function trace(network::AbstractLattice, contractor)
 end
 function trace(network::AbstractLattice, contractor, ind)
     rv = zero(scalartype(network))
-    
+
     x = ind[1]
     y = ind[2]
 
     boundary = get_contraction_boundary(contractor, x:x, y:y)
 
-    trval = _partialtrace(rv, boundary..., network[x:x,y:y], Val((false)))::typeof(rv)
+    trval = _partialtrace(rv, boundary..., network[x:x, y:y], Val((false)))::typeof(rv)
 
     return trval
 end
@@ -255,7 +280,8 @@ Calculate the partial trace of `rho` returning a `ReducedDensityMatrix` object. 
 `inds` define those sites that well remain *untraced*. Site indices in `inds` are mapped
 to tensor indices in the same order as in `inds`.
 """
-partialtrace(rho::DensityMatrix, inds::Vararg) = partialtrace(rho.data, rho.environment, inds...)
+partialtrace(rho::DensityMatrix, inds::Vararg) =
+    partialtrace(rho.data, rho.environment, inds...)
 
 function partialtrace(network::AbstractLattice, trace, inds::Vararg{T,N}) where {T,N}
     if length(inds) == 0
@@ -275,8 +301,9 @@ function partialtrace(network::AbstractLattice, trace, inds::Vararg{T,N}) where 
     return rho
 end
 
-function _partialtrace(network::AbstractLattice, contractor, inds::Vararg{CartesianIndex{2},N}) where {N}
-
+function _partialtrace(
+    network::AbstractLattice, contractor, inds::Vararg{CartesianIndex{2},N}
+) where {N}
     lx = minimum(x -> x[1], inds)
     ly = minimum(x -> x[2], inds)
 
@@ -285,10 +312,12 @@ function _partialtrace(network::AbstractLattice, contractor, inds::Vararg{Cartes
 
     boundary = get_contraction_boundary(contractor, lx:rx, ly:ry)
 
-    issite = Val(Tuple(CartesianIndex(ind) ∈ inds for ind in Iterators.product(lx:rx, ly:ry)))
+    issite = Val(
+        Tuple(CartesianIndex(ind) ∈ inds for ind in Iterators.product(lx:rx, ly:ry))
+    )
 
     # Get the untraced site tensors
-    sites = map(i -> network[i[1],i[2]], inds)
+    sites = map(i -> network[i[1], i[2]], inds)
 
     cod = mapreduce(x -> getindex(codomain(x), 1), *, sites)
 
@@ -298,7 +327,7 @@ function _partialtrace(network::AbstractLattice, contractor, inds::Vararg{Cartes
 
     MS = [network[i, j] for i in lx:rx, j in ly:ry]
 
-    trval= _partialtrace(rv, boundary..., MS, issite)::typeof(rv)
+    trval = _partialtrace(rv, boundary..., MS, issite)::typeof(rv)
 
     return trval
 end
@@ -307,7 +336,6 @@ function get_contraction_boundary(con::InfiniteContraction, xr::UnitRange, yr::U
     return get_contraction_boundary(con.runtime, xr, yr)
 end
 function get_contraction_boundary(vumps::VUMPSRuntime, xr::UnitRange, yr::UnitRange)
-
     if length(yr) != 1
         throw(ArgumentError("cannot contract across multiple rows using VUMPS"))
     end
@@ -333,19 +361,15 @@ function get_contraction_boundary(vumps::VUMPSRuntime, xr::UnitRange, yr::UnitRa
     return FL, FR, ACU, ARU, ACD, ARD
 end
 
-function get_contraction_boundary(ctmrgrt::CornerMethodRuntime, xr::UnitRange, yr::UnitRange)
+function get_contraction_boundary(
+    ctmrgrt::CornerMethodRuntime, xr::UnitRange, yr::UnitRange
+)
     ctmrg = ctmrgrt.primary
 
-    lx = first(xr)
-    rx = last(xr)
+    C1, C2, C3, C4 = getboundary(ctmrg.corners, xr, yr)
+    T1, T2, T3, T4 = map(ts -> Tuple(t for t in ts), getboundary(ctmrg.edges, xr, yr))
 
-    ly = first(yr)
-    ry = last(yr)
-
-    C1,C2,C3,C4 = getboundary(ctmrg.corners, lx:rx, ly:ry)
-    T1,T2,T3,T4 = map(ts -> Tuple(t for t in ts), getboundary(ctmrg.edges, lx:rx, ly:ry))
-
-    return C1,C2,C3,C4,T1,T2,T3,T4
+    return C1, C2, C3, C4, T1, T2, T3, T4
 end
 
 # function _partialtrace(
@@ -505,7 +529,7 @@ end
     T4::NTuple{Ny,E},
     MS::AbstractArray{<:AbsTen{2}},
     sites::Val{S},
-) where {OutType, Nx,Ny,E,S}
+) where {OutType,Nx,Ny,E,S}
     gh = (i, j) -> get_bond_symbol(i, j, :h)
     gv = (i, j) -> get_bond_symbol(i, j, :v)
     symb = (s, i) -> Symbol("$(s)_$(i)")

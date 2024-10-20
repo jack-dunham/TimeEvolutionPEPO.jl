@@ -4,9 +4,9 @@ function minimalcanonicalform!(lat::AbstractLattice; kwargs...)
     if size(lat) > (1, 1)
         throw(ArgumentError("Minimal canonical form for unit-cells of size > (1,1) not currently supported"))
     else
-        minimalcanonicalform!.(lat)
+        _, hort, vert = minimalcanonicalform!(only(lat))
     end
-    return lat
+    return lat, hort, vert
 end
 
 function minimalcanonicalform!(tensor::AbsTen{2,4}; tol=1e-10, maxiter=1000)
@@ -15,6 +15,9 @@ function minimalcanonicalform!(tensor::AbsTen{2,4}; tol=1e-10, maxiter=1000)
     T = deepcopy(tensor)
     err = Inf
     numiter = 0
+
+    hort = hor
+    vert = ver
 
     elp = @elapsed begin
         for t in 1:maxiter
@@ -41,6 +44,12 @@ function minimalcanonicalform!(tensor::AbsTen{2,4}; tol=1e-10, maxiter=1000)
             #     break
             # end
 
+            hort *= hor
+            vert *= ver
+
+            normalize!(hort)
+            normalize!(vert)
+
             if err ≤ tol
                 break
             end
@@ -49,7 +58,7 @@ function minimalcanonicalform!(tensor::AbsTen{2,4}; tol=1e-10, maxiter=1000)
         end
     end
     @info "Minimal canonical form gauging: $err after $numiter iterations taking $(elp)s"
-    return tensor
+    return tensor, hort, vert
 end
 
 function mcfgauge!(p_out, p_in, g1, g2) #hor, ver

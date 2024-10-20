@@ -85,6 +85,41 @@ end
             @test M[4, 1] ≈ dt^2 / 2 * kron(B, B)
             @test M[5, 1] ≈ dt^2 / 2 * B
             @test M[6, 1] ≈ dt^2 / 2 * B
+
+            @test M[1, 2] ≈ C
+            @test M[2, 2] ≈ A
+            @test M[3, 2] ≈ zero.(A)
+            @test M[4, 2] ≈ zero.(kron(A,B))
+            @test M[5, 2] ≈ zero.(A)
+            @test M[6, 2] ≈ zero.(A)
+
+            @test M[1, 3] ≈ C
+            @test M[2, 3] ≈ zero.(A)
+            @test M[3, 3] ≈ A
+            @test M[4, 3] ≈ zero.(kron(A,B))
+            @test M[5, 3] ≈ zero.(A)
+            @test M[6, 3] ≈ zero.(A)
+
+            @test M[1, 4] ≈ kron(C,C)
+            @test M[2, 4] ≈ kron(C,A)
+            @test M[3, 4] ≈ kron(A,C)
+            @test M[4, 4] ≈ kron(A,A)
+            @test M[5, 4] ≈ zero.(kron(A,C))
+            @test M[6, 4] ≈ zero.(kron(A,C))
+
+            @test M[1, 5] ≈ kron(C,D)
+            @test M[2, 5] ≈ kron(C,B)
+            @test M[3, 5] ≈ kron(A,D)
+            @test M[4, 5] ≈ kron(A,B)
+            @test M[5, 5] ≈ A
+            @test M[6, 5] ≈ zero.(A)
+
+            @test M[1, 6] ≈ kron(D,C)
+            @test M[2, 6] ≈ kron(D,A)
+            @test M[3, 6] ≈ kron(B,C)
+            @test M[4, 6] ≈ kron(B,A)
+            @test M[5, 6] ≈ zero.(A)
+            @test M[6, 6] ≈ A
         end
     end
     @testset verbose = true "Exact compression" begin

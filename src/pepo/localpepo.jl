@@ -12,12 +12,12 @@ function setcurrentbond!(p::LocalUpdatablePEPO, bond::Bond)
 end
 
 function evolvedpair(p::LocalUpdatablePEPO{G,PType}, bond=currentbond(p)) where {G,PType}
-    leftpair, rightpair = evolvedtensors(p)[bond]
+    leftpair, rightpair = currentbuffer(p)[bond]
     return leftpair[1]::PType, rightpair[2]::PType
 end
 
 function setevolvedpair!(p, val1, val2, bond)
-    evolvedbuffer = evolvedtensors(p)
+    evolvedbuffer = currentbuffer(p)
 
     leftpair, rightpair = evolvedbuffer[bond]
     newleftpair = (val1, leftpair[2])
@@ -28,7 +28,7 @@ function setevolvedpair!(p, val1, val2, bond)
 end
 
 function parentpair(p::LocalUpdatablePEPO{G,PType}, bond=currentbond(p)) where {G,PType}
-    leftpair, rightpair = latticetensors(p)[bond]
+    leftpair, rightpair = tensors(p)[bond]
     return leftpair::PType, rightpair::PType
 end
 
@@ -37,7 +37,7 @@ function _getindex(pe::LocalUpdatablePEPO, bond::Bond, ::Val{true})
 
     new_left, new_right = evolvedpair(pe)
 
-    rv_left, rv_right = latticetensors(pe)[bond]
+    rv_left, rv_right = tensors(pe)[bond]
 
     if left(bond) == left(updated_bond)
         rv_left, rv_right = new_left, new_right
