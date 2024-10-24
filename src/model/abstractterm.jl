@@ -23,3 +23,5 @@ function term_to_matrix(A, term)
     mat = term.coeff * kron(1, term.term...)
     return convert(A, mat)
 end
+
+vectorise(term::AbstractTerm) = vectorise(typeof(term))(Matrix{ComplexF64}(term))

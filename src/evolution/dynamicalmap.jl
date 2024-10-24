@@ -1,31 +1,29 @@
-function newstepper(
-    ::PEPO, stepper::NTuple{N,<:AbstractMatrix{T}}, method
-) where {N,T<:AbstractTimeStepper}
-    return stepper
-end
+# function newstepper(
+#     ::PEPO, stepper::NTuple{N,<:AbstractMatrix{T}}, method
+# ) where {N,T<:AbstractTimeStepper}
+#     return stepper
+# end
+#
+# function newstepper(physical::Lattice, model, method)
+#     return construct_stepper_list(physical, model, method)
+# end
+#
+# function newstepper(pepo::PEPO{G}, model::Tuple, method) where {G}
+#     model = map(Lattice{G}, model)
+#     return newstepper(physicalspace(pepo), model, method)
+# end
 
-function newstepper(physical::Lattice, model::NTuple, method 
-                    ) where {S<:TensorSpace}
-    return construct_stepper_list(physical, model, method)
-end
-
-function newstepper(pepo::PEPO{G}, model::Tuple, method) where {G}
-    model = map(Lattice{G}, model)
-    return newstepper(physicalspace(pepo), model, method)
-end
-
-# Explicitly isotropic
-function newstepper(
-    physical::AbstractMatrix{<:IndexSpace},
-    model::NTuple{1,AbstractMatrix},
-    method::Union{TETNO,TEPEPSO},
-)
-
-    println(typeof(model))
-
-    onlystep = timestepper(physical, only(model), method; tau=method.timestep)
-    return [onlystep]
-end
+# # Explicitly isotropic
+# function newstepper(
+#     physical::AbstractMatrix{<:IndexSpace},
+#     model::NTuple{1,AbstractMatrix},
+#     method::Union{TETNO,TEPEPSO},
+# )
+#     println(typeof(model))
+#
+#     onlystep = timestepper(physical, only(model), method; tau=method.timestep)
+#     return [onlystep]
+# end
 
 #
 # function newstepper(
@@ -42,9 +40,7 @@ end
 #     return rv
 # end
 
-function construct_stepper_list(
-    physical, model::NTuple{2}, method; tau=method.timestep
-)
+function construct_stepper_list(physical, model::NTuple{2}, method; tau=method.timestep)
     xtensorsteps = timestepper(physical, model[1], method; tau=tau)
 
     xsteps = map(xtensorsteps) do s
@@ -64,68 +60,177 @@ function construct_stepper_list(
     return xsteps, ysteps
 end
 
-mutable struct Schedule{T}
-    start::Vector{T}
-    bulk::Vector{T}
-    finish::Vector{T}
-    numiter::Int
+struct TrotterDecomposition{T}
+    head::Vector{T}
+    body::Vector{T}
+    tail::Vector{T}
 end
 
-Base.length(sch::Schedule) =length(sch.start) + (sch.numiter - 1) * length(sch.bulk) + length(sch.finish)
+Base.eltype(::TrotterDecomposition{T}) where {T} = T
 
-Base.eltype(::Schedule{T}) where {T} = T
+Base.iterate(sch::TrotterDecomposition, state=1) = iterate(sch.body, state)
 
-function Base.iterate(sch::Schedule{T}, state = ()) where {T}
-
-    reps = Iterators.repeated(sch.bulk, sch.numiter - 1)
-    itr = Iterators.flatten((sch.start, reps, sch.finish))
-
-    return Base.iterate(itr, state)
+function Base.size(t::TrotterDecomposition)
+    return maximum(size, Iterators.flatten((t.head, t.body, t.tail)))
 end
 
-function construct_stepper_list(physical, model::NTuple{1, <:Vector}, method::TEPEPSO)
-    trotterlist = map(only(model)) do matrix_of_callables
+
+# function construct_stepper_list(physical, model, method)
+#     model = Iterators.flatten(model)
+#
+#     trotterlist = map(model) do matrix_of_callables
+#
+#         G = promote_geometry_type(physical, matrix_of_callables)
+#
+#         S = stepper_type(typeof(matrix_of_callables), method)
+#
+#         rvf =
+#             dt -> begin
+#                 data = broadcast(physical, matrix_of_callables) do space, callable
+#                     return callable(space, method)(dt)
+#                 end
+#
+#                 lat = Lattice{G}(data)
+#
+#                 return S(lat)
+#             end
+#
+#         return rvf
+#     end
+#
+#     tau =method.timestep
+#
+#     bulk = map(t -> t(tau), trotterlist)
+#
+#     maxsize = size(first(bulk))
+#
+#     physicalspace = broadcast((p, _) -> p, physical, CartesianIndices(maxsize))
+#
+#     T = eltype(bulk)
+#
+#
+#     return Schedule(T[], bulk, T[], method.numsteps), physicalspace
+# end
+
+function newstepper(physical, model, method)
+
+    steps = processmodel(model, method)
+
+    trotterlist = map(steps) do matrix_of_callables
+
         G = promote_geometry_type(physical, matrix_of_callables)
 
-        rvf = dt -> begin 
-            data = broadcast(physical, matrix_of_callables) do space, callable
-                return callable(space, method)(dt)
+        S = stepper_type(matrix_of_callables, method)
+
+        rvf =
+            dt -> begin
+                data = broadcast(physical, unwrap(matrix_of_callables)) do space, callable
+                    return callable(space, method)(dt)
+                end
+
+                lat = Lattice{G}(data)
+
+                return S(lat)
             end
 
-            lat = Lattice{G}(data)
-
-            return FullStepper(lat)
-        end
+        return rvf
     end
 
     tau = method.timestep
 
-    if length(trotterlist) == 1
-        pepsof = only(trotterlist)
-        return only(trotterlist)(tau)
+    if length(trotterlist) == 1 
+        # No trotterisation required if we have made it this far with only one operator
+        # in the list
+        theop = only(trotterlist)(tau)
+
+        physicalspace = broadcast((p, _) -> p, physical, CartesianIndices(size(theop)))
+
+        T = typeof(theop)
+
+        return TrotterDecomposition(T[], [theop], T[]), physicalspace
     end
 
-    startend = first(trotterlist)(tau / 2)
-    bulkend = first(trotterlist)(tau)
+    if method.trotterorder == 1
+        @info "First-order trotter decomposition..."
+        body = map(op -> op(tau), trotterlist)
+    elseif method.trotterorder == 2
+        @info "Second-order trotter decomposition..."
+        body = map(op -> op(tau / 2), trotterlist)
+        append!(body, reverse(body))
+    end
 
-    bulkops = typeof(startend)[]
+    T = eltype(body)
 
-    foreach(op -> push!(bulk, op(tau / 2)), trotterlist[begin+1:end-1])
-    rbulkops = reverse(bulkops)
+    oplist = TrotterDecomposition(T[], body, T[])
 
-    push!(bulkops, last(trotterlist)(tau))
-    append!(bulkops, rbulkops)
-    push!(bulkops, bulkend)
+    physicalspace = broadcast((p, _) -> p, physical, CartesianIndices(size(oplist)))
 
-    # bulkitr = Iterators.repeated(bulkops, method.numsteps - 1)
+    @info "...of $(length(body)) operators"
 
-    restitr = push!(bulkops[begin:end - 1], startend)
-
-    maxsize = maximum(size, restitr)
-    physicalspace = broadcast((p,_) -> p, physical, CartesianIndices(maxsize))
-
-    return Schedule([startend], bulkops, restitr, method.numsteps), physicalspace
+    return oplist, physicalspace
 end
+
+# function construct_stepper_list(physical, model, method)
+#
+#     if !(eltype(model)<:AbstractMatrix)
+#         model = map(m -> [m;;], model)
+#     end
+#
+#     trotterlist = broadcast(model) do matrix_of_callables
+#
+#         G = promote_geometry_type(physical, matrix_of_callables)
+#
+#         S = stepper_type(eltype(matrix_of_callables), method)
+#
+#         rvf =
+#             dt -> begin
+#                 data = broadcast(physical, matrix_of_callables) do space, callable
+#                     return callable(space, method)(dt)
+#                 end
+#
+#                 lat = Lattice{G}(data)
+#
+#                 return S(lat)
+#             end
+#
+#         return rvf
+#     end
+#
+#     tau = method.timestep
+#
+#     if length(trotterlist) == 1
+#         pepsof = only(trotterlist)(tau)
+#
+#         maxsize = size(pepsof)
+#
+#         physicalspace = broadcast((p, _) -> p, physical, CartesianIndices(maxsize))
+#
+#         T = typeof(pepsof)
+#
+#         return Schedule(T[], [pepsof], T[], method.numsteps), physicalspace
+#     end
+#
+#     startend = first(trotterlist)(tau / 2)
+#     bulkend = first(trotterlist)(tau)
+#
+#     bulkops = typeof(startend)[]
+#
+#     foreach(op -> push!(bulkops, op(tau / 2)), trotterlist[(begin + 1):(end - 1)])
+#     rbulkops = reverse(bulkops)
+#
+#     push!(bulkops, last(trotterlist)(tau))
+#     append!(bulkops, rbulkops)
+#     push!(bulkops, bulkend)
+#
+#     # bulkitr = Iterators.repeated(bulkops, method.numsteps - 1)
+#
+#     restitr = push!(bulkops[begin:(end - 1)], startend)
+#
+#     maxsize = maximum(size, restitr)
+#     physicalspace = broadcast((p, _) -> p, physical, CartesianIndices(maxsize))
+#
+#     return Schedule([startend], bulkops, restitr, method.numsteps), physicalspace
+# end
 
 function second_order_trotter(physical, model, method; tau=method.timestep)
     xsteps, ysteps = construct_stepper_list(physical, model, method; tau=tau / 2)
@@ -276,7 +381,7 @@ end
 
 function tebdtimestepper(
     style::LocalUpdate, model::AbstractUnitCell{G,L}, physical::AbstractUnitCell; kwargs...
-) where {G,L<:AbstractLindbladEquation}
+) where {G,L}
     u, v = generic_tebd_time_stepper(model, physical; kwargs...)
 
     rv = map(identity, zip(u, v))
@@ -285,7 +390,7 @@ function tebdtimestepper(
 end
 function tebdtimestepper(
     style::GlobalUpdate, model::AbstractUnitCell{G,L}, physical::AbstractUnitCell; kwargs...
-) where {G,L<:AbstractLindbladEquation}
+) where {G,L}
     u, v = generic_tebd_time_stepper(model, physical; kwargs...)
 
     rv = map(twobondstepper, u, v)
@@ -295,7 +400,7 @@ end
 
 function generic_tebd_time_stepper(
     model::AbstractUnitCell{G,L}, physical::AbstractUnitCell; tau, compress
-) where {G,L<:AbstractLindbladEquation}
+) where {G,L}
     u1, v2 = tebdtensor(model[1, 1], physical[1, 1], physical[2, 1], tau; compress=compress)
 
     u = similar(physical, typeof(u1))
@@ -321,67 +426,6 @@ function generic_tebd_time_stepper(
     end
 
     return [u], [v]
-end
-
-vectorise(term::AbstractTerm) = vectorise(typeof(term))(Matrix{ComplexF64}(term))
-
-vectorise(::Type{HamiltonianTerm{1}}) = twolocal(vectorise(HamiltonianTerm{2}))
-
-# Vectorise the superoperators; we do this the non-julian way (row major) as the rest
-# of the code assumes (ket, bra) ordering (whoops).
-function vectorise(::Type{HamiltonianTerm{2}})
-    return H -> -im * (kron(H, one(H)) - kron(one(H), transpose(H)))
-end
-function vectorise(::Type{LindbladTerm})
-    anticomm = L -> kron(L' * L, one(L)) + kron(one(L), transpose(L' * L))
-
-    return twolocal(L -> kron(L, transpose(L')) - 1 / 2 * anticomm(L))
-end
-
-localvectorise(term::AbstractTerm) = localvectorise(typeof(term))(Matrix{ComplexF64}(term))
-function localvectorise(::Type{LindbladTerm})
-    anticomm = L -> kron(L' * L, one(L)) + kron(one(L), transpose(L' * L))
-
-    return L -> kron(L, transpose(L')) - 1 / 2 * anticomm(L)
-end
-
-# We need both local terms that have support on two sites, and therefore need to divide
-# by two to avoid double counting in the brickwork pattern
-twolocal(f) = H -> 1 / 2 * (f(kron(one(H), H)) + f(kron(H, one(H))))
-
-function tebdtensor(model::LindbladEquation, p1::IndexSpace, p2::IndexSpace, dt; compress)
-
-    # c2 = H -> (-im * (H ⊗ one(H) - one(H) ⊗ transpose(H)))
-    # d2 = L -> L ⊗ transpose(L') - 1 / 2 * (L' * L ⊗ one(L) + one(L) * transpose(L' * L))
-    #
-    # # We need both local terms that have support on two sites, and therefore need to divide
-    # # by two to avoid double counting in the brickwork pattern
-    # c1 = H -> 1 / 2 * (c2(one(H) ⊗ H) + c2(H ⊗ one(H)))
-    # d1 = L -> 1 / 2 * (d2(one(L) ⊗ L) + d2(L ⊗ one(L)))
-
-    # ket1 * ket2 * bra1 * bra2
-    spacecod = p1 * p2 * p1' * p2'
-    spacedom = p1 * p2 * p1' * p2'
-
-    data = zeros(ComplexF64, dim(spacecod), dim(spacedom))
-    symdata = zeros(ComplexF64, dims(spacecod * spacedom))
-
-    # We divide by half again for local terms as in 2D we effectively apply these twice
-    data = 1 / 2 * sum(vectorise, model.onelocal; init=data)
-    data = 1 / 2 * sum(vectorise, model.linops; init=data)
-
-    data = sum(vectorise, model.twolocal; init=data)
-
-    copyto!(symdata, exp(dt * data))
-
-    tensor = TensorMap(symdata, spacecod, spacedom)
-
-    # move site one to codomain and site two to domain
-    tensor = permute(tensor, (1, 3, 5, 7), (2, 4, 6, 8))
-
-    u, s, v = tsvd(tensor; trunc=compress)
-
-    return u * sqrt(s), _transpose(sqrt(s) * v)
 end
 
 # This method takes a matrix as an input
@@ -413,17 +457,16 @@ function dmpotensor(mpo, p::S) where {S<:IndexSpace}
     s = ⊕(oneunit(S)^D...)
     array = zeros(ComplexF64, d, d, d, d, D, D)
 
-    for (ind1, block) in pairs(mpo)
-        i = ind1[1]
-        j = ind1[2]
-        for (ind2, op) in pairs(block)
-            n = i + ind2[1] - 1
-            m = j + ind2[2] - 1
-            slice = view(array, :, :, :, :, n, m)
-            slice .= reshape(op, size(slice))
-        end
+    L = size(mpo, 1)
+
+    matrix = reduce(vcat, [reduce(hcat, mpo[i, :]) for i in 1:L]);
+
+    for (ind, op) in pairs(matrix)
+        slice = view(array, :, :, :, :, ind)
+        slice .= reshape(op, size(slice))
     end
 
     tensor = TensorMap(array, p * p' * p' * p, s * s')
-    return tensor
+
+    return permutedom(tensor, (2,1))
 end

@@ -1,4 +1,6 @@
-function simple_update_gauge!(pepo; maxiter=100, tol=1e-12, verbose=true, buffering=false, reset=false)
+function simple_update_gauge!(
+    pepo; maxiter=100, tol=1e-12, verbose=true, buffering=false, reset=false
+)
     if 1 in size(pepo)
         throw(
             ErrorException(
@@ -35,7 +37,9 @@ function simple_update_gauge!(pepo; maxiter=100, tol=1e-12, verbose=true, buffer
     return pepo
 end
 
-function simple_update_gauge_isometries!(pepo; maxiter=100, tol=1e-12, verbose=true, buffering=false)
+function simple_update_gauge_isometries!(
+    pepo; maxiter=100, tol=1e-12, verbose=true, buffering=false
+)
     if 1 in size(pepo)
         throw(
             ErrorException(
@@ -120,7 +124,6 @@ end
 
 function simple_update_gauging_parallel!(pepo)
     isomh, isomv = map((1:2)) do axis
-
         thebonds = bonds(pepo, axis)
 
         len, _ = size(thebonds)
@@ -197,7 +200,6 @@ function truncate_bond_matrices!(pepo)
 end
 
 function truncate_bond_matrices!(dstpepo, srcpepo, isoms)
-
     for bond in bonditer(tensors(dstpepo))
         D = bondspace(dstpepo, bond)
 
@@ -213,14 +215,13 @@ function truncate_bond_matrices!(dstpepo, srcpepo, isoms)
         setindex!(isoms, u => v, bond)
 
         setweight!(dstpepo, ss, bond; copy=false)
-
     end
 
     for I in eachindex(tensors(dstpepo))
         dst = tensors(dstpepo)[I]
         src = tensors(srcpepo)[I]
-        e,s,w,n = isoms[I]
-        truncateto!(dst, src,e,s,w,n)
+        e, s, w, n = isoms[I]
+        truncateto!(dst, src, e, s, w, n)
     end
 
     return dstpepo
@@ -367,26 +368,42 @@ function evolve(pepo::AbstractPEPO, stepper::FullStepper)
     ten = tensors(pepo)
     ste = tensors(stepper)
 
-
-
     rv = broadcast(ten, ste) do site, op
-        d1,d2,d3,d4 = domain(site)
-        D1,D2,D3,D4 = domain(op)
+        d1, d2, d3, d4 = domain(site)
+        D1, D2, D3, D4 = domain(op)
 
         c = codomain(site)
 
-        dst = similar(site, c, fuse(d1 * D1) * fuse(d2 * D2) * fuse(d3 * D3)' *fuse(d4 * D4)')
+        dst = similar(
+            site, c, fuse(d1 * D1) * fuse(d2 * D2) * fuse(d3 * D3)' * fuse(d4 * D4)'
+        )
 
-        site = sptensor(site)
         apply_four_bond_stepper!(dst, site, op)
 
         return dst
     end
 
-    return rv 
+    return rv
 end
-function localevolve(pair::Pair, stepper::FullStepper, bond)
 
+# function evolve(pepo::AxialPEPO, stepper::AxialStepper)
+#     ten = tensors(pepo)
+#     ste = tensors(stepper)
+#
+#     rv = broadcast(ten, ste) do site, op
+#         d1, d2, d3, d4 = domain(site)
+#         D1, D3 = domain(op)
+#
+#         dst = similar(site, codomain(site), fuse(d1 * D1) * d2 * fuse(d3 * D3)' * d4)
+#
+#         apply_four_bond_stepper!(dst, site, op)
+#
+#         return dst
+#     end
+#
+#     return rv
+# end
+function localevolve(pair::Pair, stepper::FullStepper, bond)
     ops = tensors(stepper)[bond]
 
     rvpair = apply_four_bond_stepper_locally(pair, ops)
@@ -395,7 +412,6 @@ function localevolve(pair::Pair, stepper::FullStepper, bond)
 end
 
 function _splitu(op, η)
-
     D = domain(op)
     rv = similar(op, D * η, D)
 
@@ -405,7 +421,6 @@ function _splitu(op, η)
 end
 
 function _splitv(op, η)
-
     D = codomain(op)
     rv = similar(op, D, D * η')
 
@@ -415,9 +430,8 @@ function _splitv(op, η)
 end
 
 function localevolve(pair::Pair, stepper::FullStepper, isoms, bond)
-
     opspair = tensors(stepper)[bond]
-    
+
     isomspair = isoms[bond]
 
     A, B = pair
@@ -426,8 +440,8 @@ function localevolve(pair::Pair, stepper::FullStepper, isoms, bond)
     domA = domain(opA)
     domB = domain(opB)
 
-    DA1,DA2,DA3,DA4 = domain(A)
-    DB1,DB2,DB3,DB4 = domain(B)
+    DA1, DA2, DA3, DA4 = domain(A)
+    DB1, DB2, DB3, DB4 = domain(B)
 
     codA = codomain(A)
     codB = codomain(B)
@@ -435,14 +449,14 @@ function localevolve(pair::Pair, stepper::FullStepper, isoms, bond)
     isomsA, isomsB = map(isomspair, opspair) do isoms, op
         η1, η2, η3, η4 = domain(op)
 
-        (e,s,w,n) = isoms
+        (e, s, w, n) = isoms
 
-        ee = _splitu(e,η1)
-        ss = _splitu(s,η2)
-        ww = _splitv(w,η3)
-        nn = _splitv(n,η4)
+        ee = _splitu(e, η1)
+        ss = _splitu(s, η2)
+        ww = _splitv(w, η3)
+        nn = _splitv(n, η4)
 
-        return (ee,ss,ww,nn)
+        return (ee, ss, ww, nn)
     end
 
     if bondaxis(bond) == 1
@@ -453,7 +467,6 @@ function localevolve(pair::Pair, stepper::FullStepper, isoms, bond)
         apply_pepso_right!(rvB, B, opB, isomsB)
 
     elseif bondaxis(bond) == 2
-
         rvA = similar(A, codA, DA1 * fuse(DA2 * domA[2]) * DA3 * DA4)
         rvB = similar(B, codB, DB1 * DB2 * DB3 * fuse(DB4 * domB[4])')
 
@@ -532,7 +545,7 @@ function construct_axis_buffer(lattice::Lattice, map::FullStepper)
     return evolved
 end
 
-function constructbuffers(pepo, steps::Vector{<:FullStepper{<:Any, <:TensorMap}}, truncstyle)
+function constructbuffers(pepo, steps::Vector{<:FullStepper{<:Any,<:TensorMap}}, truncstyle)
     buffers = latticetype(pepo)[]
 
     buffer0 = tensors(pepo)
@@ -555,7 +568,7 @@ function constructbuffers(pepo, steps::Vector{<:FullStepper{<:Any, <:TensorMap}}
     return buffers
 end
 
-function stitchisometries(A, dst::ProductSpace{S, 4}, src::ProductSpace{S, 4}) where {S}
+function stitchisometries(A, dst::ProductSpace{S,4}, src::ProductSpace{S,4}) where {S}
     D1, D2, D3, D4 = src
     d1, d2, d3, d4 = dst
 
@@ -564,10 +577,12 @@ function stitchisometries(A, dst::ProductSpace{S, 4}, src::ProductSpace{S, 4}) w
     w = _transpose(isometry(A, d3 * D3, d3))
     n = _transpose(isometry(A, d4 * D4, d4))
 
-    return (e,s,w,n)
+    return (e, s, w, n)
 end
 
-function stepstitchisometries(A::Type, dst::ProductSpace{S, 4}, src::ProductSpace{S, 4}) where {S}
+function stepstitchisometries(
+    A::Type, dst::ProductSpace{S,4}, src::ProductSpace{S,4}
+) where {S}
     d1, d2, d3, d4 = dst
     D1, D2, D3, D4 = src
 
@@ -576,9 +591,10 @@ function stepstitchisometries(A::Type, dst::ProductSpace{S, 4}, src::ProductSpac
     w = _transpose(isometry(A, fuse(d3 * D3)', d3))
     n = _transpose(isometry(A, fuse(d4 * D4)', d4))
 
-    return (e,s,w,n)
+    return (e, s, w, n)
 end
-function bpisometries(A::Type, dst::ProductSpace{S, 4}, src::ProductSpace{S, 4}) where {S}
+
+function bpisometries(A::Type, dst::ProductSpace{S,4}, src::ProductSpace{S,4}) where {S}
     d1, d2, d3, d4 = dst
     D1, D2, D3, D4 = src
 
@@ -587,17 +603,17 @@ function bpisometries(A::Type, dst::ProductSpace{S, 4}, src::ProductSpace{S, 4})
     w = _transpose(isometry(A, d3' * D3', d3' * D3'))
     n = _transpose(isometry(A, d4' * D4', d4' * D4'))
 
-    return (e,s,w,n)
+    return (e, s, w, n)
 end
-stitchisometries(dst::TenAbs{4}, src::TenAbs{4}) = stitchisometries(storagetype(dst), domain(dst), domain(src))
+function stitchisometries(dst::TenAbs{4}, src::TenAbs{4})
+    return stitchisometries(storagetype(dst), domain(dst), domain(src))
+end
 
 function stitchisometries(template::AbstractLattice, src::AbstractLattice)
     return map(stitchisometries, template, src)
 end
 function stitchisometries(template::PermuteTranspose, src::AbstractLattice)
-
-    isoms = map(PermutedDimsArray(template.parent, (2,1)),  src) do out, in
-
+    isoms = map(PermutedDimsArray(template.parent, (2, 1)), src) do out, in
         dstdom = permute(domain(out), template.perm)
         srcdom = domain(src)
 
@@ -607,10 +623,9 @@ function stitchisometries(template::PermuteTranspose, src::AbstractLattice)
 end
 
 function baretruncation!(dst, src)
+    (e, s, w, n) = stitchisometries(dst, src)
 
-    (e,s,w,n) = stitchisometries(dst, src)
-
-    truncateto!(dst, src, e,s,w,n)
+    truncateto!(dst, src, e, s, w, n)
 
     return dst
 end
@@ -620,8 +635,8 @@ function parallel2sequential(lattice, isometries, bond)
 
     uold, vold = lattice[bond]
 
-    _,s1,w1,n1 = isometries[uind]
-    e2,s2,_,n2 = isometries[vind]
+    _, s1, w1, n1 = isometries[uind]
+    e2, s2, _, n2 = isometries[vind]
 
     @tensoropt begin
         unew[k b; e s w n] := uold[k b; e ss ww nn] * s1[ss; s] * w1[w; ww] * n1[n; nn]
@@ -636,8 +651,8 @@ function parallel2sequential(lattice, stepper, isometries, bond)
 
     uold, vold = lattice[bond]
 
-    _,s1,w1,n1 = isometries[uind]
-    e2,s2,_,n2 = isometries[vind]
+    _, s1, w1, n1 = isometries[uind]
+    e2, s2, _, n2 = isometries[vind]
 
     @tensoropt begin
         unew[k b; e s w n] := uold[k b; e ss ww nn] * s1[ss; s] * w1[w; ww] * n1[n; nn]
@@ -650,8 +665,8 @@ end
 function parallel2sequential(pair::Pair, isometries, bond)
     uind, vind = bond
 
-    _,s1,w1,n1 = isometries[uind]
-    e2,s2,_,n2 = isometries[vind]
+    _, s1, w1, n1 = isometries[uind]
+    e2, s2, _, n2 = isometries[vind]
 
     @tensoropt begin
         unew[k b; e s w n] := uold[k b; e ss ww nn] * s1[ss; s] * w1[w; ww] * n1[n; nn]

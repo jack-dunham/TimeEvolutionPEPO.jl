@@ -41,6 +41,9 @@ end
 
 function permutetranspose!(dstlattice, srclattice)
     broadcast(dstlattice, permutedims(srclattice)) do pdst, psrc
+        if pdst === psrc
+            psrc = copy(psrc)
+        end
         permute!(pdst, psrc, ((1, 2), (4, 3, 6, 5)))
     end
     return dstlattice

@@ -1,13 +1,38 @@
-struct Simulation{
-    E<:AbstractTimeEvolution,P<:AbstractPEPO,PB<:PEPOWithBuffer,L<:AbstractTimeStepper,T
-}
-    initialstate::P
+struct Simulation{E<:AbstractTimeEvolution,P<:AbstractPEPO,L<:AbstractTimeStepper,M,T}
     info::SimulationInfo
-    stepper::Schedule{L}
     method::E
-    state::PB
+    model::M
+    state::P
+    stepper::TrotterDecomposition{L}
     truncators::Tuple{T,T}
+    initialstate::P
+    function Simulation(
+        info::SimulationInfo,
+        method::E,
+        model::M,
+        state::P,
+        stepper::TrotterDecomposition{L},
+        truncators::Tuple{T,T},
+        initialstate::P,
+    ) where {E, P, L, M, T}
+        return new{E,P,L,M,T}(info, method, model, state, stepper, truncators, initialstate)
+    end
+    function Simulation(
+        info::SimulationInfo,
+        method::E,
+        model::M,
+        state::P,
+        stepper::TrotterDecomposition{L},
+        truncators::Tuple{T,T},
+        ::Nothing,
+    ) where {E, P, L, M, T}
+        return new{E,P,L,M,T}(info, method, model, state)
+    end
 end
+
+quantumstate(s::Simulation) = quantumstate(s.state)
+quantumstate(p::PEPO) = p
+quantumstate(p::AxialPEPO) = p.parent
 
 function Base.show(io::IO, m::MIME"text/plain", sim::Simulation)
     # pepo = getpepo(sim)
@@ -30,7 +55,7 @@ end
 
 Return the unwrapped `PEPO` object of `obj`. If `obj isa PEPO` then `getpepo(obj) === obj`.
 """
-pepo(sim::Simulation) = sim.state.parent
+pepo(sim::Simulation) = sim.state
 
 """
     latticetensors(obj::Union{AbstractPEPO, DensityMatrix, Simulation}) -> AbstractLattice
@@ -107,14 +132,13 @@ function Simulation(
     vertical::Union{S,AbstractMatrix{S}}=horizontal;
     method::AbstractTimeEvolution,
     physical=S,
+    storeall=true,
 ) where {S}
-    model = model2tuple(model)
+    # model = model2tuple(model)
 
     # physical, horizontal, vertical = promotelattice(model, physical, horizontal, vertical)
 
     G = promote_geometry_type(physical, horizontal, vertical)
-
-    println(typeof(physical))
 
     stepper, physicalspace = newstepper(Lattice{G}([physical;;]), model, method)
 
@@ -126,9 +150,11 @@ function Simulation(
     # Construct the truncators
     truncators = newtruncators(state, stepper, method.truncalg)
 
-    initialstate = deepcopy(state)
+    initialstate = storeall ? deepcopy(state) : nothing
 
-    sim = Simulation(initialstate, SimulationInfo(), stepper, method, state, truncators)
+    info = SimulationInfo()
+
+    sim = Simulation(info, method, model, state, stepper, truncators, initialstate)
 
     return sim
 end
@@ -164,14 +190,11 @@ simulate(hook, sim::Simulation) = simulate!(hook, deepcopy(sim))
 
 simulate!(sim::Simulation) = simulate!(identity, sim)
 
-function simulate!(callback, sim::Simulation; maxshots = 100)
-
+function simulate!(callback, sim::Simulation; maxshots=100)
     method = sim.method
     pepo = sim.state
-    stepper = sim.stepper
-    truncator = sim.truncators
-
     info = sim.info
+    model = sim.model
 
     truncalg = method.truncalg
     numsteps = method.numsteps
@@ -179,7 +202,7 @@ function simulate!(callback, sim::Simulation; maxshots = 100)
     breaktol = method.breaktol
     order = method.trotterorder
 
-    r = range(start = 1, step = round(Int, numsteps/maxshots, RoundUp), stop = numsteps)
+    r = range(; start=1, step=round(Int, numsteps / maxshots, RoundUp), stop=numsteps)
     shotsat = collect(r)
 
     numiter = 0
@@ -189,27 +212,32 @@ function simulate!(callback, sim::Simulation; maxshots = 100)
     prev_weights = deepcopy(weights(pepo))
 
     info.iterations == 0 && callback(sim)
-    
-    timestep!(pepo, truncator, only(stepper.start), truncalg)
 
     doshot = false
 
+    if isdefined(sim, :stepper)
+        stepper = sim.stepper
+    else
+        stepper, _ = newstepper(physicalspace(pepo), model, method)
+    end
+
+    if isdefined(sim, :truncators)
+        truncator = sim.truncators
+    else
+        truncator = newtruncators(pepo, stepper, truncalg)
+    end
+
     while numiter < numsteps && tol ≥ breaktol
 
-        numiter += 1
-
-        doshot = numiter in shotsat
-
-        itr = doshot ? stepper.finish : stepper.bulk
-
-        for stepper in itr
-            timestep!(pepo, truncator, stepper, truncalg)
+        for step in stepper
+            timestep!(pepo, truncator, step, truncalg)
         end
 
         # Calculate the difference in pepo singular values between timesteps
         tol = tolerance!(prev_weights, weights(pepo), timestep)
         # tol = 0.0
 
+        numiter += 1
         method.verbose && @info "Steady state convergence: $tol after $numiter iterations."
 
         info.convergence = tol
@@ -218,16 +246,13 @@ function simulate!(callback, sim::Simulation; maxshots = 100)
         # User specified function for post-step processing
         info.convergence < breaktol ? info.isconverged = true : info.isconverged = false
 
-        if doshot
+        if numiter in shotsat
+            pepo isa AxialPEPO && setaxis!(pepo, 1)
             callback(sim)
-            timestep!(pepo, truncator, only(stepper.start), truncalg)
-            doshot = false
         end
     end
 
-    for stepper in stepper.finish
-        timestep!(pepo, truncator, stepper, truncalg)
-    end
+    pepo isa AxialPEPO && setaxis!(pepo, 1)
 
     return sim
 end
@@ -264,7 +289,7 @@ function testthermal(D)
     return sim.output
 end
 function measurehook!(sim::Simulation, A=PAULI[1]; env=nothing)
-    pepo = PEPOKit.pepo(sim)
+    pepo = PEPOKit.quantumstate(sim)
 
     alg = VUMPS(; tol=1e-10, maxiter=200, bonddim=16, verbose=true)
     # alg = CTMRG(; tol=1e-8, maxiter=200, bonddim=16, verbose=true)
@@ -287,7 +312,8 @@ end
 function measurehook!(output::Vector, sim, args...)
 
     # init
-    tensors = PEPOKit.tensors(sim.state.parent)
+    
+    tensors = PEPOKit.tensors(sim.state)
 
     alg = CTMRG(; tol=1e-8, maxiter=200, bonddim=16, verbose=true)
     # alg = VUMPS(; tol=1e-10, maxiter=200, bonddim=16, verbose=true)
@@ -296,15 +322,9 @@ function measurehook!(output::Vector, sim, args...)
     env = newcontraction(alg, contractphysical(tensors))
     runcontraction!(env)
 
-    r = round(Int, sim.method.numsteps / 100, RoundUp)
-
-    println(r)
-
     f = sim -> begin
-        if mod(sim.info.iterations, 0:(r - 1)) == 0
-            exp1 = measurehook!(sim, args...; env=env)
-            push!(output, exp1)
-        end
+        exp1 = measurehook!(sim, args...; env=env)
+        push!(output, exp1)
         return nothing
     end
 
@@ -334,14 +354,12 @@ function negativityhook!(sim::Simulation)
 end
 
 function negativityhook!(output, sim::Simulation)
-
     return sim -> push!(output, negativityhook!(sim))
 end
 
 function negativityhook!(output::AbstractVector)
     return sim -> push!(output, negativityhook!(sim))
 end
-
 
 function test_p2s!(out, op, mpo, us, vw, vn)
     @tensoropt (
@@ -350,18 +368,22 @@ function test_p2s!(out, op, mpo, us, vw, vn)
         kk => 2,
         bb => 2,
         e1 => 4,
-        w1 =>4,
+        w1 => 4,
         s1 => 4,
-        n1 =>4,
-        w =>4,
+        n1 => 4,
+        w => 4,
         s => 4,
-        n =>4,
+        n => 4,
         e2 => D,
-        w2 =>D,
+        w2 => D,
         s2 => D,
-        n2 =>D,
-    ) out[k b; e1 e2 s w n ] = op[kk bb; e1 s1 w1 n1] * 
-    mpo[k b kk bb; e2 s2 w2 n2] * us[s1 s2; s] * vw[w; w1 w2] * vn[n; n1 n2]
+        n2 => D,
+    ) out[k b; e1 e2 s w n] =
+        op[kk bb; e1 s1 w1 n1] *
+        mpo[k b kk bb; e2 s2 w2 n2] *
+        us[s1 s2; s] *
+        vw[w; w1 w2] *
+        vn[n; n1 n2]
     return out
 end
 function test_p2s(op, mpo, us, vw, vn)
@@ -371,17 +393,21 @@ function test_p2s(op, mpo, us, vw, vn)
         kk => 2,
         bb => 2,
         e1 => 4,
-        w1 =>4,
+        w1 => 4,
         s1 => 4,
-        n1 =>4,
-        w =>4,
+        n1 => 4,
+        w => 4,
         s => 4,
-        n =>4,
+        n => 4,
         e2 => D,
-        w2 =>D,
+        w2 => D,
         s2 => D,
-        n2 =>D,
-    ) out[k, b, e1, e2, s,  w,  n ] := op[kk, bb, e1, s1, w1, n1] * 
-    mpo[k, b, kk, bb, e2, s2, w2, n2] * us[s1, s2, s] * vw[w, w1, w2] * vn[n, n1, n2]
+        n2 => D,
+    ) out[k, b, e1, e2, s, w, n] :=
+        op[kk, bb, e1, s1, w1, n1] *
+        mpo[k, b, kk, bb, e2, s2, w2, n2] *
+        us[s1, s2, s] *
+        vw[w, w1, w2] *
+        vn[n, n1, n2]
     return out
 end

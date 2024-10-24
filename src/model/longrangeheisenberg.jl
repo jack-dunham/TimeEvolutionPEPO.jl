@@ -10,7 +10,11 @@ struct LongRangeHeisenberg <: AbstractLindbladEquation
     N::Int
 end
 
+ModelStyle(::Type{LongRangeHeisenberg}) = IsGlobal()
+
 getparams(lr::LongRangeHeisenberg) = (lr.Jx, lr.Jy, lr.Jz, lr.ax, lr.ay, lr.az)
+
+stepper_type(::AbstractMatrix{<:LongRangeHeisenberg}, _) = FullStepper
 
 function LongRangeHeisenberg(
     L...; nk=6, N=200, Jx=0.0, Jy=0.0, Jz=0.0, ax=Inf, ay=Inf, az=Inf

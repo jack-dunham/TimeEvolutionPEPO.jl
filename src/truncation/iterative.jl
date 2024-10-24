@@ -15,20 +15,20 @@ end
 Base.length(iso::Isometries) = length(iso.e)
 
 function getmessages(iso::Isometries, bond; axis=bondaxis(bond))
-    (e1,s1,w1,n1), (e2,s2,w2,n2) = iso[bond]
+    (e1, s1, w1, n1), (e2, s2, w2, n2) = iso[bond]
     if axis == 1
-        return e1,w2
+        return e1, w2
     elseif axis == 2
-        return s1,n2
+        return s1, n2
     end
 end
-function Base.iterate(iso::Isometries, state = 1)
+function Base.iterate(iso::Isometries, state=1)
     i = state
 
     if state > length(iso)
         return nothing
     else
-        return (iso.e[i],iso.s[i],iso.w[i],iso.n[i]), state + 1
+        return (iso.e[i], iso.s[i], iso.w[i], iso.n[i]), state + 1
     end
 end
 
@@ -112,7 +112,6 @@ Base.getindex(isoms::Isometries, bond::Bond) = isoms[first(bond)] => isoms[last(
 function timestep!(
     pepo!::AbstractPEPO, truncator!::Isometries, stepper, truncalg::IterativeSU
 )
-
     iterative_simple_update!(
         pepo!,
         truncator!,
@@ -138,14 +137,12 @@ end
 #     return pepo!
 # end
 
-function newtruncators(pepo::PEPOWithBuffer, sequence, ::IterativeSU)
-    iso = newisometries(tensors(pepo), first(sequence.start))
+function newtruncators(pepo, sequence, ::IterativeSU)
+    iso = newisometries(tensors(pepo), first(sequence))
     return (iso, iso)
 end
 
-
 function iterative_simple_update_step(pepo, stepper, isometries, bond)
-
     pair = currentbuffer(pepo)[bond]
 
     reducedpair = localevolve(pair, stepper, isometries, bond)
@@ -154,17 +151,14 @@ function iterative_simple_update_step(pepo, stepper, isometries, bond)
 
     D = bondspace(pepo, bond)
 
-    (u, v), s, infid = simpleupdate(
-        reducedpair, weights(pepo), bond; trunc=truncspace(D)
-    )
+    (u, v), s, infid = simpleupdate(reducedpair, weights(pepo), bond; trunc=truncspace(D))
 
-    return (u,v), s, infid
+    return (u, v), s, infid
 end
 
 function iterative_simple_update!(
     pepo!, truncator!, stepper; maxiter, tol, sequential, recycle
 )
-
     mode = :none
     if mode === :quick
         rv = evolve(pepo!, stepper)
@@ -174,22 +168,20 @@ function iterative_simple_update!(
 
         truncate_bond_matrices!(pepo!, newpepo, truncator!)
 
-        quicknormalize!(pepo!.parent)
-        hermitianize!(pepo!.parent)
+        quicknormalize!(pepo!)
+        hermitianize!(pepo!)
 
         return pepo!
-
     end
 
     if mode === :bp
         buff = currentbuffer(pepo!)
-        messages = sqrtbeliefpropagation(buff,stepper)
+        messages = sqrtbeliefpropagation(buff, stepper)
         isoms = newsplitisometries(buff, stepper)
-
 
         for bond in bonditer(buff)
             D = bondspace(buff, bond)
-            (u,v),s = vidalisometries(messages, bond; trunc=truncspace(D))
+            (u, v), s = vidalisometries(messages, bond; trunc=truncspace(D))
             setindex!(isoms, u => v, bond)
         end
         for I in eachindex(buff)
@@ -202,16 +194,13 @@ function iterative_simple_update!(
             # mergeinto!(dst, spten)
         end
 
-
-        quicknormalize!(pepo!.parent)
-        hermitianize!(pepo!.parent)
+        quicknormalize!(pepo!)
+        hermitianize!(pepo!)
 
         return pepo!
-
     end
 
     infidelity = 0
-
 
     buff = currentbuffer(pepo!)
 
@@ -222,32 +211,27 @@ function iterative_simple_update!(
     newweights = deepcopy(weights(pepo!))
 
     for i in 1:maxiter
-
         bonds = bonditer(buff)
 
         if sequential
-
             itr = iseven(i) ? Iterators.reverse(bonds) : bonds
 
             for bond in itr
-                (u,v),s,_ = iterative_simple_update_step(pepo!, stepper, isoms, bond)
+                (u, v), s, _ = iterative_simple_update_step(pepo!, stepper, isoms, bond)
 
                 setindex!(isoms, u => v, bond)
                 setweight!(pepo!, s, bond; copy=true)
-
             end
 
             new = newweights
             old = weights(pepo!)
 
         else
-
             Threads.@threads for bond in collect(bonds)
-                (u,v),s,_ = iterative_simple_update_step(pepo!, stepper, isoms, bond)
+                (u, v), s, _ = iterative_simple_update_step(pepo!, stepper, isoms, bond)
 
                 setindex!(newisoms, u => v, bond)
                 newweights[bond] = s
-
             end
 
             new = weights(pepo!)
@@ -277,7 +261,6 @@ function iterative_simple_update!(
 
             # mergeinto!(dst, spten)
         end
-
 
         gauge1, gauge2 = simple_update_gauge_isometries!(temppepo)
 
@@ -333,21 +316,18 @@ function iterative_simple_update!(
 
     size(buff) == (1, 1) && minimalcanonicalform!(buff)
     #
-    size(buff) != (1, 1) && simple_update_gauge!(pepo!; maxiter=100, reset=true)
+    size(buff) != (1, 1) && simple_update_gauge!(pepo!; maxiter=500, reset=true)
 
-    pepo!.state = 0
 
     # minimalcanonicalform!(tensors(pepo))
 
-    quicknormalize!(pepo!.parent)
-    hermitianize!(pepo!.parent)
+    quicknormalize!(pepo!)
+    hermitianize!(pepo!)
 
     return pepo!, infidelity
 end
 
-function iterative_neighbourhood_update!(
-    pepo, truncator, stepper,
-)
+function iterative_neighbourhood_update!(pepo, truncator, stepper)
     evolve!(pepo, stepper)
 
     # simple_update_gauge!(pepo; maxiter=100)
@@ -391,7 +371,7 @@ function iterative_neighbourhood_update!(
     # yisoms = stitchisometries.(permutetranspose(tensors(pepo)), ybuff)
 
     xisoms = truncator
-    ep,sp,wp,np = map(permutedims, unpack(xisoms))
+    ep, sp, wp, np = map(permutedims, unpack(xisoms))
     yisoms = Isometries(sp, ep, np, wp)
 
     weightsbuff = deepcopy(weights(pepo))
@@ -412,36 +392,33 @@ function iterative_neighbourhood_update!(
         local isomh
 
         for i in 1:1
+            isomh = broadcast(bonds(buff, 1)) do bond
+                # reducedpair = parallel2sequential(buff, xisoms, bond)
+                # truncx = ntu_total_low(reducedpair, reducedbuffer, bond)
+                #
+                # foreach(normalize!, reducedpair)
 
-        isomh = broadcast(bonds(buff, 1)) do bond
-            # reducedpair = parallel2sequential(buff, xisoms, bond)
-            # truncx = ntu_total_low(reducedpair, reducedbuffer, bond)
-            #
-            # foreach(normalize!, reducedpair)
+                reducedpair = buff[bond]
+                truncx = ntu_total_low(reducedpair, buff, bond)
 
-            reducedpair = buff[bond]
-            truncx = ntu_total_low(reducedpair, buff, bond)
+                # truncx = ntu_total_low(reducedpair, reducedbuffer, bond)
 
-            # truncx = ntu_total_low(reducedpair, reducedbuffer, bond)
+                (u, v), s, _ = parallelisometries(
+                    reducedpair, truncx, bond, truncalg; D=bondspace(pepo, bond)
+                )
 
-            (u, v), s, _ = parallelisometries(
-                reducedpair, truncx, bond, truncalg; D=bondspace(pepo, bond)
-            )
+                # D = bondspace(pepo, bond)
+                # (u, v), s, _ = simpleupdate(reducedpair, weights(pepo), bond; trunc=truncspace(D))
 
-            # D = bondspace(pepo, bond)
-            # (u, v), s, _ = simpleupdate(reducedpair, weights(pepo), bond; trunc=truncspace(D))
+                setindex!(xisoms, u => v, bond)
+                setindex!(yisoms, u => v, transpose(bond))
 
+                maxnormalize!(s)
 
-            setindex!(xisoms, u => v, bond)
-            setindex!(yisoms, u => v, transpose(bond))
+                setweight!(pepo, s, bond; copy=true)
 
-            maxnormalize!(s)
-
-            setweight!(pepo, s, bond; copy=true)
-
-            return (u, v)
-        end
-
+                return (u, v)
+            end
         end
 
         # truncy = newtruncators(yreducedbuffer, truncalg)
@@ -452,39 +429,37 @@ function iterative_neighbourhood_update!(
         local isomv
 
         for i in 1:1
+            isomv = broadcast(bonds(ybuff, 1)) do fictbond
+                # reducedpair = parallel2sequential(ybuff, yisoms, fictbond)
+                # truncy = ntu_total_low(reducedpair, yreducedbuffer, fictbond)
+                #
+                # foreach(normalize!, reducedpair)
 
-        isomv = broadcast(bonds(ybuff, 1)) do fictbond
-            # reducedpair = parallel2sequential(ybuff, yisoms, fictbond)
-            # truncy = ntu_total_low(reducedpair, yreducedbuffer, fictbond)
-            #
-            # foreach(normalize!, reducedpair)
+                reducedpair = ybuff[fictbond]
+                truncy = ntu_total_low(reducedpair, ybuff, fictbond)
+                # ql0, qr0 = parallel2sequential(ybuff, yisoms, fictbond)
+                #
+                # ql = permutedom(ql0, (2,1,4,3))
+                # qr = permutedom(qr0, (2,1,4,3))
 
-            reducedpair = ybuff[fictbond]
-            truncy = ntu_total_low(reducedpair, ybuff, fictbond)
-            # ql0, qr0 = parallel2sequential(ybuff, yisoms, fictbond)
-            #
-            # ql = permutedom(ql0, (2,1,4,3))
-            # qr = permutedom(qr0, (2,1,4,3))
+                # truncy = ntu_total_low(reducedpair,yreducedbuffer, fictbond)
 
-            # truncy = ntu_total_low(reducedpair,yreducedbuffer, fictbond)
+                realbond = transpose(fictbond)
 
-            realbond = transpose(fictbond)
+                (u, v), s, _ = parallelisometries(
+                    reducedpair, truncy, fictbond, truncalg; D=bondspace(pepo, realbond)
+                )
 
-            (u, v), s, _ = parallelisometries(
-                reducedpair, truncy, fictbond, truncalg; D=bondspace(pepo, realbond)
-            )
+                setindex!(xisoms, u => v, realbond)
+                setindex!(yisoms, u => v, fictbond)
 
-            setindex!(xisoms, u => v, realbond)
-            setindex!(yisoms, u => v, fictbond)
+                # D = bondspace(pepo, realbond)
+                # (u, v), s, _ = simpleupdate(ql => qr, weights(pepo), realbond; trunc=truncspace(D))
 
-            # D = bondspace(pepo, realbond)
-            # (u, v), s, _ = simpleupdate(ql => qr, weights(pepo), realbond; trunc=truncspace(D))
+                setweight!(pepo, s, realbond; copy=true)
 
-            setweight!(pepo, s, realbond; copy=true)
-
-            return (u, v)
-        end
-
+                return (u, v)
+            end
         end
 
         isoe = broadcast(first, isomh)
@@ -493,16 +468,19 @@ function iterative_neighbourhood_update!(
         isos = broadcast(first, isomv)
         ison = broadcast(last, circshift(isomv, (1, 0)))
 
-        xisoms = Isometries(SquareLattice(
-            broadcast(tuple, isoe, permutedims(isos), isow, permutedims(ison))
-        ))
-        yisoms = Isometries(SquareLattice(
-            broadcast(tuple, isos, permutedims(isoe), ison, permutedims(isow))
-        ))
+        xisoms = Isometries(
+            SquareLattice(
+                broadcast(tuple, isoe, permutedims(isos), isow, permutedims(ison))
+            ),
+        )
+        yisoms = Isometries(
+            SquareLattice(
+                broadcast(tuple, isos, permutedims(isoe), ison, permutedims(isow))
+            ),
+        )
 
         tol = tolerance!(weightsbuff, weights(pepo), 1.0)
         @warn "isometries converged to $tol after $numiter"
-
 
         # if numiter == maxiter && tol > 1e-10
         #     xisoms = stitchisometries.(tensors(pepo), buff)
@@ -514,7 +492,6 @@ function iterative_neighbourhood_update!(
         ) do dst, src, e, s, w, n
             truncateto!(dst, src, e, s, w, n)
         end
-
 
         #
         if tol < 1e-6

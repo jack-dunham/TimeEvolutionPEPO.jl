@@ -123,10 +123,9 @@
 #
 #     return iso, 0
 # end
-function autodiffoptimise(left, right, pair::Pair, environment, bond::Bond; 
-                          trunc, 
-                          rankreduce, 
-                          xi, optalg)
+function autodiffoptimise(
+    left, right, pair::Pair, environment, bond::Bond; trunc, rankreduce, xi, optalg
+)
     gauge = optalg.gauge
 
     if rankreduce
@@ -151,11 +150,10 @@ function autodiffoptimise(left, right, pair::Pair, environment, bond::Bond;
 
     x0 = ITC.randnt!(similar(ut * vt))
 
-
     D = dim(codomain(s2))
 
     sv = diagm([exp10(-i) for i in 0:(D - 1)])
-    
+
     s2 = TensorMap(sv, codomain(s2), domain(s2))
 
     x0 = convert(typeof(x0), u * s2 * v)
@@ -164,8 +162,8 @@ function autodiffoptimise(left, right, pair::Pair, environment, bond::Bond;
     @time withgradient(uv -> infid(uv), x0)
 
     maxvec = x0
-    
-    rv, _  = optimize(x0, optimizer; inner=(_,x,y)->real(dot(x,y))) do R0
+
+    rv, _ = optimize(x0, optimizer; inner=(_, x, y) -> real(dot(x, y))) do R0
         rv = withgradient(uv -> infid(uv), R0)
         return rv.val, only(rv.grad)
     end
@@ -176,15 +174,14 @@ function autodiffoptimise(left, right, pair::Pair, environment, bond::Bond;
     r = sqrt(s) * v
 
     maxnormalize!(s)
-    
-    iso = TruncationIsometries(l, s, r)
 
+    iso = TruncationIsometries(l, s, r)
 
     yiso = ntu_total_wtg(pair, environment, bond, iso)
 
     # println(iso.s)
 
-    wtg2!(iso.u,iso.s,iso.v, yiso)
+    wtg2!(iso.u, iso.s, iso.v, yiso)
 
     println(iso.s)
 
@@ -232,16 +229,15 @@ function autodiffoptimise(left, right, metric::AbsTen{2,2}; trunc, rankreduce, x
 
     x0 = ITC.randnt!(similar(ut * vt))
 
-
     D = dim(codomain(s2))
 
     sv = diagm([exp10(-i) for i in 0:(D - 1)])
-    
+
     s2 = TensorMap(sv, codomain(s2), domain(s2))
 
     x0 = convert(typeof(x0), u * s2 * v)
 
-    Rm, _ = optimize(x0, optimizer; inner=(_,x,y)->real(dot(x,y))) do R0
+    Rm, _ = optimize(x0, optimizer; inner=(_, x, y) -> real(dot(x, y))) do R0
         rv = withgradient(uv -> infid(uv), R0)
         return rv.val, only(rv.grad)
     end
@@ -251,8 +247,6 @@ function autodiffoptimise(left, right, metric::AbsTen{2,2}; trunc, rankreduce, x
     r = sqrt(s) * v
 
     maxnormalize!(s)
-
-    
 
     iso = TruncationIsometries(l, s, r)
 
@@ -304,7 +298,6 @@ function my_add!(x, y, beta)
 end
 
 function _fidelity(AB, Y, LR; trunc=trunc)
-
     u, s, v = tsvd(AB; trunc=trunc)
 
     AB = permute(u * s * v, (1, 2), ())
@@ -327,8 +320,8 @@ end
 function parallelisometries(
     buffer, environment, bond::Bond, truncalg::Union{FET,NTU}; kwargs...
 )
-    return parallelisometries(buffer[bond],
-        pepo, environment, bond, truncalg; parallel=true, kwargs...
+    return parallelisometries(
+        buffer[bond], environment, bond, truncalg; parallel=true, kwargs...
     )
 end
 function parallelisometries(
@@ -360,13 +353,7 @@ function _generic_environment_isometries(
 end
 
 function single_bond_metric_isometries!(
-    pair,
-    environment,
-    bond;
-    D=bondspace(buffer, bond),
-    doreduction,
-    parallel,
-    optkwargs...,
+    pair, environment, bond; D=bondspace(buffer, bond), doreduction, parallel, optkwargs...
 )
     if doreduction
         if parallel

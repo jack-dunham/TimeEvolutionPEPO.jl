@@ -205,6 +205,16 @@ function newtruncators(
     return xenv, yenv
 end
 
+function newtruncators(pepo::AxialPEPO, _, truncalg::Union{FET,NTU})
+    xenv = newtruncators(tensors(pepo, 1), truncalg)
+    yenv = newtruncators(tensors(pepo, 2), truncalg)
+    return xenv, yenv
+end
+function newtruncators(pepo::PEPO, _, truncalg::Union{FET,NTU})
+    env = newtruncators(tensors(pepo), truncalg)
+    return env, env
+end
+
 function newtruncators(::NTuple{2,P}, ::Vector{S}, truncalg::SU) where {P<:AbstractPEPO,S}
     return SimpleUpdateState(), SimpleUpdateState()
 end
@@ -212,7 +222,6 @@ end
 function newtruncators(::PEPOWithBuffer, ::Vector, ::SU)
     return SimpleUpdateState(), SimpleUpdateState()
 end
-
 
 ## 
 
@@ -268,7 +277,6 @@ function renormalize(tensors, truncalg)
 end
 
 function renormalize!(truncator::NTuple{2}, buffer)
-
     truncx, truncy = truncator
 
     renormalize!(truncx, buffer)
@@ -542,11 +550,11 @@ function truncateto!(
     v1p = similar(u1, D3', D3' * η3')
     v2p = similar(u2, D4', D4' * η4')
 
-    mergeinto!(u1p,u1)
-    mergeinto!(u2p,u2)
+    mergeinto!(u1p, u1)
+    mergeinto!(u2p, u2)
 
-    mergeinto!(v1p,v1)
-    mergeinto!(v2p,v2)
+    mergeinto!(v1p, v1)
+    mergeinto!(v2p, v2)
 
     @tensoropt (
         k => 2,

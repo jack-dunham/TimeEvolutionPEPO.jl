@@ -40,6 +40,15 @@ struct TwoBondStepper{G,MType<:AbsTen{4,2}} <: AbstractTrotterizedTimeStepper
     isreversed::Bool
 end
 
+struct AxialStepper{G,MType<:AbsTen{4,2}} <: AbstractTrotterizedTimeStepper
+    data::Lattice{G,MType,Matrix{MType}}
+    axis::Int
+end
+
+Base.size(s::AxialStepper) = size(tensors(s))
+
+tensors(s::AxialStepper) = s.data
+
 function tensors(s::TwoBondStepper)
     (t1, t2) = latticetuple(s)
     return isreversed(s) ? t2 : t1
@@ -65,6 +74,8 @@ struct FullStepper{G,MType} <: AbstractTimeStepper
     t::Lattice{G,MType,Matrix{MType}}
 end
 
+stepper_type(t, _) = GenericStepper
+
 Base.size(fs::FullStepper) = size(fs.t)
 
 tensors(s::FullStepper) = s.t
@@ -82,6 +93,11 @@ Base.reverse(s::SplitStepper) = s
 struct TrotterizedHeisenbergStepper{G,MType}
     t::Vector{Lattice{G,MType,Matrix{MType}}}
 end
+
+struct GenericStepper end
+
+GenericStepper(l::AbstractMatrix{L}) where {L<:AbsTen{4,2}} = AxialStepper(l)
+GenericStepper(l::AbstractMatrix{L}) where {L<:AbsTen{4,4}} = FullStepper(l)
 
 function applystepper!(pepo::LocalUpdatablePEPO, operator::OneBondStepper, bond::Bond)
     # Get the current left and right pepo tensors
@@ -104,22 +120,21 @@ function applystepper!(pepo::LocalUpdatablePEPO, operator::OneBondStepper, bond:
     return pepo
 end
 
-function applystepper!(pepo::GlobalUpdatablePEPO, stepper::TwoBondStepper)
-    setisevolved!(pepo, false)
+function evolve(pepo::AxialPEPO, stepper::AxialStepper)
+    rv = broadcast(tensors(pepo), tensors(stepper)) do pin, mpo
+        d1, d2, d3, d4 = domain(pin)
+        D1, D3 = domain(mpo)
 
-    # pin = getstate(pepo)
-    # pev = getevolved(pepo)
-
-    broadcast(tensors(pepo), currentbuffer(pepo), tensors(stepper)) do pin, pev, mpo
+        dst = similar(pin, codomain(pin), fuse(d1 * D1) * d2 * fuse(d3 * D3)' * d4)
         # mpo = currentstepper(op)
         @tensoropt begin
             pout[ok ob; e ee s w ww n] := mpo[ok ob ik ib; ee ww] * pin[ik ib; e s w n]
         end
 
-        mergeinto!(pev, pout)
+        mergeinto!(dst, pout)
     end
 
-    return pepo
+    return rv
 end
 
 function apply_four_bond_stepper!(dst, src, stepper::FullStepper)
@@ -134,7 +149,7 @@ function apply_four_bond_stepper!(dst, src, stepper::FullStepper)
 
     return pepo
 end
-function apply_four_bond_stepper!(pev, pin, mpo::SparseTensorMap)
+function apply_four_bond_stepper!(pev, pin, mpo::AbstractTensorMap)
     @tensoropt begin
         pout[ok ob; e ee s ss w ww n nn] :=
             mpo[ok ob ik ib; ee ss ww nn] * pin[ik ib; e s w n]
@@ -145,7 +160,6 @@ function apply_four_bond_stepper!(pev, pin, mpo::SparseTensorMap)
 end
 function apply_four_bond_stepper_locally_hori(src, op, isoms)
     (_, us1, vw1, vn1), (ue2, us2, _, vn2) = isoms
-
 
     src1, src2 = map(sptensor, src)
 
@@ -231,8 +245,7 @@ function apply_four_bond_stepper_locally_hori(src, op, isoms)
 end
 
 function apply_pepso_left!(dst, src, op, isoms)
-
-    (e,s,w,n) = isoms
+    (e, s, w, n) = isoms
 
     temp = _apply_pepso_left(src, op, s, w, n)
     mergeinto!(dst, temp)
@@ -240,8 +253,7 @@ function apply_pepso_left!(dst, src, op, isoms)
     return dst
 end
 function apply_pepso_right!(dst, src, op, isoms)
-
-    (e,s,w,n) = isoms
+    (e, s, w, n) = isoms
 
     temp = _apply_pepso_right(src, op, e, s, n)
     mergeinto!(dst, temp)
@@ -249,8 +261,7 @@ function apply_pepso_right!(dst, src, op, isoms)
     return dst
 end
 function apply_pepso_up!(dst, src, op, isoms)
-
-    (e,s,w,n) = isoms
+    (e, s, w, n) = isoms
 
     temp = _apply_pepso_up(src, op, e, w, n)
     mergeinto!(dst, temp)
@@ -258,8 +269,7 @@ function apply_pepso_up!(dst, src, op, isoms)
     return dst
 end
 function apply_pepso_down!(dst, src, op, isoms)
-
-    (e,s,w,n) = isoms
+    (e, s, w, n) = isoms
 
     temp = _apply_pepso_down(src, op, e, s, w)
     mergeinto!(dst, temp)
@@ -284,11 +294,11 @@ function _apply_pepso_left(src, op, us, vw, vn)
         w2 => D,
         n2 => D,
     ) dst[ok ob; e1 e2 s w n] :=
-            op[ok ob ik ib; e2 s2 w2 n2] *
-            src[ik ib; e1 s1 w1 n1] *
-            us[s1 s2; s] *
-            vw[w; w1 w2] *
-            vn[n; n1 n2]
+        op[ok ob ik ib; e2 s2 w2 n2] *
+        src[ik ib; e1 s1 w1 n1] *
+        us[s1 s2; s] *
+        vw[w; w1 w2] *
+        vn[n; n1 n2]
     return dst
 end
 
@@ -310,11 +320,11 @@ function _apply_pepso_right(src, op, ue, us, vn)
         w2 => D,
         n2 => D,
     ) dst[ok ob; e s w1 w2 n] :=
-            op[ok ob ik ib; e2 s2 w2 n2] *
-            src[ik ib; e1 s1 w1 n1] *
-            ue[e1 e2; e] *
-            us[s1 s2; s] *
-            vn[n; n1 n2]
+        op[ok ob ik ib; e2 s2 w2 n2] *
+        src[ik ib; e1 s1 w1 n1] *
+        ue[e1 e2; e] *
+        us[s1 s2; s] *
+        vn[n; n1 n2]
     return dst
 end
 
@@ -336,11 +346,11 @@ function _apply_pepso_up(src, op, ue, vw, vn)
         w2 => D,
         n2 => D,
     ) dst[ok ob; e s1 s2 w n] :=
-            op[ok ob ik ib; e2 s2 w2 n2] *
-            src[ik ib; e1 s1 w1 n1] *
-            ue[e1 e2; e] *
-            vw[w; w1 w2] *
-            vn[n; n1 n2]
+        op[ok ob ik ib; e2 s2 w2 n2] *
+        src[ik ib; e1 s1 w1 n1] *
+        ue[e1 e2; e] *
+        vw[w; w1 w2] *
+        vn[n; n1 n2]
     return dst
 end
 
@@ -362,17 +372,16 @@ function _apply_pepso_down(src, op, ue, us, vw)
         w2 => D,
         n2 => D,
     ) dst[ok ob; e s w n1 n2] :=
-            op[ok ob ik ib; e2 s2 w2 n2] *
-            src[ik ib; e1 s1 w1 n1] *
-            ue[e1 e2; e] *
-            us[s1 s2; s] *
-            vw[w; w1 w2]
+        op[ok ob ik ib; e2 s2 w2 n2] *
+        src[ik ib; e1 s1 w1 n1] *
+        ue[e1 e2; e] *
+        us[s1 s2; s] *
+        vw[w; w1 w2]
     return dst
 end
 
 function apply_four_bond_stepper_locally_vert(src, op, isoms)
     (ue1, _, vw1, vn1), (ue2, us2, vw2, _) = isoms
-
 
     src1, src2 = map(sptensor, src)
 
@@ -437,7 +446,7 @@ function apply_four_bond_stepper_locally_vert(src, op, isoms)
     ok, ob, _, _ = codomain(op2)
 
     dst2_cod = ok * ob
-    dst2_dom = D1 * D2 * D3 * D4 *  η4
+    dst2_dom = D1 * D2 * D3 * D4 * η4
 
     dst2 = SparseTensorMap(undef, T, dst2_cod, dst2_dom)
     ten2 = TensorMap(undef, T, codomain(dst2), D1 * D2 * D3 * fuse(D4 * η4)')
@@ -549,4 +558,6 @@ end
 
 truncstyle(method::TEPEPSO) = Global()
 
-showheader(::Type{<:TEPEPSO}) = "Time-evolving projected entangled pair super-operator (tePEPSO)"
+function showheader(::Type{<:TEPEPSO})
+    return "Time-evolving projected entangled pair super-operator (tePEPSO)"
+end

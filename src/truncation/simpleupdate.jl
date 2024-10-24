@@ -2,6 +2,8 @@
 #     sequential_update_step!(pepo, truncator, stepper; kwargs...)
 # end
 
+newtruncators(::AxialPEPO,_,::SU) = (SimpleUpdateState(), SimpleUpdateState())
+
 function axial_trotter_step!(pepo, truncator, stepper; truncalg, kwargs...)
 
     axis = bondaxis(stepper)
@@ -73,7 +75,7 @@ end
 
 # wrapper for updating in parallel
 function parallelisometries(
-    pepo::AbstractPEPO, truncator::SimpleUpdateState, bond::Bond, truncalg::SU
+    pepo::AbstractPEPO, truncator::SimpleUpdateState, bond::Bond, truncalg::SU; kwargs...
 )
     a, b = pepo[bond]
 

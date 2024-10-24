@@ -1,4 +1,4 @@
-struct HeisenbergModel <: AbstractLindbladEquation
+struct J1J2Heisenberg <: AbstractLindbladEquation
     Jx::Float64
     Jy::Float64
     Jz::Float64
@@ -8,7 +8,7 @@ struct HeisenbergModel <: AbstractLindbladEquation
     L::Vector{LindbladTerm}
 end
 
-function (model::HeisenbergModel)(physical, method::TEPEPSO)
+function (model::J1J2Heisenberg)(physical, method::TEPEPSO)
     (Jx, Jy, Jz, Kx, Ky, Kz) = getparams(model)
 
     rv =
@@ -27,24 +27,24 @@ function (model::HeisenbergModel)(physical, method::TEPEPSO)
             )
         end
 
-    return rv
+    return FullStepper(rv)
 end
 
-function HeisenbergModel(L...; Jx=0, Jy=0, Jz=0, Kx=0, Ky=0, Kz=0)
-    return HeisenbergModel(Jx, Jy, Jz, Kx, Ky, Kz, L...)
+function J1J2Heisenberg(L...; Jx=0, Jy=0, Jz=0, Kx=0, Ky=0, Kz=0)
+    return J1J2Heisenberg(Jx, Jy, Jz, Kx, Ky, Kz, L...)
 end
 
-function HeisenbergModel(
+function J1J2Heisenberg(
     Jx, Jy, Jz, Kx, Ky, Kz, L::Vararg{Union{AbstractMatrix{<:Number},LindbladTerm}}
 )
     itr = map(L) do op
         return op isa LindbladTerm ? op : lin(op)
     end
 
-    return HeisenbergModel(Jx, Jy, Jz, Kx, Ky, Kz, collect(itr))
+    return J1J2Heisenberg(Jx, Jy, Jz, Kx, Ky, Kz, collect(itr))
 end
 
-getparams(hm::HeisenbergModel) = (hm.Jx, hm.Jy, hm.Jz, hm.Kx, hm.Ky, hm.Kz)
+getparams(hm::J1J2Heisenberg) = (hm.Jx, hm.Jy, hm.Jz, hm.Kx, hm.Ky, hm.Kz)
 twolocalequal(H1, H2) = getparams(H1) === getparams(H2)
 
 function _exppp(t)
@@ -149,12 +149,12 @@ end
 
 function tebdtimestepper(
     style, model::AbstractUnitCell{G,L}, physical::AbstractUnitCell; kwargs...
-) where {G,L<:HeisenbergModel}
+) where {G,L<:J1J2Heisenberg}
     steps = exact_tebd_time_stepper(style, model, physical; kwargs...)
     return steps
 end
 
-function tebdtensor(::Serial, model::HeisenbergModel, p::IndexSpace, dt; kwargs...)
+function tebdtensor(::Serial, model::J1J2Heisenberg, p::IndexSpace, dt; kwargs...)
     X, Y, Z = PAULI
 
     ops = Matrix{ComplexF64}[]
@@ -217,7 +217,7 @@ function tebdtensor(::Serial, model::HeisenbergModel, p::IndexSpace, dt; kwargs.
     return rv
 end
 
-function tebdtensor(::Axial, model::HeisenbergModel, p::IndexSpace, dt; kwargs...)
+function tebdtensor(::Axial, model::J1J2Heisenberg, p::IndexSpace, dt; kwargs...)
     X, Y, Z = PAULI
 
     ops = Array{ComplexF64,6}[]
@@ -264,7 +264,7 @@ end
 
 function exact_tebd_time_stepper(
     updatestyle, model::AbstractUnitCell{G,L}, physical::AbstractUnitCell; tau
-) where {G,L<:HeisenbergModel}
+) where {G,L<:J1J2Heisenberg}
     if !all(y -> twolocalequal(y, model[1]), model)
         throw(
             ArgumentError(

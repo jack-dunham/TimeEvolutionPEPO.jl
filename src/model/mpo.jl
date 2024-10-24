@@ -23,6 +23,8 @@ end
 function MPO(A::T, B::T, C::T, D::T) where {T}
     data = Matrix{T}(undef, 3, 3)
 
+    # C should have 1 row; B should have 1 column
+
     # row, col
     data[1, 1] = map(one, D)
     data[1, 2] = C
@@ -64,11 +66,11 @@ function MPO(eqn::LindbladEquation)
         X, Y = term.term
         a = term.coeff
 
-        B[i, 1] = -a * im * kron(X, Id) # ket
-        B[i + 1, 1] = a * im * kron(Id, transpose(X)) # bra
+        C[1, i] = -a * im * kron(X, Id)
+        C[1, i + 1] = a * im * kron(Id, transpose(X))
 
-        C[1, i] = kron(Y, Id)
-        C[1, i + 1] = kron(Id, transpose(Y))
+        B[i, 1] = kron(Y, Id) # ket
+        B[i + 1, 1] = kron(Id, transpose(Y)) # bra
 
         i += 2
     end
@@ -78,11 +80,11 @@ function MPO(eqn::LindbladEquation)
         X, Y = term.term
         alam = term.coeff
 
-        B[i, 1] = -alam * im * kron(X, Id)
-        B[i + 1, 1] = alam * im * kron(Id, transpose(X))
+        C[1, i] = -alam * im * kron(X, Id)
+        C[1, i + 1] = alam * im * kron(Id, transpose(X))
 
-        C[1, i] = kron(Y, Id)
-        C[1, i + 1] = kron(Id, transpose(Y))
+        B[i, 1] = kron(Y, Id)
+        B[i + 1, 1] = kron(Id, transpose(Y))
 
         A[i, i] = term.decay * kron(Id, Id)
         A[i + 1, i + 1] = term.decay * kron(Id, Id)
@@ -90,7 +92,7 @@ function MPO(eqn::LindbladEquation)
         i += 2
     end
 
-    # LOCAL TERMS
+    # LOCAL TERMS (divide each by 1/2 on assumption of two-dimensional simulation)
 
     D[1, 1] = 1 / 2 * sum(eqn.onelocal; init=D[1, 1]) do term
         # Absorb coefficient
@@ -259,8 +261,24 @@ function curly(mpo, args...)
 end
 
 function lazypower(H::MPO, row, col)
+
     terms = (H[r, c] for (r, c) in zip(row, col))
-    return kron(1, terms...)
+
+    rv = kron(1, terms...)
+
+    return rv
+end
+
+function testlazypower(H, N)
+
+    X,Y,Z = PAULI
+
+    C1 = H[1,2][1,1]
+    C2 = H[1,2][1,1]
+
+    @assert lazypower(H, [1,1], [1,2]) == H[1,2]
+    @assert lazypower(H, [1,1], [3,1]) == H[1,3]
+
 end
 
 function insertat(level::Vector, pos::Integer, val)
@@ -269,4 +287,121 @@ function insertat(level::Vector, pos::Integer, val)
     insert!(rv, pos, val)
 
     return rv
+end
+
+# Unfinsihed...for testing
+function secondordermpo(H)
+    (_, chi) = size(H.C)
+
+    eta = 4 + 4 * chi + chi^2
+
+    rv = similar(H.A, (eta, eta))
+
+    D = H.D
+    Id = one(D)
+
+    i = 1
+    rv[1, i] = one(D)
+    i += 1
+
+    for i in 1:chi
+        rv[1, i] = C[1,i]
+    end
+
+    ##
+    rv[1, 1] = Id
+
+    rv[1, 2] = C[1,1]
+    rv[1, 3] = C[1,2]
+
+    rv[1, 4] = D[1,1]
+    
+    rv[1, 5] = C[1,1]
+    rv[1, 6] = C[1,2]
+
+    rv[1, 7] = C[1,1] * C[1,1]
+    rv[1, 8] = C[1,1] * C[1,2]
+    rv[1, 9] = C[1,2] * C[1,1]
+    rv[1, 10] = C[1,2] * C[1,2]
+
+    #(2,3)
+    rv[1, 11] = C[1,1] * D[1,1]
+    rv[1, 12] = C[1,2] * D[1,1]
+
+    rv[1, 13] = D[1,1]
+
+    rv[1, 14] = D[1,1] * C[1,1]
+    rv[1, 15] = D[1,1] * C[1,2]
+
+    rv[1, 16] = D[1,1] * D[1,1]
+    ##
+
+    rv[2, 2] = A[1,1]
+    rv[2, 3] = A[1,2]
+
+    rv[2, 4] = B[1,1]
+
+    rv[2, 7] = C[1,1] * A[1,1]
+    rv[2, 8] = C[1,1] * A[1,2]
+    rv[2, 9] = C[1,2] * A[1,1]
+    rv[2, 10] = C[1,2] * A[1,2]
+
+    rv[2, 11] = C[1,1] * B[1,1]
+    rv[2, 12] = C[1,2] * B[1,1]
+
+    rv[2, 14] = D[1,1] * A[1,1]
+    rv[2, 15] = D[1,1] * A[1,2]
+
+    rv[2, 16] = D[1,1] * B[1,1]
+
+    # 
+    rv[3, 2] = A[2,1]
+    rv[3, 3] = A[2,2]
+
+    rv[3, 4] = B[2,1]
+
+    rv[3, 7] = C[1,1] * A[2,1]
+    rv[3, 8] = C[1,1] * A[2,2]
+    rv[3, 9] = C[1,2] * A[2,1]
+    rv[3, 10] = C[1,2] * A[2,2]
+
+    rv[3, 11] = C[1,1] * B[2,1]
+    rv[3, 12] = C[1,2] * B[2,1]
+
+    rv[3, 14] = D[1,1] * A[2,1]
+    rv[3, 15] = D[1,1] * A[2,2]
+
+    rv[3, 16] = D[1,1] * B[2,1]
+    #
+    rv[4, 11] = C[1,1]
+    rv[4, 12] = C[1,2]
+
+    rv[4, 16] = D[1,1]
+    #
+    rv[5, 1] = Id
+
+    rv[5, 2] = C[1,1]
+    rv[5, 3] = C[1,2]
+
+    rv[5, 4] = D[1,1]
+    
+    rv[5, 5] = C[1,1]
+    rv[5, 6] = C[1,2]
+
+    rv[5, 7] = C[1,1] * C[1,1]
+    rv[5, 8] = C[1,1] * C[1,2]
+    rv[5, 9] = C[1,2] * C[1,1]
+    rv[5, 10] = C[1,2] * C[1,2]
+
+    #(2,3)
+    rv[5, 11] = C[1,1] * D[1,1]
+    rv[5, 12] = C[1,2] * D[1,1]
+
+    rv[5, 13] = D[1,1]
+
+    rv[5, 14] = D[1,1] * C[1,1]
+    rv[5, 15] = D[1,1] * C[1,2]
+
+    rv[5, 16] = D[1,1] * D[1,1]
+
 end

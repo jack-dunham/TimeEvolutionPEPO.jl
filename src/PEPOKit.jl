@@ -63,19 +63,12 @@ include("updatestyle.jl")
 
 include("sparsetensormap.jl")
 
-## MODEL AND EQUATION
-include("model/abstractterm.jl")
-include("model/hamiltonianterm.jl")
-include("model/longrangeterm.jl")
-include("model/lindbladterm.jl")
-include("model/equation.jl")
-include("model/mpo.jl")
-include("model/pepso.jl")
 
 ## PEPO OBJECTS
 include("pepo/weights.jl")
 include("pepo/abstractpepo.jl")
 include("pepo/pepo.jl")
+include("pepo/axialpepo.jl")
 
 ### UPDATABLE PEPOS
 include("pepo/abstractupdatablepepo.jl")
@@ -84,6 +77,8 @@ include("pepo/globalpepo.jl")
 
 ### OTHER
 include("pepo/hilbertschmidt.jl")
+
+include("model/abstractaxis.jl")
 
 include("contract/vumps.jl")
 include("contract/ctmrg.jl")
@@ -103,8 +98,18 @@ include("evolution/dynamicalmap.jl")
 include("evolution/timeevolution.jl")
 include("evolution/timestep.jl")
 
+## MODEL AND EQUATION
+include("model/abstractterm.jl")
+include("model/hamiltonianterm.jl")
+include("model/longrangeterm.jl")
+include("model/lindbladterm.jl")
+include("model/equation.jl")
+include("model/mpo.jl")
+include("model/pepso.jl")
+
 include("model/heisenberg.jl")
 include("model/longrangeheisenberg.jl")
+include("model/axialheisenberg.jl")
 
 include("simulation.jl")
 include("densitymatrix.jl")

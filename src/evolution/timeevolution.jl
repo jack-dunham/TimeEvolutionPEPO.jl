@@ -10,19 +10,9 @@
 #     return xpepo, ypepo
 # end
 
-function newevolution(pepo, steps, method)
-    ustyle = stepstyle(eltype(steps))
-    tstyle = truncstyle(method)
-
-    buffers = constructbuffers(pepo, steps, tstyle)
-
-    return PEPOWithBuffer(pepo, buffers, ustyle, tstyle, 0)
-end
-
-# function newevolution(pepo::AbstractPEPO, map::Vector{<:FullStepper}, method)
-#     pepo = newevolution(pepo, first(map))
-#     return pepo
-# end
+newevolution(pepo, steps, method) = newevolution(eltype(steps), pepo, steps, method)
+newevolution(::Type{<:AxialStepper}, pepo, steps, method) = AxialPEPO(pepo)
+newevolution(::Type{<:AbstractTimeStepper}, pepo, steps, method) = pepo
 
 function newevolution(pepo::AbstractPEPO, map::OneBondStepper)
     u, v = tensors(map)
@@ -183,106 +173,47 @@ function timestep!(pepo, truncator, sequence, truncalg; kwargs...)
 end
 
 # Parallel Semi Parallel
-function _timestep!(pepo, truncator, stepper::Vector{<:FullStepper}, ::Number; kwargs...)
-    evolve!(pepo, only(stepper))
+function timestep!(pepo, truncator, stepper::AxialStepper, truncalg; kwargs...)
 
-    # simple_update_gauge!(pepo; maxiter=100)
+    if pepo.currentaxis != stepper.axis
+        setaxis!(pepo, stepper.axis)
+    end
+    axis = stepper.axis
 
-    # truncate_bond_matrices!(pepo)
-
-    # quicknormalize!(pepo.parent)
-    # hermitianize!(pepo.parent)
-
-    # return pepo
-
-    # ξ = 500.0
-    ξ = Inf
-    truncalg = NTU(; ξ=ξ, rankreduce=false, optalg=EVB(; gauge=NoGauge()))
-    # truncalg = NTU(; ξ=ξ, rankreduce=false, optalg=EVB())
-    # truncalg = NTU(; ξ=ξ, rankreduce=true, optalg=DZM(gauge=NoGauge()))
-    #
-    # println("xi = $(ξ)")
-
-    # evx = evolvedtensors(pepox)[1]
-    # evy = evolvedtensors(pepoy)[1]
-    #
+    evolvedtensors = evolve(pepo, stepper)
 
     infidelity = 0
 
-    xbuff = currentbuffer(pepo)
-    ybuff = permutetranspose(xbuff)
+    buffer = tensors(pepo)
 
-    # truncx = newtruncators(xbuff, truncalg)
+    # truncx = newtruncators(buff, truncalg)
     # renormalize!(truncx)
 
     # mts = beliefpropagation(evolvedtensors(pepox))
 
-    isomh = broadcast(bonds(xbuff, 1)) do bond
-        truncx = ntu_total_low(xbuff, bond)
+    isomh = broadcast(bonds(buffer, 1)) do bond
+        # trunc = ntu_total(evolvedtensors[bond], evolvedtensors, bond)
+        trunc = SimpleUpdateState()
 
         (u, v), s, _ = parallelisometries(
-            xbuff, truncx, bond, truncalg; D=bondspace(pepo, bond)
+            evolvedtensors, trunc, bond, truncalg; D=bondspace(pepo, bond)
         )
 
-        setweight!(pepo, s, bond; copy=false)
+        realbond = axis == 2 ? transpose(bond) : bond
+
+        setweight!(pepo, s, realbond; copy=false)
 
         return (u, v)
     end
 
-    isoe = map(iso -> first(iso), isomh)
-    isow = map(iso -> last(iso), circshift(isomh, (1, 0)))
+    isou = map(iso -> first(iso), isomh)
+    isov = map(iso -> last(iso), circshift(isomh, (1, 0)))
 
-    temp_ybuff = broadcast(xbuff, isoe, isow) do src, u, v
-        d1 = domain(u)
-        d2 = domain(src)[2]
-        d3 = codomain(v)'
-        d4 = domain(src)[4]
-
-        dst = similar(src, codomain(src), d1 * d2 * d3 * d4)
-
+    broadcast(buffer, evolvedtensors, isou, isov) do dst, src, u, v
         truncateto!(dst, src, u, v)
-
-        return dst
     end
 
-    ybuff = permutetranspose(temp_ybuff)
-
-    # truncy = newtruncators(ybuff, truncalg)
-    # renormalize!(truncy)
-
-    isomv = broadcast(bonds(ybuff, 1)) do bond
-        truncy = ntu_total_low(ybuff, bond)
-
-        (u, v), s, _ = parallelisometries(
-            ybuff, truncy, bond, truncalg; D=bondspace(pepo, transpose(bond))
-        )
-
-        setweight!(pepo, s, transpose(bond); copy=false)
-
-        return (u, v)
-    end
-
-    isos = map(iso -> first(iso), isomv)
-    ison = map(iso -> last(iso), circshift(isomv, (1, 0)))
-
-    temp_xbuff = broadcast(ybuff, isos, ison) do src, u, v
-        d1 = domain(u)
-        d2 = domain(src)[2]
-        d3 = codomain(v)'
-        d4 = domain(src)[4]
-
-        dst = similar(src, codomain(src), d1 * d2 * d3 * d4)
-
-        truncateto!(dst, src, u, v)
-
-        return dst
-    end
-
-    permutetranspose!(tensors(pepo), temp_xbuff)
-
-    pepo.state = 0
-
-    minimalcanonicalform!(tensors(pepo))
+    size(pepo) == (1,1) && minimalcanonicalform!(tensors(pepo))
 
     quicknormalize!(pepo.parent)
     hermitianize!(pepo.parent)
