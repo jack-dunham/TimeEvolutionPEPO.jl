@@ -90,13 +90,14 @@ include("gauge/mcf.jl")
 include("truncation/clu/clu.jl")
 include("truncation/truncation.jl")
 include("truncation/isometries.jl")
-include("truncation/simpleupdate.jl")
 include("truncation/iterative.jl")
 
 include("evolution/abstractevolution.jl")
 include("evolution/dynamicalmap.jl")
 include("evolution/timeevolution.jl")
 include("evolution/timestep.jl")
+
+include("truncation/simpleupdate.jl")
 
 ## MODEL AND EQUATION
 include("model/abstractterm.jl")

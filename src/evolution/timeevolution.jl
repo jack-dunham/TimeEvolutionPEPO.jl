@@ -14,7 +14,7 @@ newevolution(pepo, steps, method) = newevolution(eltype(steps), pepo, steps, met
 newevolution(::Type{<:AxialStepper}, pepo, steps, method) = AxialPEPO(pepo)
 newevolution(::Type{<:AbstractTimeStepper}, pepo, steps, method) = pepo
 
-function newevolution(pepo::AbstractPEPO, map::OneBondStepper)
+function newevolution(pepo::AbstractPEPO, map::LocalStepper)
     u, v = tensors(map)
     evolved = broadcast(tensors(pepo), u, v) do p, u, v
         D1, D2, D3, D4 = domain(p)
@@ -173,7 +173,7 @@ function timestep!(pepo, truncator, sequence, truncalg; kwargs...)
 end
 
 # Parallel Semi Parallel
-function timestep!(pepo, truncator, stepper::AxialStepper, truncalg; kwargs...)
+function timestep!(pepo::AxialPEPO, truncator, stepper, truncalg; kwargs...)
 
     if pepo.currentaxis != stepper.axis
         setaxis!(pepo, stepper.axis)
@@ -192,8 +192,7 @@ function timestep!(pepo, truncator, stepper::AxialStepper, truncalg; kwargs...)
     # mts = beliefpropagation(evolvedtensors(pepox))
 
     isomh = broadcast(bonds(buffer, 1)) do bond
-        # trunc = ntu_total(evolvedtensors[bond], evolvedtensors, bond)
-        trunc = SimpleUpdateState()
+        trunc = ntu_total(evolvedtensors[bond], evolvedtensors, bond)
 
         (u, v), s, _ = parallelisometries(
             evolvedtensors, trunc, bond, truncalg; D=bondspace(pepo, bond)
@@ -1311,7 +1310,7 @@ function updatebond!(
     return pepo, infid
 end
 
-function evolve!(pepo::LocalUpdatablePEPO, stepper::OneBondStepper, bond)
+function evolve!(pepo::LocalUpdatablePEPO, stepper::LocalStepper, bond)
     # Apply the time stepper, updating the evolved tensors on `bond`
     setcurrentbond!(pepo, bond)
     applystepper!(pepo, stepper, bond)
@@ -1337,7 +1336,7 @@ function applybothtrotter!(pepo::GlobalUpdatablePEPO, stepper; kwargs...)
 
     return pepo
 end
-function applybothtrotter!(pev, pin, gates::OneBondStepper; kwargs...)
+function applybothtrotter!(pev, pin, gates::LocalStepper; kwargs...)
     return _applybothtrotter!.(pev, pin, gates.u, gates.v; kwargs...)
 end
 # function applybothtrotter!(pev, pin, gates::SimpleGates)

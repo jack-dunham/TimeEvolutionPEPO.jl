@@ -190,7 +190,7 @@ simulate(hook, sim::Simulation) = simulate!(hook, deepcopy(sim))
 
 simulate!(sim::Simulation) = simulate!(identity, sim)
 
-function simulate!(callback, sim::Simulation; maxshots=100)
+function simulate!(callback, sim::Simulation; maxshots=100, maxtime=Inf)
     method = sim.method
     pepo = sim.state
     info = sim.info
@@ -213,8 +213,6 @@ function simulate!(callback, sim::Simulation; maxshots=100)
 
     info.iterations == 0 && callback(sim)
 
-    doshot = false
-
     if isdefined(sim, :stepper)
         stepper = sim.stepper
     else
@@ -226,6 +224,8 @@ function simulate!(callback, sim::Simulation; maxshots=100)
     else
         truncator = newtruncators(pepo, stepper, truncalg)
     end
+
+    t0 = time()
 
     while numiter < numsteps && tol ≥ breaktol
 
@@ -250,6 +250,8 @@ function simulate!(callback, sim::Simulation; maxshots=100)
             pepo isa AxialPEPO && setaxis!(pepo, 1)
             callback(sim)
         end
+
+        time() - t0 > maxtime && break
     end
 
     pepo isa AxialPEPO && setaxis!(pepo, 1)

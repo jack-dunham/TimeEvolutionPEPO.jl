@@ -1,4 +1,18 @@
-struct J1J2Heisenberg <: AbstractLindbladEquation
+abstract type AbstractModel <: AbstractLindbladEquation end
+
+@kwdef struct Heisenberg <: AbstractModel
+    Jx::Float64 = 0.0
+    Jy::Float64 = 0.0
+    Jz::Float64 = 0.0
+    L::Vector{LindbladTerm}
+end
+
+ModelStyle(::Type{Heisenberg}) = IsAxial()
+
+stepper_type(::Type{Heisenberg}, ::Type{<:AxialTEBD}) = AxialStepper
+stepper_type(::Type, ::Type{<:GlobalTEBD}) = FullStepper
+
+@kwdef struct J1J2Heisenberg <: AbstractModel
     Jx::Float64
     Jy::Float64
     Jz::Float64
@@ -8,27 +22,69 @@ struct J1J2Heisenberg <: AbstractLindbladEquation
     L::Vector{LindbladTerm}
 end
 
-function (model::J1J2Heisenberg)(physical, method::TEPEPSO)
-    (Jx, Jy, Jz, Kx, Ky, Kz) = getparams(model)
+ModelStyle(::Type{J1J2Heisenberg}) = IsGlobal()
+
+stepper_type(::Type{J1J2Heisenberg}, ::Type{<:TEPEPSO}) = FullStepper
+
+function (M::Type{<:AbstractModel})(L...; kwargs...)
+    itr = map(L) do op
+        return op isa LindbladTerm ? op : lin(op)
+    end
+
+    return M(; L=collect(itr), kwargs...)
+end
+
+function paramkwargs(eqn::AbstractModel)
+    rv = Pair{Symbol,Float64}[]
+    for name in fieldnames(typeof(eqn))
+        if name === :L
+            continue
+        end
+        push!(rv,  (name => getfield(eqn, name)))
+    end
+    return rv
+end
+
+getparams(eqn) = map(last, paramkwargs(eqn))
+
+linops(eqn::AbstractModel) = eqn.L
+function broadcastmodel(
+    ::Type{<:Heisenberg}, model, physical, method::AbstractTEBD; kwargs...
+)
+    model = unwrap(model)
+
+    rv = timestep -> exact_tebd_time_stepper(model, physical, method, timestep; kwargs...)
+
+    return rv
+end
+
+function broadcastmodel(
+    ::Type{Combine}, model, physical, method::GlobalTEBD; kwargs...
+)
+
+    model = unwrap(model)
+
+    rv = timestep -> exact_tebd_time_stepper(model, physical, method, timestep; kwargs...)
+
+    return rv
+end
+
+function (model::Union{J1J2Heisenberg,Heisenberg})(physical, method::TEPEPSO; kwargs...)
+    kw = paramkwargs(model)
+
+    L = linops(model)
 
     rv =
         timestep -> begin
-            fsmheisenberg(
-              Matrix.(model.L),
-                physical,
-                timestep;
-                extend=method.extend,
-                Jx=Jx,
-                Jy=Jy,
-                Jz=Jz,
-                Kx=Kx,
-                Ky=Ky,
-                Kz=Kz,
-            )
+            fsmheisenberg(Matrix.(L), physical, timestep; extend=method.extend, kw...)
         end
 
-    return FullStepper(rv)
+    return rv
 end
+
+# function (model::Heisenberg)(physical, method::AxialTEBD; kwargs...)
+#     return dt -> tebdtensor(model, physical, method, dt)
+# end
 
 function J1J2Heisenberg(L...; Jx=0, Jy=0, Jz=0, Kx=0, Ky=0, Kz=0)
     return J1J2Heisenberg(Jx, Jy, Jz, Kx, Ky, Kz, L...)
@@ -154,7 +210,7 @@ function tebdtimestepper(
     return steps
 end
 
-function tebdtensor(::Serial, model::J1J2Heisenberg, p::IndexSpace, dt; kwargs...)
+function tebdtensor(model::Heisenberg, p1::IndexSpace, p2::IndexSpace, method::TEBD, dt; kwargs...)
     X, Y, Z = PAULI
 
     ops = Matrix{ComplexF64}[]
@@ -189,9 +245,10 @@ function tebdtensor(::Serial, model::J1J2Heisenberg, p::IndexSpace, dt; kwargs..
 
     numops = length(ops)
 
-    space = p * p * p' * p'
+    space = p1 * p2 * p1' * p2'
 
-    rank = dim(p * p')
+    # TODO: this is not generic atm.
+    rank = dim(p1 * p1')
 
     lop = sum(model.L; init=zeros(ComplexF64, rank^2, rank^2)) do op
         return vectorise(op) / (4 * numops)
@@ -217,7 +274,7 @@ function tebdtensor(::Serial, model::J1J2Heisenberg, p::IndexSpace, dt; kwargs..
     return rv
 end
 
-function tebdtensor(::Axial, model::J1J2Heisenberg, p::IndexSpace, dt; kwargs...)
+function tebdtensor(model::Heisenberg, p::IndexSpace, method::AbstractTEBD, dt; kwargs...)
     X, Y, Z = PAULI
 
     ops = Array{ComplexF64,6}[]
@@ -262,18 +319,16 @@ function tebdtensor(::Axial, model::J1J2Heisenberg, p::IndexSpace, dt; kwargs...
     return rv
 end
 
-function exact_tebd_time_stepper(
-    updatestyle, model::AbstractUnitCell{G,L}, physical::AbstractUnitCell; tau
-) where {G,L<:J1J2Heisenberg}
-    if !all(y -> twolocalequal(y, model[1]), model)
-        throw(
-            ArgumentError(
-                "model is not translationally invariant at the two-site operator level"
-            ),
-        )
-    end
+function exact_tebd_time_stepper(model, physical, method, tau; axis, inreverse=false)
+    # if !all(y -> twolocalequal(y, model[1]), model)
+    #     throw(
+    #         ArgumentError(
+    #             "model is not translationally invariant at the two-site operator level"
+    #         ),
+    #     )
+    # end
 
-    lattice_of_vectors = tebdtensor.(Ref(updatestyle), model, physical, tau)
+    lattice_of_vectors = construct_exact_tebd_time_stepper(model, physical, method, tau; axis=axis)
 
     numopsvec = Int[]
 
@@ -290,47 +345,81 @@ function exact_tebd_time_stepper(
     end
 
     vector_of_lattices = finalize_exact_tebd_time_stepper(
-        updatestyle, lattice_of_vectors, numops
+        lattice_of_vectors, method, numops
     )
 
     return vector_of_lattices
 end
+
+function construct_exact_tebd_time_stepper(model, physical, method::TEBD, dt; axis)
+    if axis == 1
+        incr = (1, 0)
+    elseif axis == 2
+        incr = (0, 1)
+    end
+
+    phys1 = physical
+    phys2 = circshift(physical, .-incr)
+
+    uvs = broadcast(phys1, phys2, model) do p1, p2, modeli
+        return tebdtensor(modeli, p1, p2, method, dt; compresstol=method.compresstol)
+    end
+
+    return uvs
+end
+
+function construct_exact_tebd_time_stepper(model, physical, method::AbstractTEBD, dt; axis)
+    ts = broadcast(physical, model) do p, modeli
+        return tebdtensor(modeli, p, method, dt; compresstol=method.compresstol)
+    end
+    return ts
+end
 function finalize_exact_tebd_time_stepper(
-    ::Serial, lattice_of_vectors::Lattice{G,Vector{Tuple{U,V}}}, numops=Int
+    lattice_of_vectors::Lattice{G,Vector{Tuple{U,V}}}, ::TEBD, numops=Int; axis
 ) where {G,U,V}
-    vector_of_lattice = [
-        (similar(lattice_of_vectors, U), similar(lattice_of_vectors, V)) for _ in 1:numops
-    ]
+
+    ulats = [similar(lattice_of_vectors, U) for _ in 1:numops]
+    vlats = [similar(lattice_of_vectors, V) for _ in 1:numops]
 
     for i in 1:numops
         lattice = broadcast(x -> getindex(x, i), lattice_of_vectors)
 
-        ulat, vlat = vector_of_lattice[i]
+        ulat = ulats[i]
+        vlat = vlats[i]
 
         for ind in eachindex(lattice)
             x = ind[1]
             y = ind[2]
 
-            u1, v2 = lattice[x, y]
+            u1 = ulat[i]
+            v2 = vlat[i]
 
             ulat[x, y] = u1
-            vlat[x + 1, y] = v2
+            if axis == 1
+                vlat[x + 1, y] = v2
+            elseif axis == 2
+                vlat[x, y + 1] = v2
+            end
         end
     end
 
-    return vector_of_lattice
+    rv = map(ulats, vlats) do (u, v)
+        return broadcast(tuple, u, v)
+    end
+
+    return rv
 end
 
 function finalize_exact_tebd_time_stepper(
-    ::Axial, lattice_of_vectors::Lattice{G,Vector{T}}, numops=Int
+    lattice_of_vectors::Lattice{G,Vector{T}}, ::AbstractTEBD, numops=Int
 ) where {G,T}
     first_lattice = getindex.(lattice_of_vectors, 1)
 
-    vector_of_lattices = [(first_lattice, first_lattice)]
+    vector_of_lattices = [first_lattice]
 
     for i in 2:numops
         next_lattice = broadcast(x -> getindex(x, i), lattice_of_vectors)
-        push!(vector_of_lattices, (next_lattice, next_lattice))
+        push!(vector_of_lattices, next_lattice)
     end
 
     return vector_of_lattices

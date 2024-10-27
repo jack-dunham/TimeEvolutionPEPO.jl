@@ -205,6 +205,10 @@ function newtruncators(
     return xenv, yenv
 end
 
+function newtruncators(pepo::PEPO, _, truncalg::Union{FET,NTU})
+    xenv = newtruncators(tensors(pepo), truncalg)
+    return xenv, xenv
+end
 function newtruncators(pepo::AxialPEPO, _, truncalg::Union{FET,NTU})
     xenv = newtruncators(tensors(pepo, 1), truncalg)
     yenv = newtruncators(tensors(pepo, 2), truncalg)

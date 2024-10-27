@@ -1,4 +1,4 @@
-struct AxialHeisenberg{Ax} <: AbstractLindbladEquation
+struct AxialHeisenberg <: AbstractLindbladEquation
     Jx::Float64
     Jy::Float64
     Jz::Float64
@@ -8,18 +8,13 @@ struct AxialHeisenberg{Ax} <: AbstractLindbladEquation
     L::Vector{LindbladTerm}
 end
 
-AxialHeisenberg(L...; kwargs...) = AxialHeisenberg{(1, 2)}(L...; kwargs...)
-
 Base.broadcastable(o::AxialHeisenberg) = Ref(o)
 
-haxis(axp::AxialHeisenberg) = AxialHeisenberg{1}(getparams(axp)..., axp.L)
-vaxis(axp::AxialHeisenberg) = AxialHeisenberg{2}(getparams(axp)..., axp.L)
-
-function AxialHeisenberg{N}(L...; Jx=0.0, Jy=0.0, Jz=0.0, Kx=0.0, Ky=0.0, Kz=0.0) where {N}
+function AxialHeisenberg(L...; Jx=0.0, Jy=0.0, Jz=0.0, Kx=0.0, Ky=0.0, Kz=0.0)
     itr = map(L) do op
         return op isa LindbladTerm ? op : lin(op)
     end
-    return AxialHeisenberg{N}(Jx, Jy, Jz, Kx, Ky, Kz, collect(itr))
+    return AxialHeisenberg(Jx, Jy, Jz, Kx, Ky, Kz, collect(itr))
 end
 
 getparams(axp::AxialHeisenberg) = (axp.Jx, axp.Jy, axp.Jz, axp.Kx, axp.Ky, axp.Kz)
@@ -27,7 +22,7 @@ getparams(axp::AxialHeisenberg) = (axp.Jx, axp.Jy, axp.Jz, axp.Kx, axp.Ky, axp.K
 stepper_type(::AxialHeisenberg, _) = AxialStepper
 stepper_type(::AbstractMatrix{<:AxialHeisenberg}, _) = AxialStepper
 
-function (model::AxialHeisenberg{N})(physical, method::DMPO) where {N}
+function (model::AxialHeisenberg)(physical, method::DMPO; kwargs...)
     rv =
         timestep -> begin
             mpo = MPO(model)
@@ -103,15 +98,14 @@ function MPO(model::AxialHeisenberg)
             A[i, i + 2] = kron(Id, Id)
             A[i + 1, i + 3] = kron(Id, Id)
 
-
-            B[i + 2, i] = - K * im * kron(O, Id)
+            B[i + 2, i] = -K * im * kron(O, Id)
             B[i + 3, i] = K * im * kron(Id, transpose(O))
         end
 
         i += str
     end
 
-    D[1, 1] = 1/2 * sum(linops; init=D[1, 1]) do term
+    D[1, 1] = 1 / 2 * sum(linops; init=D[1, 1]) do term
         # Absorb coefficient
         L = Matrix{ComplexF64}(term)
 

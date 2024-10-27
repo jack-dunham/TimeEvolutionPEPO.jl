@@ -2,10 +2,9 @@
 #     sequential_update_step!(pepo, truncator, stepper; kwargs...)
 # end
 
-newtruncators(::AxialPEPO,_,::SU) = (SimpleUpdateState(), SimpleUpdateState())
+newtruncators(::AxialPEPO, _, ::SU) = (SimpleUpdateState(), SimpleUpdateState())
 
 function axial_trotter_step!(pepo, truncator, stepper; truncalg, kwargs...)
-
     axis = bondaxis(stepper)
 
     axistrunc = truncator[axis]
@@ -18,7 +17,6 @@ function axial_trotter_step!(pepo, truncator, stepper; truncalg, kwargs...)
 
     sequential_update_step!(pepo, axistrunc, stepper; truncalg=truncalg, kwargs...)
 
-
     # This does nothing if `stepstyle isa Sequential` as truncation has already occured 
     # for all bonds
     truncate!(pepo)
@@ -26,7 +24,7 @@ function axial_trotter_step!(pepo, truncator, stepper; truncalg, kwargs...)
     return pepo
 end
 
-function sequential_update_step!(pepo, truncator, stepper, weights; kwargs...)
+function timestep!(pepo::PEPO, truncator, stepper::LocalStepper, truncalg::SU; kwargs...)
 
     # Evolve and then truncate each bond in sequence
 
@@ -34,7 +32,7 @@ function sequential_update_step!(pepo, truncator, stepper, weights; kwargs...)
 
     infidelity = similar(buffer)
 
-    bonds = bonds(buffer, 1)
+    bonds = bonditer(pepo)
 
     isreversed(stepper) && (bonds = Iterators.Reverse(bonds))
 
@@ -58,10 +56,55 @@ function sequential_update_step!(pepo, truncator, stepper, weights; kwargs...)
     return pepo, infidelity
 end
 
+function timestep!(pepo::AxialPEPO, trunactor, stepper, truncalg::SU; kwargs...)
+
+    # Evolve and then truncate each bond in sequence
+    if pepo.currentaxis != stepper.axis
+        setaxis!(pepo, stepper.axis)
+    end
+    axis = stepper.axis
+
+    buffer = tensors(pepo)
+    infidelity = similar(buffer)
+
+    outweights = deepcopy(weights(pepo))
+
+    inweights = axis == 1 ? weights(pepo) : permutedims(weights(pepo))
+
+    evolvedtensors = evolve(pepo, stepper)
+
+    isoms = map(bonds(buffer, 1)) do bond
+        D = bondspace(buffer, bond)
+
+        # Evolved the pair of tensors connected by `bond`, leaving the original pair
+        # unmutated.
+
+        pair = evolvedtensors[bond]
+
+        iso, s, _ = isometries(pair, inweights, bond, truncalg; D=D, axial=true)
+
+        realbond = axis == 1 ? bond : transpose(bond)
+        outweights[realbond] = s
+
+        return iso
+    end
+
+    tolerance!(weights(pepo), outweights, 1.0)
+
+    isoe = broadcast(first, isoms)
+    isow = broadcast(last, circshift(isoms, (1, 0)))
+
+    broadcast(buffer, evolvedtensors, isoe, isow) do dst, src, e, w
+        truncateto!(dst, src, e, w)
+    end
+
+    quicknormalize!(pepo.parent)
+    hermitianize!(pepo.parent)
+
+    return pepo, infidelity
+end
 # isometries for sequential simple update
-function isometries!(
-    pair::Pair, pepo::AbstractPEPO, ::SimpleUpdateState, bond::Bond, truncalg::SU
-)
+function isometries!(pair::Pair, pepo::AbstractPEPO, bond::Bond, truncalg::SU)
     D = bondspace(pepo, bond)
 
     trunc = truncspace(D)
@@ -73,42 +116,56 @@ function isometries!(
     return iso, s, infid
 end
 
-# wrapper for updating in parallel
-function parallelisometries(
-    pepo::AbstractPEPO, truncator::SimpleUpdateState, bond::Bond, truncalg::SU; kwargs...
-)
-    a, b = pepo[bond]
-
-    pair = copy(a) => copy(b)
-
-    return isometries!(pair, pepo, truncator, bond, truncalg)
+function isometries(pair::Pair, pepo::AbstractPEPO, bond::Bond, truncalg::SU)
+    return isometries(pair, weights(pepo), bond, truncalg; D=bondspace(pepo, bond))
 end
-
-function parallelisometries!(pair::Pair, pepo::AbstractPEPO, truncator::SimpleUpdateState, bond::Bond, truncalg::SU
+function isometries(
+    pair::Pair, weights::EdgeLattice, bond::Bond, truncalg::SU; D, axial=false
 )
-    return isometries!(pair, pepo, truncator, bond, truncalg)
-end
-# Sequential simple update
-function simpleupdate!(pair, weights, bond; trunc, absorb=true, kwargs...)
-    axis = bondaxis(bond)
+    trunc = truncspace(D)
 
-    absorb && absorb_adjacent_weights!(pair, weights, bond; inverse=false)
+    xi = truncalg.ξ
 
-    iso, s, infid = simple_update_svd!(pair; trunc=trunc, absorb=true, axis=axis, kwargs...)
-
-    absorb && absorb_adjacent_weights!(pair, weights, bond; inverse=true)
+    iso, s, infid = simpleupdate(pair, weights, bond; axial=axial, trunc=trunc, xi=xi)
 
     return iso, s, infid
 end
 
-function simpleupdate(oldpair, weights, bond; trunc, absorb=true, kwargs...)
+# For updating in parellel
+function parallelisometries(pepo::AbstractPEPO, bond::Bond, truncalg::SU; kwargs...)
+    a, b = pepo[bond]
+
+    pair = copy(a) => copy(b)
+
+    return isometries!(pair, pepo, bond, truncalg)
+end
+
+function parallelisometries(pair::Pair, pepo::AbstractPEPO, bond::Bond, truncalg::SU)
+    return isometries(pair, pepo, bond, truncalg)
+end
+# Sequential simple update
+function simpleupdate!(pair, weights, bond; trunc, absorb=true, axial=false, kwargs...)
     axis = bondaxis(bond)
 
-    pair = mapreduce(copy, =>, oldpair)
+    absorb && absorb_adjacent_weights!(pair, weights, bond; inverse=false, axial=axial)
 
-    absorb && absorb_adjacent_weights!(pair, weights, bond; inverse=false)
+    iso, s, infid = simple_update_svd!(pair; trunc=trunc, absorb=true, axis=axis, kwargs...)
 
-    iso, s, infid = simple_update_svd(pair; trunc=trunc, absorb=true, axis=axis, kwargs...)
+    absorb && absorb_adjacent_weights!(pair, weights, bond; inverse=true, axial=axial)
+
+    return iso, s, infid
+end
+
+function simpleupdate(pair, weights, bond; trunc, axial=false, absorb=true, kwargs...)
+    axis = bondaxis(bond)
+
+    newpair = mapreduce(copy, =>, pair)
+
+    absorb && absorb_adjacent_weights!(newpair, weights, bond; axial=axial, inverse=false)
+
+    iso, s, infid = simple_update_svd(
+        newpair; trunc=trunc, absorb=true, axis=axis, kwargs...
+    )
 
     return iso, s, infid
 end
@@ -150,17 +207,8 @@ function isometries_from_svd(P, Q, u0, v0; xi=Inf, trunc=notrunc(), absorb=true)
     return iso, s, 1 - f
 end
 
-function absorbweights!(pepo::AbstractPEPO; kwargs...)
-    lattice = currentbuffer(pepo)
-
-    for ind in uniqueindices(pepo)
-        absorb_axial_weights!(lattice[ind], weights(pepo), ind; kwargs...)
-    end
-    return pepo
-end
-
 function absorb_adjacent_weights!(
-    pair::Pair{T}, weights::EdgeLattice, bond::Bond; inverse=false
+    pair::Pair{T}, weights::EdgeLattice, bond::Bond; inverse=false, axial=false
 ) where {T<:AbsTen{2,4}}
     uten, vten = pair
 
@@ -183,18 +231,36 @@ function absorb_adjacent_weights!(
         s1, w1, n1 = U
         e2, s2, n2 = V
 
-        @tensoropt begin
-            unew[k b; e ss ww nn] := uten[k b; e s w n] * s1[s; ss] * w1[ww; w] * n1[nn; n]
-            vnew[k b; ee ss w nn] := vten[k b; e s w n] * s2[s; ss] * e2[e; ee] * n2[nn; n]
+        if axial
+            @tensoropt begin
+                unew[k b; e ss w nn] := uten[k b; e s w n] * s1[s; ss] * n1[nn; n]
+                vnew[k b; e ss w nn] := vten[k b; e s w n] * s2[s; ss] * n2[nn; n]
+            end
+        else
+            @tensoropt begin
+                unew[k b; e ss ww nn] :=
+                    uten[k b; e s w n] * s1[s; ss] * w1[ww; w] * n1[nn; n]
+                vnew[k b; ee ss w nn] :=
+                    vten[k b; e s w n] * s2[s; ss] * e2[e; ee] * n2[nn; n]
+            end
         end
 
     elseif axis == 2
         e1, w1, n1 = U
         e2, s2, w2 = V
 
-        @tensoropt begin
-            unew[k b; ee s ww nn] := uten[k b; e s w n] * e1[e; ee] * w1[ww; w] * n1[nn; n]
-            vnew[k b; ee ss ww n] := vten[k b; e s w n] * s2[s; ss] * e2[e; ee] * w2[ww; w]
+        if axial
+            @tensoropt begin
+                unew[k b; ee s ww n] := uten[k b; e s w n] * e1[e; ee] * w1[ww; w]
+                vnew[k b; ee s ww n] := vten[k b; e s w n] * e2[e; ee] * w2[ww; w]
+            end
+        else
+            @tensoropt begin
+                unew[k b; ee s ww nn] :=
+                    uten[k b; e s w n] * e1[e; ee] * w1[ww; w] * n1[nn; n]
+                vnew[k b; ee ss ww n] :=
+                    vten[k b; e s w n] * s2[s; ss] * e2[e; ee] * w2[ww; w]
+            end
         end
     end
 
@@ -212,22 +278,17 @@ function absorb_axial_weights!(
     axis=1,
 ) where {G}
     if inverse
-        gw = x -> begin
-            try
-                return inv(sqrt(weights[x]))
-            catch e
-                if e isa LAPACKException
-                    return pinv(sqrt(weights[x]))
-                else
-                    rethrow()
-                end
-            end
+        func = w -> try
+            inv(sqrt(w))
+        catch
+            # @warn "inv failed"
+            pinv(sqrt(w))
         end
     else
-        gw = x -> sqrt(weights[x])
+        func = w -> sqrt(w)
     end
 
-    e, s, w, n = gw.(bondswith(G, ind))
+    e, s, w, n = func.(bondswith(G, ind))
 
     if axis == 1
         @tensoropt begin

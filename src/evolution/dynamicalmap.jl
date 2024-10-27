@@ -112,51 +112,71 @@ end
 #     return Schedule(T[], bulk, T[], method.numsteps), physicalspace
 # end
 
-function newstepper(physical, model, method)
+onvector(v::Vector) = v
+function onvector(t)
+    v = typeof(t)[]
+    push!(v, t)
+    return v
+end
 
-    steps = processmodel(model, method)
 
-    trotterlist = map(steps) do matrix_of_callables
+function trotterise(physical, steps, method)
+    trotterlist = map(steps) do modelstep
 
-        G = promote_geometry_type(physical, matrix_of_callables)
+        G = promote_geometry_type(physical, modelstep)
 
-        S = stepper_type(matrix_of_callables, method)
+        S = stepper_type(modelstep, method)
 
         rvf =
             dt -> begin
-                data = broadcast(physical, unwrap(matrix_of_callables)) do space, callable
-                    return callable(space, method)(dt)
-                end
 
-                lat = Lattice{G}(data)
+                lat = broadcastmodel(G, modelstep, physical, method)(dt)
 
-                return S(lat)
+                v = onvector(lat)
+
+                return map(S, v)
             end
 
         return rvf
     end
 
+    return trotterlist
+end
+
+
+# TODO this is hacky and convoluted and needs more thought
+function newstepper(physical, model, method)
+
+    order = method.trotterorder
+
+    # Apply wrappers etc as needed and makes sure everything is on matrices
+    steps = processmodel(model, method)
+
+
+    trotterlist = trotterise(physical, steps, method)
+    
     tau = method.timestep
 
-    if length(trotterlist) == 1 
-        # No trotterisation required if we have made it this far with only one operator
-        # in the list
-        theop = only(trotterlist)(tau)
-
-        physicalspace = broadcast((p, _) -> p, physical, CartesianIndices(size(theop)))
-
-        T = typeof(theop)
-
-        return TrotterDecomposition(T[], [theop], T[]), physicalspace
-    end
+    # if length(trotterlist) == 1 
+    #     # No trotterisation required if we have made it this far with only one operator
+    #     # in the list
+    #     theop = only(only(trotterlist)(tau))
+    #
+    #     physicalspace = broadcast((p, _) -> p, physical, CartesianIndices(size(theop)))
+    #
+    #     T = typeof(theop)
+    #
+    #     return TrotterDecomposition(T[], [theop], T[]), physicalspace
+    # end
 
     if method.trotterorder == 1
         @info "First-order trotter decomposition..."
-        body = map(op -> op(tau), trotterlist)
+        body = mapreduce(op -> op(tau), vcat, trotterlist)
     elseif method.trotterorder == 2
         @info "Second-order trotter decomposition..."
-        body = map(op -> op(tau / 2), trotterlist)
-        append!(body, reverse(body))
+        body = mapreduce(op -> op(tau / 2), vcat, trotterlist)
+        reversed = reverse(trotterise(physical, map(InReverse, steps), method))
+        append!(body, mapreduce(op -> op(tau / 2), vcat, reversed))
     end
 
     T = eltype(body)

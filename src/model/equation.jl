@@ -28,7 +28,7 @@ function LinearAlgebra.axpy!(
     return eqn2
 end
 
-struct LindbladEquation{N} <: AbstractLindbladEquation
+struct LindbladEquation <: AbstractLindbladEquation
     onelocal::Vector{HamiltonianTerm{1}}
     twolocal::Vector{HamiltonianTerm{2}}
     longrange::Vector{LongRangeTerm}
@@ -36,21 +36,10 @@ struct LindbladEquation{N} <: AbstractLindbladEquation
     physicaldim::Int
 end
 
-stepper_type(::Type{<:LindbladEquation{N}}, _) where {N} = lat -> AxialStepper(lat, N)
+stepper_type(::Type{<:LindbladEquation}, ::Type) = LocalStepper
+stepper_type(::Type{<:LindbladEquation}, ::Type{<:DMPO}) = AxialStepper
 
-function LindbladEquation(onelocal, twolocal, longrange, linops, physicaldim)
-    rv = LindbladEquation{(1, 2)}(onelocal, twolocal, longrange, linops, physicaldim)
-    return rv
-end
-
-function haxis(L::LindbladEquation)
-    return LindbladEquation{1}(L.onelocal, L.twolocal, L.longrange, L.linops, L.physicaldim)
-end
-function vaxis(L::LindbladEquation)
-    return LindbladEquation{2}(L.onelocal, L.twolocal, L.longrange, L.linops, L.physicaldim)
-end
-
-function tebdtensor(model::LindbladEquation, p1::IndexSpace, p2::IndexSpace, dt; compress)
+function tebdtensor(model::LindbladEquation, p1::IndexSpace, p2::IndexSpace, dt; compresstol=eps())
 
     # c2 = H -> (-im * (H ⊗ one(H) - one(H) ⊗ transpose(H)))
     # d2 = L -> L ⊗ transpose(L') - 1 / 2 * (L' * L ⊗ one(L) + one(L) * transpose(L' * L))
@@ -80,12 +69,17 @@ function tebdtensor(model::LindbladEquation, p1::IndexSpace, p2::IndexSpace, dt;
     # move site one to codomain and site two to domain
     tensor = permute(tensor, (1, 3, 5, 7), (2, 4, 6, 8))
 
-    u, s, v = tsvd(tensor; trunc=compress)
+    u, s, v = tsvd(tensor; trunc=truncbelow(compresstol))
 
     return u * sqrt(s), _transpose(sqrt(s) * v)
 end
 
-function (model::LindbladEquation)(physical, method::DMPO)
+function broadcastmodel(model::OnAxis)
+    axis = model.axis
+    return broadcast
+end
+
+function (model::LindbladEquation)(physical, method::DMPO; kwargs...)
     rv =
         timestep -> begin
             mpo = MPO(model)
@@ -107,6 +101,33 @@ function (model::LindbladEquation)(physical, method::DMPO)
     return rv
 end
 
+function broadcastmodel(
+    ::Type{<:LindbladEquation}, model, physical, method::TEBD; axis, kwargs...
+)
+    model = unwrap(model)
+
+    rv =
+        timestep -> begin
+            if axis == 1
+                incr = (1, 0)
+            elseif axis == 2
+                incr = (0, 1)
+            end
+
+            p1p2 = broadcast(tuple, physical, circshift(physical, .-incr))
+
+            uvs = broadcast(p1p2, model) do (p1, p2), modeli
+                return tebdtensor(modeli, p1, p2, timestep; compress=method.compress)
+            end
+
+            lat = broadcast(tuple, first.(uvs), circshift(last.(uvs), incr))
+
+
+            return lat
+        end
+
+    return rv
+end
 LindbladEquation(p::Int) = LindbladEquation([], [], [], [], p::Int)
 
 function Base.show(io::IO, ::MIME"text/plain", eqn::LindbladEquation)

@@ -16,16 +16,28 @@ function Base.reverse(s::S) where {S<:AbstractTrotterizedTimeStepper}
     return S(latticetuple(s), bondaxis(s), !isreversed(s))
 end
 
-# Updates along a single bond on an axis. 
-struct OneBondStepper{G,MType} <: AbstractTrotterizedTimeStepper
-    data::NTuple{2,Lattice{G,MType,Matrix{MType}}} #left (u, e bond), right (v, w bond)
+# # Updates along a single bond on an axis. 
+# struct LocalStepper{G,MType} <: AbstractTrotterizedTimeStepper
+#     data::NTuple{2,Lattice{G,MType,Matrix{MType}}} #left (u, e bond), right (v, w bond)
+#     axis::Int
+#     isreversed::Bool
+# end
+
+struct LocalStepper{G,MType} <: AbstractTrotterizedTimeStepper
+    data::Lattice{G,NTuple{2,MType},Matrix{NTuple{2, MType}}} #left (u, e bond), right (v, w bond)
     axis::Int
     isreversed::Bool
 end
 
-tensors(s::OneBondStepper) = latticetuple(s)
+function LocalStepper(lat; axis=1, isreversed=false)
+    return LocalStepper(lat, axis, isreversed)
+end
 
-function Base.getindex(stepper::OneBondStepper, bond::Bond)
+Base.size(ls::LocalStepper) = size(ls.data)
+
+tensors(s::LocalStepper) = latticetuple(s)
+
+function Base.getindex(stepper::LocalStepper, bond::Bond)
     u, v = tensors(stepper)
 
     u1, _ = u[bond]
@@ -44,6 +56,9 @@ struct AxialStepper{G,MType<:AbsTen{4,2}} <: AbstractTrotterizedTimeStepper
     data::Lattice{G,MType,Matrix{MType}}
     axis::Int
 end
+
+
+AxialStepper(lat; axis, kwargs...) = AxialStepper(lat, axis)
 
 Base.size(s::AxialStepper) = size(tensors(s))
 
@@ -74,7 +89,14 @@ struct FullStepper{G,MType} <: AbstractTimeStepper
     t::Lattice{G,MType,Matrix{MType}}
 end
 
-stepper_type(t, _) = GenericStepper
+FullStepper(t; kwargs...) = FullStepper(t)
+
+stepper_type(::Type, ::Type) = GenericStepper
+stepper_type(m1, m2) = stepper_type(totype(m1), totype(m2))
+stepper_type(m1::Type{<:AbstractMatrix}, m2::Type)  = stepper_type(eltype(m1), m2)
+
+totype(t::Type) = t
+totype(t) = typeof(t)
 
 Base.size(fs::FullStepper) = size(fs.t)
 
@@ -99,7 +121,7 @@ struct GenericStepper end
 GenericStepper(l::AbstractMatrix{L}) where {L<:AbsTen{4,2}} = AxialStepper(l)
 GenericStepper(l::AbstractMatrix{L}) where {L<:AbsTen{4,4}} = FullStepper(l)
 
-function applystepper!(pepo::LocalUpdatablePEPO, operator::OneBondStepper, bond::Bond)
+function applystepper!(pepo::LocalUpdatablePEPO, operator::LocalStepper, bond::Bond)
     # Get the current left and right pepo tensors
     setisevolved!(pepo, false)
 
@@ -121,6 +143,9 @@ function applystepper!(pepo::LocalUpdatablePEPO, operator::OneBondStepper, bond:
 end
 
 function evolve(pepo::AxialPEPO, stepper::AxialStepper)
+
+    @assert pepo.currentaxis == stepper.axis
+    
     rv = broadcast(tensors(pepo), tensors(stepper)) do pin, mpo
         d1, d2, d3, d4 = domain(pin)
         D1, D3 = domain(mpo)
@@ -516,21 +541,50 @@ end
 
 showheader(::Type{<:DMPO}) = "Dynamical matrix product operator (DMPO)"
 
-@kwdef struct TEBD{
-    TAlg<:AbstractTruncationScheme,S<:AbstractUpdateStyle,C<:TensorKit.TruncationScheme
+
+abstract type AbstractTEBD <: AbstractTimeEvolution end
+
+Base.show(io::IO, m::MIME"text/plain", sim::AbstractTEBD) = shownested(io, m, sim)
+showheader(::Type{<:AbstractTEBD}) = "Time-evolving block decimation (TEBD)"
+
+Base.parent(tebd::AbstractTEBD) = getfield(tebd, :parent)
+
+function Base.getproperty(tebd::AbstractTEBD, sym::Symbol)
+    if sym === :parent
+        return getfield(tebd, sym)
+    else
+        return getfield(parent(tebd), sym)
+    end
+end
+
+@kwdef mutable struct TEBD{
+    TAlg<:AbstractTruncationScheme,
 } <: AbstractTimeEvolution
     breaktol::Float64 = 0.0
-    compress::C = truncerr(100 * eps())
+    compresstol::Float64 = eps()
     trotterlevel::Symbol = :max
     numsteps::Int = 100
     timestep::Float64 = 0.01
     trotterorder::Int = 1
     truncalg::TAlg = SU()
-    updatestyle::S = LocalUpdate()
     verbose::Bool = true
 end
 
-showheader(::Type{<:TEBD}) = "Time-evolving block decimation (TEBD)"
+Base.parent(tebd::TEBD) = tebd
+
+struct AxialTEBD{TAlg} <: AbstractTEBD
+    parent::TEBD{TAlg}
+end
+
+AxialTEBD(;kwargs...) = AxialTEBD(TEBD(;kwargs...))
+
+struct GlobalTEBD{TAlg} <: AbstractTEBD
+    parent::TEBD{TAlg}
+end
+
+GlobalTEBD(;kwargs...) = GlobalTEBD(TEBD(;kwargs...))
+
+ModelStyle(::Type{<:GlobalTEBD}) = IsGlobal()
 
 @kwdef struct TETNO{TAlg,Style} <: AbstractTimeEvolution
     breaktol::Float64 = 0.0
