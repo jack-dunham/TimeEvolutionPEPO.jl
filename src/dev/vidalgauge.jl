@@ -112,9 +112,13 @@ function simple_update_gauge_step!(pepo, buffer; inreverse=false, absorb=true)
         #     @warn infid
         # end
 
-        setweight!(pepo, s, bond; copy=false)
+        newpair = mapreduce(copy, =>, pepo[bond])
 
-        truncateto!(pepo[bond], pair, iso; axis=bondaxis(bond))
+        truncateto!(newpair, pair, iso; axis=bondaxis(bond))
+
+        pepo.state[bond] = newpair
+
+        setweight!(pepo, s, bond; copy=false)
 
         isnothing(buffer) || copy!(last(buffer[bond]), last(pepo[bond]))
     end
@@ -346,20 +350,29 @@ function setweight!(pepo, svals; axis=axis, copy=false)
     return pepo
 end
 
-function evolve!(pepo::PEPOWithBuffer, stepper::FullStepper)
+function evolve(pepo::PEPO, stepper::FullStepper)
     state = pepo.state
 
-    if state == 0
-        src = tensors(pepo)
-        dst = pepo.buffer[1]
-        apply_four_bond_stepper!(dst, src, stepper)
-    else
-        throw(ErrorException(""))
+    evolved = broadcast(tensors(pepo), tensors(stepper)) do p, t
+        D1, D2, D3, D4 = domain(p)
+        η1, η2, η3, η4 = domain(t)
+
+        T = promote_type(eltype(p), eltype(t))
+
+        tensor = TensorMap(
+            undef,
+            T,
+            codomain(p),
+            fuse(D1 * η1) * fuse(D2 * η2) * fuse(D3 * η3)' * fuse(D4 * η4)',
+        )
+
+        return tensor
     end
 
-    pepo.state = 1
+    src = tensors(pepo)
+    apply_four_bond_stepper!(evolved, src, stepper)
 
-    return pepo
+    return PEPO(evolved)
 end
 
 function evolve(pepo::AbstractPEPO, stepper::FullStepper)
@@ -593,7 +606,19 @@ function stepstitchisometries(
 
     return (e, s, w, n)
 end
+function stepstitchisometries(
+    A::Type, dst::ProductSpace{S,4}, src::ProductSpace{S,2}
+) where {S}
+    d1, d2, d3, d4 = dst
+    D1, D3 = src
 
+    e = isometry(A, fuse(d1 * D1), d1)
+    s = isometry(A, d2, d2)
+    w = _transpose(isometry(A, fuse(d3 * D3)', d3))
+    n = _transpose(isometry(A, d4, d4))
+
+    return (e, s, w, n)
+end
 function bpisometries(A::Type, dst::ProductSpace{S,4}, src::ProductSpace{S,4}) where {S}
     d1, d2, d3, d4 = dst
     D1, D2, D3, D4 = src

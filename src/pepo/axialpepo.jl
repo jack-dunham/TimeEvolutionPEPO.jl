@@ -16,6 +16,8 @@ function tensors(axp::AxialPEPO, axis=currentaxis(axp))
     end
 end
 
+currentbuffer(axp::AxialPEPO) = tensors(axp)
+
 weights(axp::AxialPEPO) = weights(axp.parent)
 
 function setaxis!(pepo::AxialPEPO, axis::Int)

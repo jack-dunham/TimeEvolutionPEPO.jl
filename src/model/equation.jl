@@ -79,7 +79,7 @@ function broadcastmodel(model::OnAxis)
     return broadcast
 end
 
-function (model::LindbladEquation)(physical, method::DMPO; kwargs...)
+function (model::LindbladEquation)(physical, method::AbstractDMPO; kwargs...)
     rv =
         timestep -> begin
             mpo = MPO(model)
@@ -102,7 +102,7 @@ function (model::LindbladEquation)(physical, method::DMPO; kwargs...)
 end
 
 function broadcastmodel(
-    ::Type{<:LindbladEquation}, model, physical, method::TEBD; axis, kwargs...
+    ::Type{<:LindbladEquation}, model, physical, method::AbstractTEBD; axis, kwargs...
 )
     model = unwrap(model)
 
@@ -117,11 +117,20 @@ function broadcastmodel(
             p1p2 = broadcast(tuple, physical, circshift(physical, .-incr))
 
             uvs = broadcast(p1p2, model) do (p1, p2), modeli
-                return tebdtensor(modeli, p1, p2, timestep; compress=method.compress)
+                return tebdtensor(modeli, p1, p2, timestep; compresstol=method.compresstol)
             end
 
             lat = broadcast(tuple, first.(uvs), circshift(last.(uvs), incr))
 
+            if method isa AxialTEBD
+
+
+                lat = broadcast(lat) do (u,v)
+                    @tensoropt out[ok ob ik ib; e w] :=
+                        u[ok ob x y; e] * v[x y ik ib; w]
+                    return out
+                end
+            end
 
             return lat
         end

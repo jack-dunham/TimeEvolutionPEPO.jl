@@ -209,14 +209,14 @@ function newtruncators(pepo::PEPO, _, truncalg::Union{FET,NTU})
     xenv = newtruncators(tensors(pepo), truncalg)
     return xenv, xenv
 end
+function newtruncators(::PEPO, _, truncalg::SU)
+    xenv = SimpleUpdateState()
+    return xenv, xenv
+end
 function newtruncators(pepo::AxialPEPO, _, truncalg::Union{FET,NTU})
     xenv = newtruncators(tensors(pepo, 1), truncalg)
     yenv = newtruncators(tensors(pepo, 2), truncalg)
     return xenv, yenv
-end
-function newtruncators(pepo::PEPO, _, truncalg::Union{FET,NTU})
-    env = newtruncators(tensors(pepo), truncalg)
-    return env, env
 end
 
 function newtruncators(::NTuple{2,P}, ::Vector{S}, truncalg::SU) where {P<:AbstractPEPO,S}
@@ -407,7 +407,7 @@ function truncate!(dstbuff, srcbuff, isometries, bond)
 end
 
 function truncateto!(
-    dst::Pair{T,T}, src::Pair{T,T}, uv::Pair{S,S}; axis=1
+    dst::Pair{T,T}, src::Pair{T,T}, uv::Pair{S,S}; axis
 ) where {T<:AbsTen{2,4},S<:AbsTen{1,1}}
     p1, p2 = dst
     q1, q2 = src
@@ -420,7 +420,7 @@ function truncateto!(
     return dst
 end
 
-function truncateto!(p::AbsTen{2,4}, q::AbsTen{2,4}, u::AbsTen{1,1}; axis=1)
+function truncateto!(p::AbsTen{2,4}, q::AbsTen{2,4}, u::AbsTen{1,1}; axis)
     if axis == 1
         @tensor p[k b; e s w n] = q[k b; ee s w n] * u[ee; e]
     elseif axis == 2
@@ -429,7 +429,7 @@ function truncateto!(p::AbsTen{2,4}, q::AbsTen{2,4}, u::AbsTen{1,1}; axis=1)
     return p
 end
 
-function truncateto!(p::AbsTen{2,4}, v::AbsTen{1,1}, q::AbsTen{2,4}; axis=1)
+function truncateto!(p::AbsTen{2,4}, v::AbsTen{1,1}, q::AbsTen{2,4}; axis)
     if axis == 1
         @tensor p[k b; e s w n] = q[k b; e s ww n] * v[w; ww]
     elseif axis == 2

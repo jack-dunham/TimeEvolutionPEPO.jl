@@ -312,9 +312,10 @@ function _fidelity(AB, Y, LR; trunc=trunc)
     return real(f)
 end
 
-function isometries(pepo::AbstractPEPO, environment, bond::Bond, truncalg::Union{FET,NTU})
+function isometries(pair, environment, bond::Bond, truncalg::Union{FET,NTU}; kwargs...)
+
     return _generic_environment_isometries(
-        pepo, environment, bond, truncalg; parallel=false
+        pair, environment, bond, truncalg; parallel=false, kwargs...
     )
 end
 function parallelisometries(
@@ -359,7 +360,7 @@ function single_bond_metric_isometries!(
         if parallel
             pair, (u0, v0) = rankreduce(pair)
         else
-            (u0, v0) = rankreduce!(pair)
+            _, (u0, v0) = rankreduce!(pair)
         end
     else
         _, (u0, v0) = rankreduce(pair)
@@ -498,7 +499,7 @@ function rankreduce(tensors::Pair{T,T}; axis=1) where {T<:AbsTen{2,4}}
 
     if axis == 1
         i1, i2 = 1, 3
-    else
+    elseif axis == 2
         i1, i2 = 2, 4
     end
 
@@ -513,14 +514,14 @@ function rankreduce!(tensors::Pair{T,T}; axis=1) where {T<:AbsTen{2,4}}
 
     if axis == 1
         i1, i2 = 1, 3
-    else
+    elseif axis == 2
         i1, i2 = 2, 4
     end
 
-    P1, R = leftrankreduce!(uten, i1)
-    L, P2 = rightrankreduce!(vten, i2)
+    _, R = leftrankreduce!(uten, i1)
+    L, _ = rightrankreduce!(vten, i2)
 
-    return P1 => P2, R => L
+    return uten => vten, R => L
 end
 
 function _leftrankreduce(p::AbsTen{2,4}, ind)
@@ -537,16 +538,17 @@ function _leftrankreduce(p::AbsTen{2,4}, ind)
         end
         rethrow()
     end
+
     perm = TupleTools.insertafter((3, 4, 5), ind - 1, (6,))
     return Q, R, perm
 end
-function leftrankreduce(P::AbsTen{2,4}, ind=1)
+function leftrankreduce(P::AbsTen{2,4}, ind)
     Q, R, perm = _leftrankreduce(P, ind)
     P = permute(Q, ((1, 2), perm))
     return P, R
 end
 
-function leftrankreduce!(P::AbsTen{2,4}, ind=1)
+function leftrankreduce!(P::AbsTen{2,4}, ind)
     Q, R, perm = _leftrankreduce(P, ind)
     permute!(P, Q, ((1, 2), perm))
     return P, R
@@ -571,12 +573,12 @@ function _rightrankreduce(p::AbsTen{2,4}, ind)
 
     return L, Q, perm
 end
-function rightrankreduce(P::AbsTen{2,4}, ind=3)
+function rightrankreduce(P::AbsTen{2,4}, ind)
     L, Q, perm = _rightrankreduce(P, ind)
     P = permute(Q, ((2, 3), perm))
     return L, P
 end
-function rightrankreduce!(P::AbsTen{2,4}, ind=3)
+function rightrankreduce!(P::AbsTen{2,4}, ind)
     L, Q, perm = _rightrankreduce(P, ind)
     permute!(P, Q, ((2, 3), perm))
     return L, P

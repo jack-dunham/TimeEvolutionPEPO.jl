@@ -80,6 +80,8 @@ function MPO(eqn::LindbladEquation)
         X, Y = term.term
         alam = term.coeff
 
+        println(term.coeff)
+
         C[1, i] = -alam * im * kron(X, Id)
         C[1, i + 1] = alam * im * kron(Id, transpose(X))
 

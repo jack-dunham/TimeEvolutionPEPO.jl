@@ -24,24 +24,26 @@ end
 # end
 
 struct LocalStepper{G,MType} <: AbstractTrotterizedTimeStepper
-    data::Lattice{G,NTuple{2,MType},Matrix{NTuple{2, MType}}} #left (u, e bond), right (v, w bond)
+    data::Lattice{G,NTuple{2,MType},Matrix{NTuple{2,MType}}} #left (u, e bond), right (v, w bond)
     axis::Int
     isreversed::Bool
 end
 
-function LocalStepper(lat; axis=1, isreversed=false)
-    return LocalStepper(lat, axis, isreversed)
+function LocalStepper(lat; axis=1, inreverse=false)
+    return LocalStepper(lat, axis, inreverse)
 end
 
 Base.size(ls::LocalStepper) = size(ls.data)
 
-tensors(s::LocalStepper) = latticetuple(s)
+tensors(s::LocalStepper) = s.data
 
 function Base.getindex(stepper::LocalStepper, bond::Bond)
-    u, v = tensors(stepper)
+    i1, i2 = bond
 
-    u1, _ = u[bond]
-    _, v2 = v[bond]
+    data = tensors(stepper)
+
+    u1, _ = data[i1]
+    _, v2 = data[i2]
 
     return u1, v2
 end
@@ -56,7 +58,6 @@ struct AxialStepper{G,MType<:AbsTen{4,2}} <: AbstractTrotterizedTimeStepper
     data::Lattice{G,MType,Matrix{MType}}
     axis::Int
 end
-
 
 AxialStepper(lat; axis, kwargs...) = AxialStepper(lat, axis)
 
@@ -91,9 +92,12 @@ end
 
 FullStepper(t; kwargs...) = FullStepper(t)
 
+# function stepper_type(t1::Type, t2::Type)
+#     throw(ArgumentError("Unknown stepper type for types $t1 and $t2"))
+# end
 stepper_type(::Type, ::Type) = GenericStepper
 stepper_type(m1, m2) = stepper_type(totype(m1), totype(m2))
-stepper_type(m1::Type{<:AbstractMatrix}, m2::Type)  = stepper_type(eltype(m1), m2)
+stepper_type(m1::Type{<:AbstractMatrix}, m2::Type) = stepper_type(eltype(m1), m2)
 
 totype(t::Type) = t
 totype(t) = typeof(t)
@@ -118,34 +122,49 @@ end
 
 struct GenericStepper end
 
-GenericStepper(l::AbstractMatrix{L}) where {L<:AbsTen{4,2}} = AxialStepper(l)
-GenericStepper(l::AbstractMatrix{L}) where {L<:AbsTen{4,4}} = FullStepper(l)
+GenericStepper(l::AbstractMatrix{L}; kwargs...) where {L<:AbsTen{4,2}} = AxialStepper(l)
+GenericStepper(l::AbstractMatrix{L}; kwargs...) where {L<:AbsTen{4,4}} = FullStepper(l)
 
-function applystepper!(pepo::LocalUpdatablePEPO, operator::LocalStepper, bond::Bond)
-    # Get the current left and right pepo tensors
-    setisevolved!(pepo, false)
+function evolve(pepo, operator::LocalStepper, bond::Bond)
+    axis = bondaxis(bond)
 
     p1, p2 = pepo[bond]
     u1, v2 = operator[bond]
 
-    # Get the evolved pepo tensors such that we can write into them
-    pe1, pe2 = evolvedpair(pepo)
+    Du = domain(u1)
+    Dv = domain(v2)
 
-    @tensoropt begin
-        q1[ok ob; e x s w n] := u1[ok ob ik ib; x] * p1[ik ib; e s w n]
-        q2[ok ob; e s w x n] := v2[ok ob ik ib; x] * p2[ik ib; e s w n]
+    D1a, D2a, D3a, D4a = domain(p1)
+    D1b, D2b, D3b, D4b = domain(p2)
+
+    if axis == 1
+        @tensoropt begin
+            q1[ok ob; e x s w n] := u1[ok ob ik ib; x] * p1[ik ib; e s w n]
+            q2[ok ob; e s w x n] := v2[ok ob ik ib; x] * p2[ik ib; e s w n]
+        end
+
+        pe1 = similar(p1, codomain(p1), fuse(D1a * Du) * D2a * D3a * D4a)
+        pe2 = similar(p2, codomain(p2), D1b * D2b * fuse(D3b * Dv)' * D4b)
+
+    elseif axis == 2
+        @tensoropt begin
+            q1[ok ob; e s x w n] := u1[ok ob ik ib; x] * p1[ik ib; e s w n]
+            q2[ok ob; e s w n x] := v2[ok ob ik ib; x] * p2[ik ib; e s w n]
+        end
+
+        pe1 = similar(p1, codomain(p1), D1a * fuse(D2a * Du) * D3a * D4a)
+        pe2 = similar(p2, codomain(p2), D1b * D2b * D3b * fuse(D4b * Dv)')
     end
 
     mergeinto!(pe1, q1)
     mergeinto!(pe2, q2)
 
-    return pepo
+    return pe1 => pe2
 end
 
 function evolve(pepo::AxialPEPO, stepper::AxialStepper)
-
     @assert pepo.currentaxis == stepper.axis
-    
+
     rv = broadcast(tensors(pepo), tensors(stepper)) do pin, mpo
         d1, d2, d3, d4 = domain(pin)
         D1, D3 = domain(mpo)
@@ -526,7 +545,11 @@ abstract type AbstractTimeEvolution end
 
 Base.show(io::IO, m::MIME"text/plain", sim::AbstractTimeEvolution) = shownested(io, m, sim)
 
-@kwdef struct DMPO{TAlg<:AbstractTruncationScheme} <: AbstractTimeEvolution
+abstract type AbstractDMPO <: AbstractTimeEvolution end
+
+Base.parent(dmpo::AbstractDMPO) = getfield(dmpo, :parent)
+
+@kwdef struct DMPO{TAlg<:AbstractTruncationScheme} <: AbstractDMPO
     approx::Bool = true
     breaktol::Float64 = 0.0
     compress::Bool = true
@@ -539,27 +562,34 @@ Base.show(io::IO, m::MIME"text/plain", sim::AbstractTimeEvolution) = shownested(
     verbose::Bool = true
 end
 
-showheader(::Type{<:DMPO}) = "Dynamical matrix product operator (DMPO)"
+UpdateStyle(::Type{<:DMPO}) = IsAxial()
 
+struct GlobalDMPO{TAlg} <: AbstractDMPO
+    parent::DMPO{TAlg}
+end
+
+GlobalDMPO(; kwargs...) = GlobalDMPO(DMPO(; kwargs...))
+
+UpdateStyle(::Type{<:GlobalDMPO}) = IsGlobal()
+
+showheader(::Type{<:DMPO}) = "Dynamical matrix product operator (DMPO)"
 
 abstract type AbstractTEBD <: AbstractTimeEvolution end
 
 Base.show(io::IO, m::MIME"text/plain", sim::AbstractTEBD) = shownested(io, m, sim)
 showheader(::Type{<:AbstractTEBD}) = "Time-evolving block decimation (TEBD)"
 
-Base.parent(tebd::AbstractTEBD) = getfield(tebd, :parent)
+Base.parent(tebd::Union{AbstractTEBD, AbstractDMPO}) = getfield(tebd, :parent)
 
-function Base.getproperty(tebd::AbstractTEBD, sym::Symbol)
+function Base.getproperty(method::Union{AbstractTEBD, AbstractDMPO}, sym::Symbol)
     if sym === :parent
-        return getfield(tebd, sym)
+        return getfield(method, sym)
     else
-        return getfield(parent(tebd), sym)
+        return getfield(parent(method), sym)
     end
 end
 
-@kwdef mutable struct TEBD{
-    TAlg<:AbstractTruncationScheme,
-} <: AbstractTimeEvolution
+@kwdef mutable struct TEBD{TAlg<:AbstractTruncationScheme} <: AbstractTEBD
     breaktol::Float64 = 0.0
     compresstol::Float64 = eps()
     trotterlevel::Symbol = :max
@@ -570,21 +600,25 @@ end
     verbose::Bool = true
 end
 
-Base.parent(tebd::TEBD) = tebd
+UpdateStyle(::Type{<:TEBD}) = IsLocal()
+
+Base.parent(method::Union{TEBD,DMPO}) = method
 
 struct AxialTEBD{TAlg} <: AbstractTEBD
     parent::TEBD{TAlg}
 end
 
-AxialTEBD(;kwargs...) = AxialTEBD(TEBD(;kwargs...))
+AxialTEBD(; kwargs...) = AxialTEBD(TEBD(; kwargs...))
+
+UpdateStyle(::AxialTEBD) = IsAxial()
 
 struct GlobalTEBD{TAlg} <: AbstractTEBD
     parent::TEBD{TAlg}
 end
 
-GlobalTEBD(;kwargs...) = GlobalTEBD(TEBD(;kwargs...))
+GlobalTEBD(; kwargs...) = GlobalTEBD(TEBD(; kwargs...))
 
-ModelStyle(::Type{<:GlobalTEBD}) = IsGlobal()
+UpdateStyle(::Type{<:GlobalTEBD}) = IsGlobal()
 
 @kwdef struct TETNO{TAlg,Style} <: AbstractTimeEvolution
     breaktol::Float64 = 0.0
@@ -609,6 +643,8 @@ showheader(::Type{<:TETNO}) = "Time-evolving tensor network operator (TETNO)"
     verbose::Bool = true
     extend::Bool = true
 end
+
+UpdateStyle(::TEPEPSO) = IsGlobal()
 
 truncstyle(method::TEPEPSO) = Global()
 

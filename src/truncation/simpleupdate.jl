@@ -32,31 +32,120 @@ function timestep!(pepo::PEPO, truncator, stepper::LocalStepper, truncalg::SU; k
 
     infidelity = similar(buffer)
 
-    bonds = bonditer(pepo)
+    axisbonds = bonds(pepo, stepper.axis)
 
-    isreversed(stepper) && (bonds = Iterators.Reverse(bonds))
+    isreversed(stepper) && (axisbonds = Iterators.Reverse(axisbonds))
 
-    foreach(bonds) do bond
-        D = bondspace(buffer, bond)
+    for bond in axisbonds
 
         # Evolved the pair of tensors connected by `bond`, leaving the original pair
         # unmutated.
-        pair = evolve(buffer[bond], stepper)
+        pair = evolve(pepo, stepper, bond)
 
-        iso, s, _ = isometries!(pair, pepo, truncator, bond, truncalg)
+        (u, v), s, _ = isometries!(pair, pepo, bond, truncalg)
 
-        truncate!(pepo[bond], pair, iso)
+        # newpair = mapreduce(copy, =>, pepo[bond])
 
-        setweight!(pepo, s, bond; copy=true)
+        oldA, oldB = pepo[bond]
+
+        a1, a2, a3, a4 = domain(oldA)
+        b1, b2, b3, b4 = domain(oldB)
+
+        Du = domain(u)
+        Dv = codomain(v)
+
+        if bondaxis(bond) == 1
+            domA = Du * a2 * a3 * a4
+            domB = b1 * b2 * Dv' * b4
+        elseif bondaxis(bond) == 2
+            domA = a1 * Du * a3 * a4
+            domB = b1 * b2 * b3 * Dv'
+        end
+
+        newA = similar(oldA, codomain(oldA), domA)
+        newB = similar(oldB, codomain(oldB), domB)
+
+        newpair = newA => newB
+
+        truncateto!(newpair, pair, u => v; axis=bondaxis(bond))
+
+        pepo.state[bond] = newpair
+
+        setweight!(pepo, s, bond; copy=false)
+
+        quicknormalize!(pepo)
+        hermitianize!(pepo)
     end
 
-    quicknormalize!(pepo)
-    hermitianize!(pepo)
+    # simple_update_gauge!(pepo; reset=false)
 
     return pepo, infidelity
 end
 
-function timestep!(pepo::AxialPEPO, trunactor, stepper, truncalg::SU; kwargs...)
+function timestep!(
+    pepo::AxialPEPO, truncator, stepper::LocalStepper, truncalg::NTU; kwargs...
+)
+
+    # Evolve and then truncate each bond in sequence
+    if pepo.currentaxis != stepper.axis
+        setaxis!(pepo, stepper.axis)
+    end
+    axis = stepper.axis
+
+    buffer = tensors(pepo)
+
+    infidelity = 0
+
+    for bond in bonds(buffer, 1)
+        D = bondspace(buffer, bond)
+
+
+        # Evolved the pair of tensors connected by `bond`, leaving the original pair
+        # unmutated.
+
+
+        pair = evolve(buffer, stepper, bond)
+        trunc = ntu_total(pair, buffer, bond)
+
+        (u, v), s, _ = isometries(pair, trunc, bond, truncalg; D= D)
+
+        oldA, oldB = pepo[bond]
+
+        a1, a2, a3, a4 = domain(oldA)
+        b1, b2, b3, b4 = domain(oldB)
+
+        Du = domain(u)
+        Dv = codomain(v)
+
+        if bondaxis(bond) == 1
+            domA = Du * a2 * a3 * a4
+            domB = b1 * b2 * Dv' * b4
+        elseif bondaxis(bond) == 2
+            domA = a1 * Du * a3 * a4
+            domB = b1 * b2 * b3 * Dv'
+        end
+
+        newA = similar(oldA, codomain(oldA), domA)
+        newB = similar(oldB, codomain(oldB), domB)
+
+        newpair = newA => newB
+
+        truncateto!(newpair, pair, u => v; axis=bondaxis(bond))
+
+        buffer[bond] = newpair
+
+        setweight!(pepo, s, bond; copy=false)
+
+        quicknormalize!(pepo.parent)
+        hermitianize!(pepo.parent)
+
+    end
+
+    return pepo, infidelity
+end
+function timestep!(
+    pepo::AxialPEPO, truncator, stepper::AxialStepper, truncalg::SU; kwargs...
+)
 
     # Evolve and then truncate each bond in sequence
     if pepo.currentaxis != stepper.axis
@@ -103,6 +192,9 @@ function timestep!(pepo::AxialPEPO, trunactor, stepper, truncalg::SU; kwargs...)
 
     return pepo, infidelity
 end
+
+
+
 # isometries for sequential simple update
 function isometries!(pair::Pair, pepo::AbstractPEPO, bond::Bond, truncalg::SU)
     D = bondspace(pepo, bond)
@@ -111,7 +203,7 @@ function isometries!(pair::Pair, pepo::AbstractPEPO, bond::Bond, truncalg::SU)
 
     xi = truncalg.ξ
 
-    iso, s, infid = simpleupdate!(pair, pepo, bond; trunc=trunc, xi=xi)
+    iso, s, infid = simpleupdate!(pair, weights(pepo), bond; trunc=trunc, xi=xi)
 
     return iso, s, infid
 end
@@ -187,7 +279,9 @@ function simple_update_svd!(pair; axis, kwargs...)
 end
 
 function isometries_from_svd(P, Q, u0, v0; xi=Inf, trunc=notrunc(), absorb=true)
-    u, s, v, _ = safetsvd!(u0 * v0; trunc=trunc)
+    u, s, v, err = safetsvd!(normalize(u0 * v0); trunc=trunc)
+
+    println(err)
 
     maxnormalize!(s)
 
@@ -216,7 +310,6 @@ function absorb_adjacent_weights!(
         func = w -> try
             inv(sqrt(w))
         catch
-            # @warn "inv failed"
             pinv(sqrt(w))
         end
     else

@@ -109,37 +109,53 @@ end
 Base.getindex(isoms::Isometries, I...) = map(uv -> getindex(uv, I...), unpack(isoms))
 Base.getindex(isoms::Isometries, bond::Bond) = isoms[first(bond)] => isoms[last(bond)]
 
-function timestep!(
-    pepo!::AbstractPEPO, truncator!::Isometries, stepper, truncalg::IterativeSU
-)
-    iterative_simple_update!(
-        pepo!,
-        truncator!,
-        stepper;
-        maxiter=truncalg.maxiter,
-        tol=truncalg.tol,
-        recycle=truncalg.recycle,
-        sequential=truncalg.sequential,
-    )
-
-    return pepo!
-end
-
 # function timestep!(
-#     pepo!::AbstractPEPO, truncator!::Isometries, sequence::Vector, truncalg,
+#     pepo!::PEPO, truncator!::Isometries, stepper, truncalg::IterativeSU
 # )
-#     iterative_neighbourhood_update!(
+#     iterative_simple_update!(
 #         pepo!,
 #         truncator!,
-#         only(sequence);
+#         stepper;
+#         maxiter=truncalg.maxiter,
+#         tol=truncalg.tol,
+#         recycle=truncalg.recycle,
+#         sequential=truncalg.sequential,
 #     )
 #
 #     return pepo!
 # end
+#
+# function timestep!(
+#     pepo!::AxialPEPO, truncator!::Tuple, stepper, truncalg::IterativeSU
+# )
+#     if pepo.currentaxis != stepper.axis
+#         setaxis!(pepo, stepper.axis)
+#     end
+#
+#     axis = pepo!.currentaxis
+#
+#     iterative_simple_update!(
+#         pepo!,
+#         truncator![axis],
+#         stepper;
+#         maxiter=truncalg.maxiter,
+#         tol=truncalg.tol,
+#         recycle=truncalg.recycle,
+#         sequential=truncalg.sequential,
+#     )
+#
+#     return pepo!
+# end
+function timestep!(
+    pepo!::AbstractPEPO, truncator!::Isometries, sequence, truncalg,
+)
+    iterative_neighbourhood_update!(
+        pepo!,
+        truncator!,
+        sequence;
+    )
 
-function newtruncators(pepo, sequence, ::IterativeSU)
-    iso = newisometries(tensors(pepo), first(sequence))
-    return (iso, iso)
+    return pepo!
 end
 
 function iterative_simple_update_step(pepo, stepper, isometries, bond)
@@ -156,10 +172,17 @@ function iterative_simple_update_step(pepo, stepper, isometries, bond)
     return (u, v), s, infid
 end
 
+function newtruncators(pepo, sequence, ::IterativeSU)
+    iso = newisometries(tensors(pepo), first(sequence))
+    return (iso, iso)
+end
+
+
 function iterative_simple_update!(
     pepo!, truncator!, stepper; maxiter, tol, sequential, recycle
 )
     mode = :none
+
     if mode === :quick
         rv = evolve(pepo!, stepper)
         newpepo = PEPO(rv)
@@ -210,6 +233,8 @@ function iterative_simple_update!(
     newisoms = similar(isoms)
     newweights = deepcopy(weights(pepo!))
 
+    gauge=false
+
     for i in 1:maxiter
         bonds = bonditer(buff)
 
@@ -220,7 +245,7 @@ function iterative_simple_update!(
                 (u, v), s, _ = iterative_simple_update_step(pepo!, stepper, isoms, bond)
 
                 setindex!(isoms, u => v, bond)
-                setweight!(pepo!, s, bond; copy=true)
+                setweight!(pepo!, s, bond; copy=false)
             end
 
             new = newweights
@@ -248,7 +273,9 @@ function iterative_simple_update!(
             break
         end
 
-        #=
+        if !gauge || size(buff) < (2,2)
+            continue
+        end
 
         temppepo = deepcopy(pepo!)
 
@@ -257,12 +284,12 @@ function iterative_simple_update!(
             op = tensors(stepper)[I]
             e, s, w, n = isoms[I]
 
-            truncateto!(dst, dst, TensorMap(op), e, s, w, n)
+            truncateto!(dst, deepcopy(dst), op, e, s, w, n)
 
             # mergeinto!(dst, spten)
         end
 
-        gauge1, gauge2 = simple_update_gauge_isometries!(temppepo)
+        gauge1, gauge2 = simple_update_gauge_isometries!(temppepo; verbose=false)
 
         ge = broadcast(first, gauge1)
         gw = broadcast(last, circshift(gauge1, (1, 0)))
@@ -294,7 +321,6 @@ function iterative_simple_update!(
             setweight!(pepo!, s, bond; copy=true)
         end
 
-        =#
     end
 
     # broadcast(
@@ -309,14 +335,14 @@ function iterative_simple_update!(
         op = tensors(stepper)[I]
         e, s, w, n = isoms[I]
 
-        truncateto!(dst, dst, op, e, s, w, n)
+        truncateto!(dst, copy(dst), op, e, s, w, n)
 
         # mergeinto!(dst, spten)
     end
 
     size(buff) == (1, 1) && minimalcanonicalform!(buff)
     #
-    size(buff) != (1, 1) && simple_update_gauge!(pepo!; maxiter=500, reset=true)
+    # size(buff) != (1, 1) && simple_update_gauge!(pepo!; maxiter=100, reset=true)
 
 
     # minimalcanonicalform!(tensors(pepo))
@@ -328,7 +354,7 @@ function iterative_simple_update!(
 end
 
 function iterative_neighbourhood_update!(pepo, truncator, stepper)
-    evolve!(pepo, stepper)
+    evolvedpepo = evolve(pepo, stepper)
 
     # simple_update_gauge!(pepo; maxiter=100)
 
@@ -342,7 +368,7 @@ function iterative_neighbourhood_update!(pepo, truncator, stepper)
     # ξ = 500.0
     ξ = Inf
     # truncalg = NTU(; ξ=ξ, rankreduce=false, optalg=EVB(; gauge=NoGauge()))
-    truncalg = NTU(; ξ=ξ, rankreduce=false, optalg=EVB())
+    truncalg = NTU(; ξ=ξ, rankreduce=false, optalg=EVB(maxiter=100))
     # truncalg = FET(; alg=VUMPS(bonddim=16, tol=1e-8), ξ=ξ, rankreduce=false, optalg=EVB())
     # truncalg = NTU(; ξ=ξ, rankreduce=true, optalg=DZM(EAT=false,gauge=NoGauge()))
     # truncalg = NTU(; ξ=ξ, rankreduce=true, optalg=DZM())
@@ -356,7 +382,7 @@ function iterative_neighbourhood_update!(pepo, truncator, stepper)
 
     infidelity = 0
 
-    buff = currentbuffer(pepo)
+    buff = currentbuffer(evolvedpepo)
     ybuff = permutetranspose(buff)
 
     # truncx = newtruncators(buff, truncalg)
@@ -365,7 +391,8 @@ function iterative_neighbourhood_update!(pepo, truncator, stepper)
     # truncy = newtruncators(ybuff, truncalg)
     # renormalize!(truncy)
 
-    reducedbuffer = broadcast(baretruncation!, similar.(tensors(pepo)), buff)
+    reducedbuffer = currentbuffer(pepo)
+    # reducedbuffer = broadcast(baretruncation!, similar.(tensors(pepo)), buff)
 
     # xisoms = Isometries(stitchisometries.(tensors(pepo), buff))
     # yisoms = stitchisometries.(permutetranspose(tensors(pepo)), ybuff)
@@ -394,7 +421,7 @@ function iterative_neighbourhood_update!(pepo, truncator, stepper)
         for i in 1:1
             isomh = broadcast(bonds(buff, 1)) do bond
                 # reducedpair = parallel2sequential(buff, xisoms, bond)
-                # truncx = ntu_total_low(reducedpair, reducedbuffer, bond)
+                # truncx = ntu_total(reducedpair, reducedbuffer, bond)
                 #
                 # foreach(normalize!, reducedpair)
 
@@ -411,7 +438,7 @@ function iterative_neighbourhood_update!(pepo, truncator, stepper)
                 # (u, v), s, _ = simpleupdate(reducedpair, weights(pepo), bond; trunc=truncspace(D))
 
                 setindex!(xisoms, u => v, bond)
-                setindex!(yisoms, u => v, transpose(bond))
+                # setindex!(yisoms, u => v, transpose(bond))
 
                 maxnormalize!(s)
 
@@ -431,7 +458,7 @@ function iterative_neighbourhood_update!(pepo, truncator, stepper)
         for i in 1:1
             isomv = broadcast(bonds(ybuff, 1)) do fictbond
                 # reducedpair = parallel2sequential(ybuff, yisoms, fictbond)
-                # truncy = ntu_total_low(reducedpair, yreducedbuffer, fictbond)
+                # truncy = ntu_total(reducedpair, yreducedbuffer, fictbond)
                 #
                 # foreach(normalize!, reducedpair)
 
@@ -514,17 +541,15 @@ function iterative_neighbourhood_update!(pepo, truncator, stepper)
     #     truncateto!(dst, src, e, s, w, n)
     # end
 
-    pepo.state = 0
-
-    # simple_update_gauge!(pepo; maxiter=100)
+    # simple_update_gauge!(pepo; maxiter=100, reset=true)
     # foreach(tup -> map(normalize!, tup), xisoms)
     # minimalcanonicalform!(tensors(pepo))
 
     # simple_update_gauge!(pepo); maxiter=100)
     elcopy!(truncator, xisoms)
 
-    quicknormalize!(pepo.parent)
-    hermitianize!(pepo.parent)
+    quicknormalize!(pepo)
+    hermitianize!(pepo)
 
     return pepo, infidelity
 end

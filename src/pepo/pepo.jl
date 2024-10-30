@@ -1,6 +1,6 @@
 struct PEPO{G,PType<:TenAbs{4},CType} <: AbstractPEPO
     state::Lattice{G,PType,Matrix{PType}}
-    weights::EdgeLattice{G,CType,Matrix{NTuple{2, CType}}}
+    weights::EdgeLattice{G,CType,Matrix{NTuple{2,CType}}}
 end
 
 tensors(pepo::PEPO) = pepo.state
@@ -141,7 +141,9 @@ end
 
 function mergeinto!(p_merged, p)
     @inbounds for c in blocksectors(p)
-        copyto!(TensorKit.block(p_merged, c), TensorKit.block(p, c))
+        bdst = TensorKit.block(p_merged, c)
+        bsrc = TensorKit.block(p, c)
+        copy!(bdst, bsrc)
     end
     return p_merged
 end

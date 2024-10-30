@@ -346,11 +346,11 @@ function negativityhook!(sim::Simulation)
 
     pepo = tensors(sim)
 
-    alg = CTMRG(; maxiter=100, bonddim=16, verbose=true)
+    alg = VUMPS(; maxiter=100, bonddim=16, verbose=true)
 
     dm = DensityMatrix(pepo, alg)
     rdm1 = PEPOKit.ReducedDensityMatrix(dm, (1, 1), (2, 1))
-    rdm2 = PEPOKit.ReducedDensityMatrix(dm, (1, 1), (1, 2))
+    rdm2 = PEPOKit.ReducedDensityMatrix(dm, (1, 1), (3, 1))
 
     return (negativity(rdm1), negativity(rdm2))
 end

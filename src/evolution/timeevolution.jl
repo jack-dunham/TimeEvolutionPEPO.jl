@@ -14,6 +14,8 @@ newevolution(pepo, steps, method) = newevolution(eltype(steps), pepo, steps, met
 newevolution(::Type{<:AxialStepper}, pepo, steps, method) = AxialPEPO(pepo)
 newevolution(::Type{<:AbstractTimeStepper}, pepo, steps, method) = pepo
 
+newevolution(::Type{<:LocalStepper}, pepo, steps, method::TEBD{<:NTU}) = AxialPEPO(pepo)
+
 function newevolution(pepo::AbstractPEPO, map::LocalStepper)
     u, v = tensors(map)
     evolved = broadcast(tensors(pepo), u, v) do p, u, v
@@ -212,7 +214,7 @@ function timestep!(pepo::AxialPEPO, truncator, stepper, truncalg; kwargs...)
         truncateto!(dst, src, u, v)
     end
 
-    size(pepo) == (1,1) && minimalcanonicalform!(tensors(pepo))
+    # size(pepo) == (1,1) && minimalcanonicalform!(tensors(pepo))
 
     quicknormalize!(pepo.parent)
     hermitianize!(pepo.parent)

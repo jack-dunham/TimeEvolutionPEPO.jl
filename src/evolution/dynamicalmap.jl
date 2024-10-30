@@ -1,65 +1,3 @@
-# function newstepper(
-#     ::PEPO, stepper::NTuple{N,<:AbstractMatrix{T}}, method
-# ) where {N,T<:AbstractTimeStepper}
-#     return stepper
-# end
-#
-# function newstepper(physical::Lattice, model, method)
-#     return construct_stepper_list(physical, model, method)
-# end
-#
-# function newstepper(pepo::PEPO{G}, model::Tuple, method) where {G}
-#     model = map(Lattice{G}, model)
-#     return newstepper(physicalspace(pepo), model, method)
-# end
-
-# # Explicitly isotropic
-# function newstepper(
-#     physical::AbstractMatrix{<:IndexSpace},
-#     model::NTuple{1,AbstractMatrix},
-#     method::Union{TETNO,TEPEPSO},
-# )
-#     println(typeof(model))
-#
-#     onlystep = timestepper(physical, only(model), method; tau=method.timestep)
-#     return [onlystep]
-# end
-
-#
-# function newstepper(
-#     physical::AbstractMatrix{<:IndexSpace},
-#     model::NTuple{2,AbstractMatrix},
-#     method::AbstractTimeEvolution,
-# )
-#
-#     hori = timestepper(physical, model[1], method)
-#     vert = timestepper(physical, model[2], method)
-#
-#     rv = newstepper(hori, vert, method)
-#
-#     return rv
-# end
-
-function construct_stepper_list(physical, model::NTuple{2}, method; tau=method.timestep)
-    xtensorsteps = timestepper(physical, model[1], method; tau=tau)
-
-    xsteps = map(xtensorsteps) do s
-        return stepper(s, method; axis=1)
-    end
-
-    if N == 1
-        ytensorsteps = xtensorsteps
-    elseif N == 2
-        ytensorsteps = timestepper(physical, model[2], method; tau=tau)
-    end
-
-    ysteps = map(ytensorsteps) do s
-        return stepper(s, method; axis=2)
-    end
-
-    return xsteps, ysteps
-end
-
 struct TrotterDecomposition{T}
     head::Vector{T}
     body::Vector{T}
@@ -73,7 +11,6 @@ Base.iterate(sch::TrotterDecomposition, state=1) = iterate(sch.body, state)
 function Base.size(t::TrotterDecomposition)
     return maximum(size, Iterators.flatten((t.head, t.body, t.tail)))
 end
-
 
 # function construct_stepper_list(physical, model, method)
 #     model = Iterators.flatten(model)
@@ -119,23 +56,19 @@ function onvector(t)
     return v
 end
 
-
 function trotterise(physical, steps, method)
     trotterlist = map(steps) do modelstep
-
         G = promote_geometry_type(physical, modelstep)
 
-        S = stepper_type(modelstep, method)
+        S = applykwargs(stepper_type(method), modelstep)
 
-        rvf =
-            dt -> begin
+        rvf = dt -> begin
+            lat = broadcastmodel(G, modelstep, physical, method)(dt)
 
-                lat = broadcastmodel(G, modelstep, physical, method)(dt)
+            v = onvector(lat)
 
-                v = onvector(lat)
-
-                return map(S, v)
-            end
+            return map(S, v)
+        end
 
         return rvf
     end
@@ -143,18 +76,15 @@ function trotterise(physical, steps, method)
     return trotterlist
 end
 
-
 # TODO this is hacky and convoluted and needs more thought
 function newstepper(physical, model, method)
-
     order = method.trotterorder
 
     # Apply wrappers etc as needed and makes sure everything is on matrices
     steps = processmodel(model, method)
 
-
     trotterlist = trotterise(physical, steps, method)
-    
+
     tau = method.timestep
 
     # if length(trotterlist) == 1 
@@ -479,7 +409,7 @@ function dmpotensor(mpo, p::S) where {S<:IndexSpace}
 
     L = size(mpo, 1)
 
-    matrix = reduce(vcat, [reduce(hcat, mpo[i, :]) for i in 1:L]);
+    matrix = reduce(vcat, [reduce(hcat, mpo[i, :]) for i in 1:L])
 
     for (ind, op) in pairs(matrix)
         slice = view(array, :, :, :, :, ind)
@@ -488,5 +418,5 @@ function dmpotensor(mpo, p::S) where {S<:IndexSpace}
 
     tensor = TensorMap(array, p * p' * p' * p, s * s')
 
-    return permutedom(tensor, (2,1))
+    return permutedom(tensor, (2, 1))
 end

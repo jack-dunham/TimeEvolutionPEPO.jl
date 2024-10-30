@@ -22,7 +22,7 @@ getparams(axp::AxialHeisenberg) = (axp.Jx, axp.Jy, axp.Jz, axp.Kx, axp.Ky, axp.K
 stepper_type(::AxialHeisenberg, _) = AxialStepper
 stepper_type(::AbstractMatrix{<:AxialHeisenberg}, _) = AxialStepper
 
-function (model::AxialHeisenberg)(physical, method::DMPO; kwargs...)
+function (model::AxialHeisenberg)(physical, method::AbstractDMPO; kwargs...)
     rv =
         timestep -> begin
             mpo = MPO(model)
