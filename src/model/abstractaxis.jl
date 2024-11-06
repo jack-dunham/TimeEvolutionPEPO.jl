@@ -111,9 +111,10 @@ function applykwargs(S::Type, o::OnAxis)
     end
     return rv
 end
-function applykwargs(S::Type, ::InReverse)
-    function rv(lat; kwargs...)
-        return S(lat; inreverse=true, kwargs...)
+function applykwargs(S::Type, r::InReverse)
+    axisf = applykwargs(S, r.model)
+    return function rv(lat; kwargs...)
+        return axisf(lat; inreverse=true, kwargs...)
     end
     return rv
 end

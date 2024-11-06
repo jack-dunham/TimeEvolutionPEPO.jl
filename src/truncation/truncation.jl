@@ -19,7 +19,7 @@ end
     pinvtol::Float64 = sqrt(eps())
     isotol::Float64 = 1e-8
     randomness::Float64 = 0.0
-    EAT::Bool = true
+    EAT::Bool = false
     check::Bool = false
     gauge::G = NoGauge()
 end

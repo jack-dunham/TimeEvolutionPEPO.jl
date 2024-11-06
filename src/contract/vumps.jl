@@ -79,6 +79,17 @@ function tracecontract(FL_00, FR_00, AT_00, AB_01, M_00)
         (AB_01')[x4 x3; D2]
     return rv
 end
+function tracecontract_two_layer(FL_00, FR_00, AT_00, AB_01, M1_00, M2_00)
+    @tensoropt rv =
+        FL_00[D3 E3; x1 x3] *
+        AT_00[D4 E4; x2 x1] *
+        FR_00[D1 E1; x2 x4] *
+        M1_00[k b; D1 D2 D3 D4] *
+        (M2_00')[E1 E2 E3 E4; k b] *
+        (AB_01')[x4 x3; D2 E2]
+    return rv
+end
+
 function onelocalcontract(FL_00, FR_00, AT_00, AB_01, M_00)
     c = codomain(M_00)[1]
     dst = similar(M_00, c, c)

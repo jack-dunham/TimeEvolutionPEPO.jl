@@ -1,10 +1,15 @@
 abstract type AbstractModel <: AbstractLindbladEquation end
+abstract type Abstract1DModel <: AbstractModel end
+abstract type Abstract2DModel <: AbstractModel end
 
-@kwdef struct Heisenberg <: AbstractModel
+@kwdef struct Heisenberg <: Abstract1DModel
     Jx::Float64 = 0.0
     Jy::Float64 = 0.0
     Jz::Float64 = 0.0
-    L::Vector{LindbladTerm}
+    hx::Float64 = 0.0
+    hy::Float64 = 0.0
+    hz::Float64 = 0.0
+    L::Vector{LindbladTerm} = []
 end
 
 ModelStyle(::Type{Heisenberg}) = IsAxial()
@@ -13,7 +18,7 @@ stepper_type(::Type{Heisenberg}, ::Type{<:TEBD}) = LocalStepper
 stepper_type(::Type{Heisenberg}, ::Type{<:AxialTEBD}) = AxialStepper
 stepper_type(::Type, ::Type{<:GlobalTEBD}) = FullStepper
 
-@kwdef struct J1J2Heisenberg <: AbstractModel
+@kwdef struct J1J2Heisenberg <: Abstract2DModel
     Jx::Float64 = 0.0
     Jy::Float64 = 0.0
     Jz::Float64 = 0.0
@@ -197,9 +202,17 @@ function expAA(t, A)
     return M
 end
 
-function vectorise(t, AK, AB)
-    MK = expAA(-t, AK)
-    MB = expAA(t, AB)
+function vectorise(t, AK, AB; thermal=false)
+    if thermal
+        c1 = -t
+        c2 = -t
+    else
+        c1 = -im * t
+        c2 = im * t
+    end
+
+    MK = expAA(c1, AK)
+    MB = expAA(c2, AB)
 
     # MK = expzz(-t)
     # MB = expzz(t)
@@ -249,6 +262,18 @@ function tebdtensor(
 
     ops = Matrix{ComplexF64}[]
 
+    linops = model.L
+
+    if isempty(linops)
+        thermal = true
+        c1 = -1
+        c2 = -1
+        dt = dt / 2
+    else
+        c1 = -im
+        c2 = im
+    end
+
     Jx, Jy, Jz = getparams(model)
 
     expf = (xi, A) -> begin
@@ -256,39 +281,51 @@ function tebdtensor(
     end
 
     expfv = (xi, A) -> begin
-        return kron(expf(-xi, A), expf(xi, transpose(A)))
+        return kron(expf(c1 * xi, A), expf(c2 * xi, transpose(A)))
     end
 
     if !iszero(Jx)
-        xi = im * dt * Jx
+        xi = dt * Jx
         # push!(ops, vectorise(Jx / 4 * ham(X, X)))
         push!(ops, expfv(xi, X))
     end
 
     if !iszero(Jy)
-        xi = im * dt * Jy
+        xi = dt * Jy
         # push!(ops, vectorise(Jy / 4 * ham(Y, Y)))
         push!(ops, expfv(xi, Y))
     end
 
     if !iszero(Jz)
-        xi = im * dt * Jz
+        xi = dt * Jz
         # push!(ops, vectorise(Jz / 4 * ham(Z, Z)))
         push!(ops, expfv(xi, Z))
     end
 
     numops = length(ops)
 
+    # ket bra ket bra
     space = p1 * p2 * p1' * p2'
 
     # TODO: this is not generic atm.
     rank = dim(p1 * p1')
 
-    lop = sum(model.L; init=zeros(ComplexF64, rank^2, rank^2)) do op
-        return vectorise(op) / (4 * numops)
+    id  = one(X)
+
+    lop = kron(zero(id), zero(id))
+    lop = kron(lop, lop)
+
+    for (h, A) in zip((model.hx, model.hy, model.hz), PAULI)
+
+        op = 1 / 2 * (kron(id, A) + kron(A, id))
+
+        lop += h * ( c1 * kron(op, one(op)) + c2 * kron(one(op), transpose(op)))
     end
 
-    L = exp(dt * lop)
+    # Local operators
+    lop = sum(vectorise, model.L; init=lop)
+
+    L = exp(dt / (4 * numops) * lop)
 
     rv = map(ops) do op
         tensor = TensorMap(L * op * L, space, space)
@@ -313,18 +350,31 @@ function tebdtensor(model::Heisenberg, p::IndexSpace, method::AbstractTEBD, dt; 
 
     ops = Array{ComplexF64,6}[]
 
+    linops = model.L
+
+    if isempty(linops)
+        thermal = true
+        c1 = -1
+        c2 = -1
+        dt = dt / 2
+    else
+        thermal = false
+        c1 = -im
+        c2 = im
+    end
+
     if !iszero(model.Jx)
-        data = vectorise(dt * im * model.Jx, X, transpose(X))
+        data = vectorise(dt * model.Jx, X, transpose(X); thermal=thermal)
         push!(ops, data)
     end
 
     if !iszero(model.Jy)
-        data = vectorise(dt * im * model.Jy, Y, transpose(Y))
+        data = vectorise(dt * model.Jy, Y, transpose(Y); thermal=thermal)
         push!(ops, data)
     end
 
     if !iszero(model.Jz)
-        data = vectorise(dt * im * model.Jz, Z, transpose(Z))
+        data = vectorise(dt * model.Jz, Z, transpose(Z); thermal=thermal)
         push!(ops, data)
     end
 
@@ -332,7 +382,16 @@ function tebdtensor(model::Heisenberg, p::IndexSpace, method::AbstractTEBD, dt; 
 
     space = p * p' * p' * p
 
-    lop = sum(model.L; init=zeros(ComplexF64, 4, 4)) do op
+    id  = one(X)
+
+    lop = kron(zero(id), zero(id))
+
+    for (h, A) in zip((model.hx, model.hy, model.hz), PAULI)
+        lop += h / (4 * numops) * ( c1 * kron(A, id) + c2 * kron(id, transpose(A)))
+    end
+
+    # Local operators
+    lop = sum(model.L; init=lop) do op
         return localvectorise(op) / (4 * numops)
     end
 

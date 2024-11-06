@@ -222,13 +222,12 @@ function fsmlongrange(
     return TensorMap(data, d * d' * d' * d, Dx * Dy * Dx' * Dy')
 end
 
-function fsmlongrangeterm( space, dt; delta, omega, g, gp)
-    wk, mks, lks = PEPOKit.twodapprox(6, 6; N=200)
+function fsmlongrangeterm(op, space, dt; alpha = Inf, delta = 0, omega =0, g = 0, gp =0, nk = 6, J=1.0, N=200)
+    wk, mks, lks = PEPOKit.twodapprox(alpha, nk; N = N)
     X, Y, Z = PAULI
 
     rv = []
-    # op = Z
-    op = 1/2 * (one(Z) + Z)
+    # op = 1/2 * (one(Z) + Z)
     for (w, mk, lk) in zip(wk, mks, lks)
         term = fsm_long_range_term(
             op,
@@ -242,6 +241,7 @@ function fsmlongrangeterm( space, dt; delta, omega, g, gp)
             omega=omega,
             g=g,
             gp=gp,
+            J = J,
         )
         push!(rv, term)
     end
@@ -360,6 +360,12 @@ function fsmaxial(
 
     X, Y, Z = PAULI
 
+    if isempty(length(vecL))
+        L = kron(zero(X), zero(X))
+        thermal = true
+        dt = dt / 2
+    end
+
     D = mapreduce(+, vecL) do L
         return kron(L, transpose(L')) -
                1 / 2 * (kron(L' * L, one(L)) + kron(one(L), transpose(L' * L)))
@@ -381,8 +387,13 @@ function fsmaxial(
             # We need these rules if either term is present, we just use J = 1 if no nearest-
             # neighbour term present
 
-            c1 = sqrt(-im * J)
-            c2 = sqrt(im * J)
+            if thermal
+                c1 = sqrt(- J)
+                c2 = sqrt(- J)
+            end
+                c1 = sqrt(-im * J)
+                c2 = sqrt(im * J)
+            else
 
             rules.C[i, 1, 1, 1] = c1 * kron(A, Id)
             rules.C[i + 1, 1, 1, 1] = c2 * kron(Id, transpose(A))

@@ -109,21 +109,21 @@ end
 Base.getindex(isoms::Isometries, I...) = map(uv -> getindex(uv, I...), unpack(isoms))
 Base.getindex(isoms::Isometries, bond::Bond) = isoms[first(bond)] => isoms[last(bond)]
 
-# function timestep!(
-#     pepo!::PEPO, truncator!::Isometries, stepper, truncalg::IterativeSU
-# )
-#     iterative_simple_update!(
-#         pepo!,
-#         truncator!,
-#         stepper;
-#         maxiter=truncalg.maxiter,
-#         tol=truncalg.tol,
-#         recycle=truncalg.recycle,
-#         sequential=truncalg.sequential,
-#     )
-#
-#     return pepo!
-# end
+function timestep!(
+    pepo!::PEPO, truncator!::Isometries, stepper, truncalg::IterativeSU
+)
+    iterative_simple_update!(
+        pepo!,
+        truncator!,
+        stepper;
+        maxiter=truncalg.maxiter,
+        tol=truncalg.tol,
+        recycle=truncalg.recycle,
+        sequential=truncalg.sequential,
+    )
+
+    return pepo!
+end
 #
 # function timestep!(
 #     pepo!::AxialPEPO, truncator!::Tuple, stepper, truncalg::IterativeSU
@@ -147,7 +147,7 @@ Base.getindex(isoms::Isometries, bond::Bond) = isoms[first(bond)] => isoms[last(
 #     return pepo!
 # end
 function timestep!(
-    pepo!::AbstractPEPO, truncator!::Isometries, sequence, truncalg,
+    pepo!::AbstractPEPO, truncator!::Isometries, sequence, truncalg::NTU,
 )
     iterative_neighbourhood_update!(
         pepo!,
@@ -184,8 +184,7 @@ function iterative_simple_update!(
     mode = :none
 
     if mode === :quick
-        rv = evolve(pepo!, stepper)
-        newpepo = PEPO(rv)
+        newpepo = evolve(pepo!, stepper)
 
         simple_update_gauge!(newpepo)
 
@@ -204,6 +203,7 @@ function iterative_simple_update!(
 
         for bond in bonditer(buff)
             D = bondspace(buff, bond)
+
             (u, v), s = vidalisometries(messages, bond; trunc=truncspace(D))
             setindex!(isoms, u => v, bond)
         end
@@ -233,7 +233,9 @@ function iterative_simple_update!(
     newisoms = similar(isoms)
     newweights = deepcopy(weights(pepo!))
 
-    gauge=false
+    gauge = false
+
+    check_fidelity = false
 
     for i in 1:maxiter
         bonds = bonditer(buff)
@@ -243,6 +245,7 @@ function iterative_simple_update!(
 
             for bond in itr
                 (u, v), s, _ = iterative_simple_update_step(pepo!, stepper, isoms, bond)
+
 
                 setindex!(isoms, u => v, bond)
                 setweight!(pepo!, s, bond; copy=false)
@@ -257,6 +260,82 @@ function iterative_simple_update!(
 
                 setindex!(newisoms, u => v, bond)
                 newweights[bond] = s
+
+                if check_fidelity && bond == Bond((1,1), (1,2))
+                    evolvedpepo = evolve(deepcopy(pepo!), stepper)
+
+                    copybuff = deepcopy.(buff)
+
+                    let
+                        foreach(eachindex(buff)) do I
+                            dst = copybuff[I]
+                            op = tensors(stepper)[I]
+                            e, s, w, n = isoms[I]
+
+                            truncateto!(dst, copy(dst), op, e, s, w, n)
+
+                            # mergeinto!(dst, spten)
+                        end
+                    end
+                    evbuff = currentbuffer(evolvedpepo)
+
+                    alg = VUMPS(bonddim=16, maxiter=20, verbose=false)
+
+                    overlap = Lattice(map(ITC.TensorPair, copybuff, evbuff))
+
+                    vumps = ITC.newcontraction(alg, overlap)
+
+                    runcontraction!(vumps)
+
+                    vumps = vumps.runtime
+
+                    mps = vumps.mps
+
+                    AC = ITC.getcentral(mps)
+
+                    FL = vumps.fixedpoints.left
+                    FR = vumps.fixedpoints.right
+
+                    rv = tracecontract_two_layer(FL[1,1], FR[1,1], AC[1,1], AC[1,2], copybuff[1,1], evbuff[1,1])
+
+                    overlap = Lattice(map(ITC.TensorPair, copybuff, copybuff))
+
+                    vumps = ITC.newcontraction(alg, overlap)
+
+                    runcontraction!(vumps)
+
+                    vumps = vumps.runtime
+
+                    mps = vumps.mps
+
+                    AC = ITC.getcentral(mps)
+
+                    FL = vumps.fixedpoints.left
+                    FR = vumps.fixedpoints.right
+
+                    rvnorm1 = tracecontract_two_layer(FL[1,1], FR[1,1], AC[1,1], AC[1,2], copybuff[1,1], copybuff[1,1])
+
+                    overlap = Lattice(map(ITC.TensorPair, currentbuffer(evolvedpepo), currentbuffer(evolvedpepo)))
+
+                    vumps = ITC.newcontraction(VUMPS(bonddim=16, verbose=false, maxiter=20), overlap)
+
+                    runcontraction!(vumps)
+
+                    vumps = vumps.runtime
+
+                    mps = vumps.mps
+
+                    AC = ITC.getcentral(mps)
+
+                    FL = vumps.fixedpoints.left
+                    FR = vumps.fixedpoints.right
+
+                    rvnorm2 = tracecontract_two_layer(FL[1,1], FR[1,1], AC[1,1], AC[1,2], currentbuffer(evolvedpepo)[1,1], currentbuffer(evolvedpepo)[1,1])
+
+                    @warn "overlap:  " 1 - rv/sqrt(rvnorm1 * rvnorm2)
+
+                end
+
             end
 
             new = weights(pepo!)
@@ -340,9 +419,9 @@ function iterative_simple_update!(
         # mergeinto!(dst, spten)
     end
 
-    size(buff) == (1, 1) && minimalcanonicalform!(buff)
+    # size(buff) == (1, 1) && minimalcanonicalform!(buff)
     #
-    # size(buff) != (1, 1) && simple_update_gauge!(pepo!; maxiter=100, reset=true)
+    size(buff) != (1, 1) && simple_update_gauge!(pepo!; maxiter=100, reset=false)
 
 
     # minimalcanonicalform!(tensors(pepo))
@@ -426,7 +505,8 @@ function iterative_neighbourhood_update!(pepo, truncator, stepper)
                 # foreach(normalize!, reducedpair)
 
                 reducedpair = buff[bond]
-                truncx = ntu_total_low(reducedpair, buff, bond)
+                truncx = reducedpair -> ntu_total_low(reducedpair, buff, bond)
+                # truncx = buff
 
                 # truncx = ntu_total_low(reducedpair, reducedbuffer, bond)
 
@@ -463,7 +543,8 @@ function iterative_neighbourhood_update!(pepo, truncator, stepper)
                 # foreach(normalize!, reducedpair)
 
                 reducedpair = ybuff[fictbond]
-                truncy = ntu_total_low(reducedpair, ybuff, fictbond)
+                truncy = reducedpair -> ntu_total_low(reducedpair, ybuff, fictbond)
+                # truncy = ybuff
                 # ql0, qr0 = parallel2sequential(ybuff, yisoms, fictbond)
                 #
                 # ql = permutedom(ql0, (2,1,4,3))

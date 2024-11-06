@@ -14,7 +14,7 @@ newevolution(pepo, steps, method) = newevolution(eltype(steps), pepo, steps, met
 newevolution(::Type{<:AxialStepper}, pepo, steps, method) = AxialPEPO(pepo)
 newevolution(::Type{<:AbstractTimeStepper}, pepo, steps, method) = pepo
 
-newevolution(::Type{<:LocalStepper}, pepo, steps, method::TEBD{<:NTU}) = AxialPEPO(pepo)
+newevolution(::Type{<:LocalStepper}, pepo, steps, method::TEBD{<:Union{FET, NTU}}) = AxialPEPO(pepo)
 
 function newevolution(pepo::AbstractPEPO, map::LocalStepper)
     u, v = tensors(map)
@@ -177,10 +177,9 @@ end
 # Parallel Semi Parallel
 function timestep!(pepo::AxialPEPO, truncator, stepper, truncalg; kwargs...)
 
-    if pepo.currentaxis != stepper.axis
-        setaxis!(pepo, stepper.axis)
-    end
     axis = stepper.axis
+
+    pepo.currentaxis == axis || setaxis!(pepo, axis)
 
     evolvedtensors = evolve(pepo, stepper)
 
@@ -188,13 +187,17 @@ function timestep!(pepo::AxialPEPO, truncator, stepper, truncalg; kwargs...)
 
     buffer = tensors(pepo)
 
-    # truncx = newtruncators(buff, truncalg)
-    # renormalize!(truncx)
+    if truncalg isa FET
+        trunc = newtruncators(evolvedtensors, truncalg)
+        renormalize!(trunc)
+    end
 
     # mts = beliefpropagation(evolvedtensors(pepox))
 
     isomh = broadcast(bonds(buffer, 1)) do bond
-        trunc = ntu_total(evolvedtensors[bond], evolvedtensors, bond)
+        if truncalg isa NTU
+            trunc = pair -> ntu_total(pair, evolvedtensors, bond)
+        end
 
         (u, v), s, _ = parallelisometries(
             evolvedtensors, trunc, bond, truncalg; D=bondspace(pepo, bond)

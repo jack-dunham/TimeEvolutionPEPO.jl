@@ -41,13 +41,6 @@ stepper_type(::Type{<:LindbladEquation}, ::Type{<:DMPO}) = AxialStepper
 
 function tebdtensor(model::LindbladEquation, p1::IndexSpace, p2::IndexSpace, dt; compresstol=eps())
 
-    # c2 = H -> (-im * (H ⊗ one(H) - one(H) ⊗ transpose(H)))
-    # d2 = L -> L ⊗ transpose(L') - 1 / 2 * (L' * L ⊗ one(L) + one(L) * transpose(L' * L))
-    #
-    # # We need both local terms that have support on two sites, and therefore need to divide
-    # # by two to avoid double counting in the brickwork pattern
-    # c1 = H -> 1 / 2 * (c2(one(H) ⊗ H) + c2(H ⊗ one(H)))
-    # d1 = L -> 1 / 2 * (d2(one(L) ⊗ L) + d2(L ⊗ one(L)))
 
     # ket1 * ket2 * bra1 * bra2
     spacecod = p1 * p2 * p1' * p2'
@@ -56,11 +49,18 @@ function tebdtensor(model::LindbladEquation, p1::IndexSpace, p2::IndexSpace, dt;
     data = zeros(ComplexF64, dim(spacecod), dim(spacedom))
     symdata = zeros(ComplexF64, dims(spacecod * spacedom))
 
-    # We divide by half again for local terms as in 2D we effectively apply these twice
-    data = 1 / 2 * sum(vectorise, model.onelocal; init=data)
-    data = 1 / 2 * sum(vectorise, model.linops; init=data)
+    if isempty(model.linops)
+        vecf = thermalvectorise
+        dt = dt / 2
+    else
+        vecf = vectorise
+        data = 1 / 2 * sum(vecf, model.linops; init=data)
+    end
 
-    data = sum(vectorise, model.twolocal; init=data)
+    # We divide by half again for local terms as in 2D we effectively apply these twice
+    data = 1 / 2 * sum(vecf, model.onelocal; init=data)
+
+    data = sum(vecf, model.twolocal; init=data)
 
     copyto!(symdata, exp(dt * data))
 
@@ -69,7 +69,7 @@ function tebdtensor(model::LindbladEquation, p1::IndexSpace, p2::IndexSpace, dt;
     # move site one to codomain and site two to domain
     tensor = permute(tensor, (1, 3, 5, 7), (2, 4, 6, 8))
 
-    u, s, v = tsvd(tensor; trunc=truncbelow(compresstol))
+    u, s, v, err = tsvd(tensor; trunc=truncbelow(compresstol))
 
     return u * sqrt(s), _transpose(sqrt(s) * v)
 end

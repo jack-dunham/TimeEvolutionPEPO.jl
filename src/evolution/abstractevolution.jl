@@ -156,11 +156,36 @@ function evolve(pepo, operator::LocalStepper, bond::Bond)
         pe2 = similar(p2, codomain(p2), D1b * D2b * D3b * fuse(D4b * Dv)')
     end
 
-    mergeinto!(pe1, q1)
-    mergeinto!(pe2, q2)
-
-    return pe1 => pe2
+    # mergeinto!(pe1, q1)
+    # mergeinto!(pe2, q2)
+    #
+    # return pe1 => pe2
+    return q1 => q2
 end
+
+# function evolvereduced(pair, operatorpair)
+#
+#     in1, in2 = pair
+#
+#     p1 = leftorth(in1, (4,5,6),(1,2,3))
+#     p2 = rightorth(in2, (1,2,5), (3,4,6))
+#
+#
+#     p1, p2 = pair
+#     u, v = operatorpair
+#
+#     @tensoropt begin
+#         q1[ok ob x; u1 u2] := u[ok ob ik ib; u1] * p1[x; ik ib u2]
+#         q2[v1 v2; ok ob x] := v[ok ob ik ib; v1] * p2[ik ib v2; x]
+#     end
+#
+#     Q1, R = leftorth!(q1)
+#     L, Q2 = rightorth!(q2)
+#
+#     tsvd!(R * L)
+#
+#     return Q1 => Q2, R => L
+# end
 
 function evolve(pepo::AxialPEPO, stepper::AxialStepper)
     @assert pepo.currentaxis == stepper.axis

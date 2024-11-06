@@ -229,8 +229,12 @@ function simulate!(callback, sim::Simulation; maxshots=100, maxtime=Inf)
 
     while numiter < numsteps && tol ≥ breaktol
 
-        for step in stepper
-            timestep!(pepo, truncator, step, truncalg)
+        for (i, step) in enumerate(stepper)
+            if i < 0
+                timestep!(pepo, truncator, step, NTU())
+            else
+                timestep!(pepo, truncator, step, truncalg)
+            end
         end
 
         # Calculate the difference in pepo singular values between timesteps
@@ -290,11 +294,35 @@ function testthermal(D)
 
     return sim.output
 end
+
+function dampinghook!(sim::Simulation, xi, output)
+    alg = VUMPS(; tol=1e-10, maxiter=50, bonddim=16, verbose=true)
+
+    X,Y,Z = PAULI
+
+    if sim.info.convergence < 1e-6
+
+        pepo = PEPOKit.quantumstate(sim)
+        dm = DensityMatrix(pepo, alg)
+
+        rhos = map(ind -> ReducedDensityMatrix(dm, ind), uniqueindices(pepo))
+
+        expt = map(x -> expval(x, X), rhos)
+
+        push!(xi, sim.method.truncalg.ξ)
+        push!(output, expt)
+
+        sim.method.truncalg.ξ += 20.0
+    end
+
+    return nothing
+end
+
 function measurehook!(sim::Simulation, A=PAULI[1]; env=nothing)
     pepo = PEPOKit.quantumstate(sim)
 
-    alg = VUMPS(; tol=1e-10, maxiter=200, bonddim=16, verbose=true)
-    # alg = CTMRG(; tol=1e-8, maxiter=200, bonddim=16, verbose=true)
+    alg = VUMPS(; tol=1e-10, maxiter=50, bonddim=16, verbose=true)
+    # alg = CTMRG(; tol=1e-8, maxiter=50, bonddim=16, verbose=true)
     #
     # env = newcontraction(alg, contractphysical(PEPOKit.tensors(pepo)))
     # renormalize!(env, contractphysical(PEPOKit.tensors(pepo)))
@@ -311,14 +339,15 @@ function measurehook!(sim::Simulation, A=PAULI[1]; env=nothing)
     # return corr
 end
 
+
 function measurehook!(output::Vector, sim, args...)
 
     # init
     
     tensors = PEPOKit.tensors(sim.state)
 
-    alg = CTMRG(; tol=1e-8, maxiter=200, bonddim=16, verbose=true)
-    # alg = VUMPS(; tol=1e-10, maxiter=200, bonddim=16, verbose=true)
+    # alg = CTMRG(; tol=1e-8, maxiter=200, bonddim=16, verbose=true)
+    alg = VUMPS(; tol=1e-10, maxiter=200, bonddim=16, verbose=true)
     # alg = CTMRG(; tol=1e-10, maxiter=100, bonddim=16, verbose=true)
 
     env = newcontraction(alg, contractphysical(tensors))

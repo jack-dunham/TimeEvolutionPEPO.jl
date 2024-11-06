@@ -16,8 +16,6 @@ using VectorInterface
 using ChainRulesCore
 using SparseArrayKit
 
-import SpecialFunctions: zeta
-
 const ITC = InfiniteTensorContractions
 
 ## ITC exports

@@ -143,6 +143,7 @@ function mergeinto!(p_merged, p)
     @inbounds for c in blocksectors(p)
         bdst = TensorKit.block(p_merged, c)
         bsrc = TensorKit.block(p, c)
+
         copy!(bdst, bsrc)
     end
     return p_merged

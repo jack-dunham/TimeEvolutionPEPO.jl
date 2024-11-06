@@ -126,6 +126,7 @@
 function autodiffoptimise(
     left, right, pair::Pair, environment, bond::Bond; trunc, rankreduce, xi, optalg
 )
+
     gauge = optalg.gauge
 
     if rankreduce
@@ -177,13 +178,9 @@ function autodiffoptimise(
 
     iso = TruncationIsometries(l, s, r)
 
-    yiso = ntu_total_wtg(pair, environment, bond, iso)
-
-    # println(iso.s)
-
-    wtg2!(iso.u, iso.s, iso.v, yiso)
-
-    println(iso.s)
+    # yiso = ntu_total_wtg(pair, environment, bond, iso)
+    #
+    # wtg2!(iso.u, iso.s, iso.v, yiso)
 
     return iso, 0
 end
@@ -258,8 +255,6 @@ function autodiffoptimise(left, right, metric::AbsTen{2,2}; trunc, rankreduce, x
     #     rescale!(iso, xi)
     #     fixgauge!(iso, metric, gauge)
     # end
-
-    println(iso.s)
 
     return iso, 0
 end
@@ -369,7 +364,8 @@ function single_bond_metric_isometries!(
         # u0, v0 = isometryinit(truncmetric, D)
     end
 
-    truncmetric = metric(pair, environment, bond)
+    # truncmetric = metric(pair, environment, bond)
+    truncmetric = environment(pair)
 
     iso, infid = metricoptimise(
         u0, v0, truncmetric; trunc=truncspace(D), doreduction=doreduction, optkwargs...
@@ -378,7 +374,7 @@ function single_bond_metric_isometries!(
     #     u0, v0, truncmetric; trunc=truncspace(D), rankreduce=doreduction, optkwargs...
     # )
     # iso, infid = autodiffoptimise(
-    #     u0, v0,pair, environment, bond; trunc=truncspace(D), rankreduce=doreduction, optkwargs...
+    #     u0, v0, pair, environment, bond; trunc=truncspace(D), rankreduce=doreduction, optkwargs...
     # )
 
     if parallel && doreduction
@@ -459,23 +455,41 @@ end
 #     return site
 # end
 
-function fidelity(u, v, P, Q, u0, v0)
-    f0 = overlap(u0, v0, P, Q, u0, v0)
+function localfidelity(u, v, P, Q, u0, v0; axis = 1)
+    f0 = overlap(u0, v0, P, Q, u0, v0; axis = axis)
     f =
-        overlap(u, v, P, Q, u0, v0) * overlap(u0, v0, P, Q, u, v) /
-        overlap(u, v, P, Q, u, v)
+        overlap(u, v, P, Q, u0, v0; axis = axis) * overlap(u0, v0, P, Q, u, v; axis = axis) /
+        overlap(u, v, P, Q, u, v; axis = axis)
     return real(f / f0)
 end
-function overlap(ua, va, P, Q, ub, vb)
-    @tensoropt rv =
-        P[k1 b1; ea s1 w1 n1] *
-        (P')[eb s1 w1 n1; k1 b1] *
-        ua[ea; a] *
-        va[a; wa] *
-        (ub')[b; eb] *
-        (vb')[wb; b] *
-        Q[k2 b2; e2 s2 wa n2] *
-        (Q')[e2 s2 wb n2; k2 b2]
+
+function overlap(ua, va, P, Q, ub, vb; axis)
+
+    if axis == 1
+
+        @tensoropt rv =
+            P[k1 b1; ea s1 w1 n1] *
+            (P')[eb s1 w1 n1; k1 b1] *
+            ua[ea; a] *
+            va[a; wa] *
+            (ub')[b; eb] *
+            (vb')[wb; b] *
+            Q[k2 b2; e2 s2 wa n2] *
+            (Q')[e2 s2 wb n2; k2 b2]
+    
+    elseif axis == 2
+
+        @tensoropt rv =
+            P[k1 b1; e1 sa w1 n1] *
+            (P')[e1 sb w1 n1; k1 b1] *
+            ua[sa; a] *
+            va[a; na] *
+            (ub')[b; sb] *
+            (vb')[nb; b] *
+            Q[k2 b2; e2 s2 w2 na] *
+            (Q')[e2 s2 w2 nb; k2 b2]
+    end
+
     return rv
 end
 
@@ -522,6 +536,44 @@ function rankreduce!(tensors::Pair{T,T}; axis=1) where {T<:AbsTen{2,4}}
     L, _ = rightrankreduce!(vten, i2)
 
     return uten => vten, R => L
+end
+
+function isometries(pair::Pair{T}; axis) where {T<:AbsTen{2,5}}
+    uten, vten = pair
+
+    if axis == 1
+
+        D = domain(uten)[3]
+
+        Q1, R = leftorth(uten, (1,2,5,6,7), (3,4))
+        L, Q2 = rightorth(vten, (5,6), (1,2,3,4,7))
+    elseif axis == 2
+
+        D = domain(uten)[4]
+
+        Q1, R = leftorth(uten, (1,2,3,6,7), (4,5))
+        L, Q2 = rightorth(vten, (6,7), (1,2,3,4,5))
+    end
+
+    u,s,v,err = tsvd!(R * L; trunc=truncdim(dim(D)))
+
+
+    maxnormalize!(s)
+
+    Q1p = Q1 * u * sqrt(s)
+    Q2p = sqrt(s) * v * Q2
+
+    if axis == 1
+
+        unew = permute(Q1p, (1,2),(6,3,4,5))
+        vnew = permute(Q2p, (2,3),(4,5,1,6))
+
+    elseif axis == 2
+        unew = permute(Q1p, (1,2),(3,6,4,5))
+        vnew = permute(Q2p, (2,3),(4,5,6,1))
+    end
+
+    return unew => vnew, s
 end
 
 function _leftrankreduce(p::AbsTen{2,4}, ind)
@@ -647,11 +699,9 @@ function cycle_entropy(iso, metric)
 
     vals /= sum(vals)
 
-    println(vals)
-
     ent = -sum(@. vals * log2(vals))
 
-    @info "Cycle entropy: $ent"
+    @info "Cycle entropy: $(real(ent))"
 
     return ent
 end
@@ -706,6 +756,8 @@ function metricoptimise(left, right, metric::AbsTen{2,2}; trunc, doreduction, xi
 
     permute!(metric, Y, ((4, 1), (3, 2)))
 
+    # cycle_entropy(iso, metric)
+
     fixgauge!(iso, metric, gauge)
 
     if xi < Inf
@@ -751,17 +803,24 @@ function dzmtsvd!(cf, iso, u0, v0, min=Inf; trunc, check=false)
 end
 
 function safetsvd!(m; trunc=notrunc())
+    local u 
+    local s 
+    local v 
+    local err
     try
-        return tsvd!(m; trunc=trunc)
+        u,s,v,err = tsvd!(m; trunc=trunc)
     catch e
         if e isa LAPACKException
             @warn "LAPACK routine `gesdd` failed; trying `gesvd`..."
-            return tsvd!(m; trunc=trunc, alg=TensorKit.SVD())
+            u,s,v, err= tsvd!(m; trunc=trunc, alg=TensorKit.SVD())
         else
             rethrow()
         end
     end
+    return u,s,v,err
 end
+
+# safetsvd!(m; trunc=notrunc()) = tsvd!(m; trunc=trunc)
 
 function dzmcheck!(cf, iso, u, s, v, min)
     maxnormalize!(s)
@@ -802,11 +861,15 @@ function dziarmaga(
     # Convenience
     Y = metric
 
+    # trunc = truncdim(dim(trunc.space))
+
     # The following tensor will be useful...
     Y0 = Y * permute(u0 * v0, (1, 2), ())
 
     # Initialize the initial best guess to that of simple-update.
     u, s, v = safetsvd!(ui * vi; trunc=trunc)
+    # u, s, v = tsvd!(ui * vi; trunc=trunc)
+
     iso = TruncationIsometries(metric, u * sqrt(s), s, sqrt(s) * v)
     minif = cf(iso.u, iso.v)
 
@@ -1036,6 +1099,7 @@ function evenbly(
     axpby!(0.5, B1', 0.5, B1)
 
     permute!(R1, safepinv(B1; rtol=pinvtol) * P1, ((1,), (2,)))
+    # permute!(R1, pinv(B1; rtol=pinvtol) * P1, ((1,), (2,)))
 
     u, s, v = safetsvd!(R1)
 
@@ -1564,7 +1628,6 @@ function optisoalt(cf, left, right, metric, trunc, left0=left, right0=right; max
         # u = ui * vi
 
         s = s / tr(s)
-        println(s)
 
         # calculate convergence measure
         ϵ = norm(s - s_old)
@@ -1613,7 +1676,9 @@ function optsingleiso(id_Mb, Y, Y_LR)
     #
     j = id_Mb' * Y_LR
 
+    # TODO: safepinv is type unstable currently
     Ma_max = safepinv(0.5 * (g + g'); rtol=rtol) * j
+    # Ma_max = pinv(0.5 * (g + g'); rtol=rtol) * j
 
     # ϵ_j = scalar(Ma_max' * j)
     # ϵ = scalar(Ma_max' * g * Ma_max) - ϵ_j - ϵ_j' + ϵ0

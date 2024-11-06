@@ -10,14 +10,16 @@ scaleterm(a, A::LindbladTerm) = LindbladTerm(A.term, a * A.coeff)
 
 lin(L) = newterm(LindbladTerm, (L,), 1)
 
-function vectorise(::Type{LindbladTerm})
+function vectorise(::Type{<:LindbladTerm})
     anticomm = L -> kron(L' * L, one(L)) + kron(one(L), transpose(L' * L))
 
     return twolocal(L -> kron(L, transpose(L')) - 1 / 2 * anticomm(L))
 end
 
+thermalvectorise(term::AbstractTerm) = thermalvectorise(typeof(term))(Matrix{ComplexF64}(term))
 localvectorise(term::AbstractTerm) = localvectorise(typeof(term))(Matrix{ComplexF64}(term))
-function localvectorise(::Type{LindbladTerm})
+
+function localvectorise(::Type{<:LindbladTerm})
     anticomm = L -> kron(L' * L, one(L)) + kron(one(L), transpose(L' * L))
 
     return L -> kron(L, transpose(L')) - 1 / 2 * anticomm(L)

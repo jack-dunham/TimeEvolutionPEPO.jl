@@ -18,6 +18,10 @@ function tolerance!(buffer::W, weights::W, tau::Float64) where {W<:EdgeLattice}
     return maximum(tol[bond] for bond in bonditer(tol))
 end
 function _tolerance!(ow, nw, tau::Float64)
+    if space(ow) != space(nw)
+        return Inf
+    end
+
     rv = norm(ow - nw) / (tau * norm(nw) * dim(codomain(nw)))
     copy!(ow, nw)
     return rv

@@ -30,8 +30,8 @@ function fixgauge!(iso, metric, gauge::WTG)
     return iso
 end
 
-function rescale!(iso, xi)
-    @info "Rescaling singular values with xi = $(xi)..."
+function rescale!(iso, xi; verbose=true)
+    verbose && @info "Rescaling singular values with xi = $(xi)..."
     s = iso.s
     D = dim(codomain(s))
 

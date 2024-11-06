@@ -403,7 +403,7 @@ function ntu_total_wtg(pair, lattice, bond, iso)
 
     QL, QR = map(copy, lattice[bond])
 
-    truncateto!(QL => QR, pair, iso.u => iso.v)
+    truncateto!(QL => QR, pair, iso.u => iso.v; axis=1)
 
     yiso = ntu_total(QL, QR, LL, RR, TL, TR, BL, BR)
 
