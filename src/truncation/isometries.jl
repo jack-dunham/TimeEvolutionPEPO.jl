@@ -538,7 +538,7 @@ function rankreduce!(tensors::Pair{T,T}; axis=1) where {T<:AbsTen{2,4}}
     return uten => vten, R => L
 end
 
-function isometries(pair::Pair{T}; axis) where {T<:AbsTen{2,5}}
+function isometries(pair::Pair{T}; axis, xi = Inf) where {T<:AbsTen{2,5}}
     uten, vten = pair
 
     if axis == 1
@@ -557,11 +557,12 @@ function isometries(pair::Pair{T}; axis) where {T<:AbsTen{2,5}}
 
     u,s,v,err = tsvd!(R * L; trunc=truncdim(dim(D)))
 
-
     maxnormalize!(s)
 
-    Q1p = Q1 * u * sqrt(s)
-    Q2p = sqrt(s) * v * Q2
+    (u,v), s = applyweight(u => v, s, xi; verbose=false)
+
+    Q1p = Q1 * u
+    Q2p = v * Q2
 
     if axis == 1
 

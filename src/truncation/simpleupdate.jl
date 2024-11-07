@@ -39,7 +39,7 @@ function timestep!(pepo::PEPO, truncator, stepper::LocalStepper, truncalg::SU; k
 
     isreversed(stepper) && (axisbonds = Iterators.Reverse(axisbonds))
 
-    checker = false
+    checker = true
 
     if checker 
         altbonds = circshift(axisbonds[:, 2], 1)
@@ -58,7 +58,7 @@ function timestep!(pepo::PEPO, truncator, stepper::LocalStepper, truncalg::SU; k
 
         # (u, v), s, _ = isometries!(pair, pepo, bond, truncalg)
         absorb_adjacent_weights!(pair, weights(pepo), bond;inverse=false)
-        newpair, s = isometries(pair; axis = bondaxis(bond))
+        newpair, s = isometries(pair; axis = bondaxis(bond), xi = truncalg.ξ)
         absorb_adjacent_weights!(newpair, weights(pepo), bond; inverse=true)
 
         # newpair = mapreduce(copy, =>, pepo[bond])
@@ -126,15 +126,22 @@ function timestep!(
     infidelity = 0
 
 
-    bonditr = bonds(buffer, 1)
+    axisbonds = bonds(buffer, 1)
 
-    for bond in bonditr
+    checker = true
+
+    if checker 
+        altbonds = circshift(axisbonds[:, 2], 1)
+        axisbonds = axisbonds[:, 1]
+    end
+
+    for (i, bond) in enumerate(axisbonds)
 
         D = bondspace(buffer, bond)
 
         # Evolved the pair of tensors connected by `bond`, leaving the original pair
         # unmutated.
-        pair = evolve(buffer, stepper, bond)
+        pair = evolvemerge(buffer, stepper, bond)
         trunc = pair -> ntu_total(pair, buffer, bond)
 
         (u, v), s, _ = isometries(pair, trunc, bond, truncalg; D = D)
@@ -163,6 +170,16 @@ function timestep!(
         truncateto!(newpair, pair, u => v; axis=bondaxis(bond))
 
         buffer[bond] = newpair
+
+        if checker
+
+            altbond = altbonds[i]
+
+            buffer[altbond] = mapreduce(copy, =>, newpair)
+            realaltbond = axis == 1 ? altbond : transpose(altbond)
+
+            setweight!(pepo, s, realaltbond; copy=false)
+        end
 
         realbond = axis == 1 ? bond : transpose(bond)
 
@@ -548,3 +565,5 @@ function absorb_axial_weights!(
 
     return site
 end
+
+

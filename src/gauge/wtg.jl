@@ -61,6 +61,38 @@ function rescale!(iso, xi; verbose=true)
 
     return iso
 end
+
+function applyweight(uv, s, xi; verbose=true)
+     u0, v0 = uv
+
+    if xi < Inf
+        verbose && @info "Rescaling singular values with xi = $(xi)..."
+
+        D = dim(codomain(s))
+
+        sclm = zeros(scalartype(s), D)
+
+        if iszero(xi)
+            sclm[begin] = 1
+        else
+            for i in eachindex(sclm)
+                p = -(i - 1) / xi
+                sclm[i] = exp(p)
+            end
+        end
+        sclt = TensorMap(diagm(sclm), codomain(s), domain(s))
+
+        s = s * sclt
+
+        maxnormalize!(s)
+    end
+
+    u =  u0 * sqrt(s)
+    v =  sqrt(s) * v0
+
+    return u => v, s
+end
+
 function rescale!(dst, s, ξ)
     sclm = diagm([exp(-(i - 1) / ξ) for i in 1:dim(codomain(s))])
     sclt = TensorMap(sclm, codomain(s), domain(s))

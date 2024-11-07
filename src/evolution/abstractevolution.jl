@@ -156,13 +156,44 @@ function evolve(pepo, operator::LocalStepper, bond::Bond)
         pe2 = similar(p2, codomain(p2), D1b * D2b * D3b * fuse(D4b * Dv)')
     end
 
-    # mergeinto!(pe1, q1)
-    # mergeinto!(pe2, q2)
-    #
-    # return pe1 => pe2
     return q1 => q2
 end
+function evolvemerge(pepo, operator::LocalStepper, bond::Bond)
+    axis = bondaxis(bond)
 
+    p1, p2 = pepo[bond]
+    u1, v2 = operator[bond]
+
+    Du = domain(u1)
+    Dv = domain(v2)
+
+    D1a, D2a, D3a, D4a = domain(p1)
+    D1b, D2b, D3b, D4b = domain(p2)
+
+    if axis == 1
+        @tensoropt begin
+            q1[ok ob; e x s w n] := u1[ok ob ik ib; x] * p1[ik ib; e s w n]
+            q2[ok ob; e s w x n] := v2[ok ob ik ib; x] * p2[ik ib; e s w n]
+        end
+
+        pe1 = similar(p1, codomain(p1), fuse(D1a * Du) * D2a * D3a * D4a)
+        pe2 = similar(p2, codomain(p2), D1b * D2b * fuse(D3b * Dv)' * D4b)
+
+    elseif axis == 2
+        @tensoropt begin
+            q1[ok ob; e s x w n] := u1[ok ob ik ib; x] * p1[ik ib; e s w n]
+            q2[ok ob; e s w n x] := v2[ok ob ik ib; x] * p2[ik ib; e s w n]
+        end
+
+        pe1 = similar(p1, codomain(p1), D1a * fuse(D2a * Du) * D3a * D4a)
+        pe2 = similar(p2, codomain(p2), D1b * D2b * D3b * fuse(D4b * Dv)')
+    end
+
+    mergeinto!(pe1, q1)
+    mergeinto!(pe2, q2)
+
+    return pe1 => pe2
+end
 # function evolvereduced(pair, operatorpair)
 #
 #     in1, in2 = pair
