@@ -348,6 +348,8 @@ function _generic_environment_isometries(
     return iso, s, infid
 end
 
+metric(pair::Pair, environment::Function, ::Bond) = environment(pair)
+
 function single_bond_metric_isometries!(
     pair, environment, bond; D=bondspace(buffer, bond), doreduction, parallel, optkwargs...
 )
@@ -364,8 +366,7 @@ function single_bond_metric_isometries!(
         # u0, v0 = isometryinit(truncmetric, D)
     end
 
-    # truncmetric = metric(pair, environment, bond)
-    truncmetric = environment(pair)
+    truncmetric = metric(pair, environment, bond)
 
     iso, infid = metricoptimise(
         u0, v0, truncmetric; trunc=truncspace(D), doreduction=doreduction, optkwargs...

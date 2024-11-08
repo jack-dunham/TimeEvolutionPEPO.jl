@@ -212,16 +212,22 @@ function timestep!(
 
     truncalg = FET(; alg=VUMPS(bonddim=16, tol=1e-8), ξ=Inf, rankreduce=false, optalg=EVB())
 
+    axisbonds = bonds(buffer, 1)
 
-    bonditr = bonds(buffer, 1)
+    checker = true
 
-    for bond in bonditr
+    if checker 
+        altbonds = circshift(axisbonds[:, 2], 1)
+        axisbonds = axisbonds[:, 1]
+    end
+
+    for (i, bond) in enumerate(axisbonds)
 
         D = bondspace(buffer, bond)
 
         # Evolved the pair of tensors connected by `bond`, leaving the original pair
         # unmutated.
-        pair = evolve(buffer, stepper, bond)
+        pair = evolvemerge(buffer, stepper, bond)
 
         trunc = newtruncators(buffer, truncalg)
         renormalize!(trunc)
@@ -252,6 +258,16 @@ function timestep!(
         truncateto!(newpair, pair, u => v; axis=bondaxis(bond))
 
         buffer[bond] = newpair
+
+        if checker
+
+            altbond = altbonds[i]
+
+            buffer[altbond] = mapreduce(copy, =>, newpair)
+            realaltbond = axis == 1 ? altbond : transpose(altbond)
+
+            setweight!(pepo, s, realaltbond; copy=false)
+        end
 
         realbond = axis == 1 ? bond : transpose(bond)
 
