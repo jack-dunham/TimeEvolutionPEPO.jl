@@ -1,8 +1,9 @@
 @kwdef mutable struct IterativeSU <: AbstractTruncationScheme
     maxiter::Int = 20
-    tol::Float64 = 1e-6
-    sequential::Bool = true
+    tol::Float64 = 1e-8
+    sequential::Bool = false
     recycle::Bool = true
+    gauge::Int = 0
 end
 
 struct Isometries{G,N,U<:AbsTen{N},V<:TenAbs{N}}
@@ -120,6 +121,7 @@ function timestep!(
         tol=truncalg.tol,
         recycle=truncalg.recycle,
         sequential=truncalg.sequential,
+        gauge=truncalg.gauge
     )
 
     return pepo!
@@ -173,13 +175,16 @@ function iterative_simple_update_step(pepo, stepper, isometries, bond)
 end
 
 function newtruncators(pepo, sequence, ::IterativeSU)
-    iso = newisometries(tensors(pepo), first(sequence))
-    return (iso, iso)
+    rv = map(sequence.body) do stepper
+        iso = newisometries(tensors(pepo), stepper)
+        return iso
+    end
+    return (rv,rv)
 end
 
 
 function iterative_simple_update!(
-    pepo!, truncator!, stepper; maxiter, tol, sequential, recycle
+    pepo!, truncator!, stepper; maxiter, tol, sequential, recycle, gauge
 )
     mode = :none
 
@@ -233,11 +238,28 @@ function iterative_simple_update!(
     newisoms = similar(isoms)
     newweights = deepcopy(weights(pepo!))
 
-    gauge = false
+    S0 = bondentropy(newweights)
+
+    println("Original bond entropy $S0")
+
 
     check_fidelity = false
 
-    for i in 1:maxiter
+    conv = Inf
+
+    bisol = false
+    bisoldone = false
+    skipnext = false
+
+    i = 0
+
+
+    local ent0
+
+    while i < 2 * maxiter
+
+        i += 1
+
         bonds = bonditer(buff)
 
         if sequential
@@ -344,16 +366,63 @@ function iterative_simple_update!(
             elcopy!(isoms, newisoms)
         end
 
+        if skipnext
+            @warn "skipping bad solution"
+            skipnext = false
+            continue
+        end
+
+        # comment out this
+        # skipnext = true
+
+        oldconv = conv
         conv = tolerance!(new, old, 1.0)
 
-        @warn "Got $conv after $i"
+        diff = abs(oldconv - conv)/max(oldconv, conv)
 
-        if conv < tol && i > 0
+        @warn "Got $conv after $i; diff = $(diff)"
+
+        S = bondentropy(new)
+        println(S)
+
+        if conv < tol || i > maxiter
             break
         end
 
-        if !gauge || size(buff) < (2,2)
-            continue
+
+        if bisol
+            if !bisoldone
+                ent1 = 0
+                broadcast(S, S0) do ss, ss0
+                    ent1 += abs(ss - ss0)
+                end
+
+                if ent1 < ent0
+                    bisoldone = true
+                    skipnext = true
+                else
+                    ent0 = ent1
+                end
+            else
+                skipnext = true
+            end
+            @warn "Trying every other solution..."
+        else
+            if Inf * diff < conv
+                ent0 = 0
+                broadcast(S, S0) do ss, ss0
+                    ent0 += abs(ss - ss0)
+                end
+
+                bisol = true
+            end
+        end
+
+
+        gauge < 2 && continue
+
+        if size(buff) < (2,2)
+            throw(ErrorException("intermediate gauging not yet implemented for unit cell size < (2,2)"))
         end
 
         temppepo = deepcopy(pepo!)
@@ -419,9 +488,10 @@ function iterative_simple_update!(
         # mergeinto!(dst, spten)
     end
 
-    # size(buff) == (1, 1) && minimalcanonicalform!(buff)
-    #
-    size(buff) != (1, 1) && simple_update_gauge!(pepo!; maxiter=100, reset=false)
+    if gauge > 0
+        size(buff) == (1, 1) && minimalcanonicalform!(buff; maxiter=2000)
+        size(buff) != (1, 1) && simple_update_gauge!(pepo!; maxiter=100, reset=false)
+    end
 
 
     # minimalcanonicalform!(tensors(pepo))

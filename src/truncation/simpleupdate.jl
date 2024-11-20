@@ -433,7 +433,7 @@ function isometries_from_svd(P, Q, u0, v0; xi=Inf, trunc=notrunc(), absorb=true,
 
     xi < Inf && rescale!(PEPOKit.TruncationIsometries(u,s,v), xi; verbose=false)
 
-    return iso, s, 1 - f
+    return (u,v), s, 1 - f
 end
 
 function hori_weights(uten::T, vten::T, U, V; axial) where {T<:AbsTen{2, 4}}
