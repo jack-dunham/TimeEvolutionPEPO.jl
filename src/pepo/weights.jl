@@ -26,3 +26,16 @@ function _tolerance!(ow, nw, tau::Float64)
     copy!(ow, nw)
     return rv
 end
+
+function bondentropy(weights::W) where {W<:EdgeLattice}
+
+    entropies = broadcast(weights) do w
+        wvec = diag(convert(Array, w))
+
+        entropy = sum(λ -> - λ * log(λ), wvec)
+
+        return entropy 
+    end
+
+    return entropies
+end
