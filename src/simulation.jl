@@ -230,10 +230,11 @@ function simulate!(callback, sim::Simulation; maxshots=100, maxtime=Inf)
     while numiter < numsteps && tol ≥ breaktol
 
         for (i, step) in enumerate(stepper)
+            trunc = getindex.(truncator, i)
             if i < 0
-                timestep!(pepo, truncator, step, NTU())
+                timestep!(pepo, trunc, step, NTU())
             else
-                timestep!(pepo, truncator, step, truncalg)
+                timestep!(pepo, trunc, step, truncalg)
             end
         end
 
@@ -321,8 +322,8 @@ end
 function measurehook!(sim::Simulation, A=PAULI[1]; env=nothing)
     pepo = PEPOKit.quantumstate(sim)
 
-    alg = VUMPS(; tol=1e-10, maxiter=50, bonddim=16, verbose=true)
-    # alg = CTMRG(; tol=1e-8, maxiter=50, bonddim=16, verbose=true)
+    alg = VUMPS(; tol=1e-10, maxiter=200, bonddim=16, verbose=true)
+    # alg = CTMRG(; tol=1e-12, maxiter=50, bonddim=16, verbose=true)
     #
     # env = newcontraction(alg, contractphysical(PEPOKit.tensors(pepo)))
     # renormalize!(env, contractphysical(PEPOKit.tensors(pepo)))
@@ -442,3 +443,5 @@ function test_p2s(op, mpo, us, vw, vn)
         vn[n, n1, n2]
     return out
 end
+
+

@@ -8,7 +8,8 @@ Base.eltype(::TrotterDecomposition{T}) where {T} = T
 
 Base.iterate(sch::TrotterDecomposition, state=1) = iterate(sch.body, state)
 
-function Base.size(t::TrotterDecomposition)
+Base.size(t::TrotterDecomposition) = length(t)
+function Base.length(t::TrotterDecomposition)
     return maximum(size, Iterators.flatten((t.head, t.body, t.tail)))
 end
 
