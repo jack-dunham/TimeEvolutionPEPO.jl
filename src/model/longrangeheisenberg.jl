@@ -223,9 +223,9 @@ function fsmlongrange(
 end
 
 function fsmlongrangeterm(
-    op, space, dt; alpha=Inf, delta=0, omega=0, g=0, gp=0, nk=6, J=1.0, N=200, T=Float64
+    op, space, dt; alpha=Inf, delta=0, omega=0, g=0, gp=0, nk=6, ns = 2, J=1.0, N=200, T=Float64
 )
-    wk, mks, lks = PEPOKit.twodapprox(alpha, nk, 2; N=N, T=T)
+    wk, mks, lks = PEPOKit.twodapprox(alpha, nk, ns; N=N, T=T)
 
     println(wk)
 
