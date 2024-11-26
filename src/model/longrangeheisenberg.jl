@@ -222,36 +222,99 @@ function fsmlongrange(
     return TensorMap(data, d * d' * d' * d, Dx * Dy * Dx' * Dy')
 end
 
+struct ExponentialBasisFit{T}
+    w::Vector{T}
+    mk::Vector{Vector{T}}
+    lk::Vector{Vector{T}}
+end
+
+function (fit::ExponentialBasisFit)(x,y)
+    wks = fit.w
+    mks = fit.mk
+    lks = fit.lk
+
+    if iszero(x) && iszero(y)
+        return NaN
+    end
+
+    cumsum = 0
+
+    for (wk, mkis, lkis) in zip(wks, mks, lks)
+
+        itr = zip(mkis, lkis)
+
+        for (mki, lki) in itr
+            if iszero(x)
+                cumsum += wk * mki * lki^y
+            elseif iszero(y)
+                cumsum += wk * mki * lki^x
+            else
+                for (mkj, lkj) in itr
+                    cumsum += wk * mki * lki^x * mkj * lkj^y
+                end
+            end
+        end
+    end
+
+    return cumsum
+end
+
 function fsmlongrangeterm(
-    op, space, dt; alpha=Inf, delta=0, omega=0, g=0, gp=0, nk=6, ns = 2, J=1.0, N=200, T=Float64
+    op,
+    localops,
+    linops,
+    space, 
+    dt; 
+    # Interaction strength parameters
+    alpha=Inf,
+    kmax = 1,
+    ngmax = 1,
+    N=200,
+    T= ComplexF64,
+    gtol=1e-8,
+    # Model parameters
+    hx = 0.0,
+    hy = 0.0,
+    hz = 0.0,
+    J = 0.0,
+    # FSM parameters
+    extend = true,
+    thermal = false,
 )
-    wk, mks, lks = PEPOKit.twodapprox(alpha, nk, ns; N=N, T=T)
+    if alpha == Inf
+        wk = zeros(T, kmax)
+        wk[1] = eps()^(-2)
+        mks = fill(T[eps()], kmax)
+        lks = fill(T[eps()], kmax)
+    else
+        wk, mks, lks = PEPOKit.twodapprox(alpha, kmax, ngmax; N=N, T=T, gtol=gtol)
+    end
 
     println(wk)
 
     X, Y, Z = PAULI
 
     rv = []
-    # op = 1/2 * (one(Z) + Z)
+
     for (w, mk, lk) in zip(wk, mks, lks)
-        term = fsm_long_range_term(
+        term = fsmgeneral(
             op,
+            localops,
+            linops,
             space,
             dt,
             w,
             mk,
             lk;
-            numterm=length(wk),
-            delta=delta,
-            omega=omega,
-            g=g,
-            gp=gp,
             J=J,
+            localscaling = length(wk),
+            extend = extend,
+            thermal = thermal,
         )
         push!(rv, term)
     end
 
-    return rv
+    return rv, ExponentialBasisFit(wk, mks, lks)
 end
 
 function fsm_long_range_term(
@@ -408,19 +471,77 @@ function fsmaxy(space, dt; J=0.5, alpha=3, nk=10, tol=eps(), T=Float64, hx=0.0, 
     return rv
 end
 
-function fsmgeneral(
+function fsmlongrangeterm2(space, dt; 
+                           J=1.0, 
+                           alpha=3, kmax=10, ngmax=2, force=false, tol=eps(), T=Float64, hx=0.0, hy=0.0, hz=0.0, N=200)
+    wk_, mks_, lks_ = PEPOKit.twodapprox(alpha, kmax, ngmax; N=N, T=T, force)
+
+    numremoved = 0
+
+    wk = empty(wk_)
+    mks = empty(mks_)
+    lks = empty(lks_)
+
+    for i in eachindex(wk_)
+
+        if abs(wk_[i]) < tol
+            numremoved += 1
+            continue
+        end
+
+        push!(wk, wk_[i])
+        push!(mks, mks_[i])
+        push!(lks, lks_[i])
+    end
+
+    println(wk)
+
+    @info "Removed $numremoved terms from expansion"
+
+    linops = [LADDER[1]]
+
+    op = PAULI[3]
+
+    rv = []
+
+    scale = 0
+
+    for mk in mks
+        scale += length(mk)^2
+    end
+
+    println(scale)
+
+    for (w, mk, lk) in zip(wk, mks, lks)
+        println(w)
+        println(w * mk .* lk)
+        for ((mkx, mky), (lkx, lky)) in zip(Iterators.product(mk, mk), Iterators.product(lk, lk))
+            # println("(1,0): ", w * mkx * lkx)
+            # println(w * mkx * lkx * mky * lky)
+            # println(w * mkx * lkx^2 * mky * lky)
+            term = fsmbigeneral(op, linops, space, dt, w, mkx, lkx, mky,lky; numterm=scale, ng = length(mk), J=J, hx=hx, hy=hy, hz=hz)
+            push!(rv, term)
+        end
+    end
+
+    return rv
+end
+function fsmbigeneral(
     op,
     linops,
     space,
     dt,
     wk,
-    mks,
-    lks;
+    mkx,
+    lkx,
+    mky,
+    lky;
     hx=0.0,
     hy=0.0,
     hz=0.0,
     J=1.0,
     numterm,
+    ng,
     extend=true,
     thermal=false,
 )
@@ -445,6 +566,129 @@ function fsmgeneral(
     rules.D[1, 1, 1, 1] = D
 
     Id = one(op)
+
+    if thermal
+        c1 = c2 = -J / 2
+    else
+        c1 = -im * J
+        c2 = im * J
+    end
+
+    C1 = c1 * kron(op, Id)
+    B1 = kron(op, Id)
+
+    C2 = c2 * kron(Id, transpose(op))
+    B2 = kron(Id, transpose(op))
+
+    # Get strides
+
+    hstr = 1
+    vstr = 1
+
+    for (C, B) in zip((C1, C2), (B1, B2))
+        Id = kron(one(op), one(op))
+
+        nh = 1
+        nv = 1
+
+        c = hstr + 2 * nh - 1
+        u = hstr + 2 * nh
+
+        v = vstr + nv
+
+        ## X-Rules
+
+        # Start going east
+        rules.C[c, 1, 1, 1] =  wk * mkx * lkx * C / ng
+
+        # Finish going east
+        rules.B[1, 1, c, 1] = B
+        # Finish going west (unconventional)
+        rules.B[u, 1, 1, 1] = B
+
+        # Continue going east
+        rules.A[c, 1, c, 1] = lkx * Id
+        # Continue going west (unconventional)
+        rules.A[u, 1, u, 1] = lkx * Id
+
+        ## Y -> X rules
+
+        # Change from going north to going east
+        rules.A[c, v, 1, 1] = ng * mkx * lkx * Id
+        # Change from going north to going west (unconventional)
+        rules.A[1, v, u, 1] = ng * mkx * lkx * Id
+
+        ## Y-rules
+
+        # Start going north
+        rules.C[1, 1, 1, v] = wk * mky * lky * C / ng
+
+        # Finish going north
+        rules.B[1, v, 1, 1] = B
+
+        # Continue going north
+        rules.A[1, v, 1, v] = lky * Id
+
+        hstr += 2
+        vstr += 1
+    end
+
+    @info "TNO bond dimension: ($hstr,$vstr)"
+
+    d = space
+    di = dim(d)
+
+    Dx = reduce(oplus, fill(oneunit(d), hstr))
+    Dy = reduce(oplus, fill(oneunit(d), vstr))
+
+    data = zeros(ComplexF64, di, di, di, di, hstr, vstr, hstr, vstr)
+
+    fsmpepo!(data, rules, dt; extend=extend)
+
+    return TensorMap(data, d * d' * d' * d, Dx * Dy * Dx' * Dy')
+end
+
+function fsmgeneral(
+    op,
+    localops,
+    linops,
+    space,
+    dt,
+    wk,
+    mks,
+    lks;
+    J=1.0,
+    localscaling = 1.0,
+    extend=true,
+    thermal=false,
+)
+    Id = one(op)
+
+    T = Dict{NTuple{4,Int},Matrix{ComplexF64}}
+
+    rules = (A=T(), B=T(), C=T(), D=T())
+
+    X, Y, Z = PAULI
+    
+    D = kron(zero(Id), zero(Id))
+
+    for A in localops
+        if thermal 
+            D += -0.5 * (kron(A, Id) + kron(Id, transpose(A)))
+        else
+            D += -im * (kron(A, Id) - kron(Id, transpose(A)))
+        end
+    end
+
+    for L in linops
+        acomm = (kron(L' * L, one(L)) + kron(one(L), transpose(L' * L)))
+        D += kron(L, transpose(L')) - 1 / 2 * acomm
+    end
+
+    D = D / localscaling
+
+    rules.A[1, 1, 1, 1] = one(D)
+    rules.D[1, 1, 1, 1] = D
 
     if thermal
         c1 = c2 = -J / 2
@@ -610,11 +854,7 @@ function fsmaxial(
 
     return TensorMap(data, d * d' * d' * d, Dx * Dy * Dx' * Dy')
 end
-function twodapprox(alpha, n::Int, ng::Int=2; kwargs...)
-    return twodapprox(alpha, n, fill(ng, n); kwargs...)
-end
-
-function twodapprox(alpha, n, ngs; N=50, T=ComplexF64)
+function twodapprox(alpha, n, ngmax=2; N=50, T=ComplexF64, gtol = 1e-10, force=false)
     wks, lam = approx_as_sum_of_exp(T, alpha / 2, n; N=N)
 
     pks = -log.(lam)
@@ -622,17 +862,35 @@ function twodapprox(alpha, n, ngs; N=50, T=ComplexF64)
     mks = Vector{ComplexF64}[]
     lks = Vector{ComplexF64}[]
 
-    for (pk, ng) in zip(pks, ngs)
-
-        # Need to find an approximation for each pm
-
+    for pk in pks
         f = r -> exp(-pk * r^2)
+        errf = (m, l) -> maximum(abs.((x -> sum(@. m * l^x)).(1:N) - f.(1:N)))
 
-        mkis, lkis = generalised_approx_as_sum_of_exp(f, ng; N=N)
+        ng0 = force ? ngmax : 1
 
-        afunc = abs.((x -> sum(@. mkis * lkis^x)).(1:N) - f.(1:N))
+        mkis, lkis = generalised_approx_as_sum_of_exp(f, ng0; N=N, T=T)
 
-        # println("Error for $(real(pk)): ", sum(afunc)/length(afunc))
+        errfinal = errf(mkis, lkis)
+
+        ngfinal = 1
+
+        for ng in (ng0 + 1):ngmax
+
+            errfinal < gtol && break
+
+            mkisnew, lkisnew = generalised_approx_as_sum_of_exp(f, ng; N=N, T=T)
+
+            errnew = errf(mkisnew, lkisnew)
+
+            if errnew < errfinal
+                errfinal = errnew
+                mkis = mkisnew
+                lkis = lkisnew
+                ngfinal = ng
+            end
+        end
+
+        println("Error for $(real(pk)) with $ngfinal terms: ", errfinal)
 
         push!(mks, mkis)
         push!(lks, lkis)
@@ -677,8 +935,8 @@ function approx_as_sum_of_exp(T, α, n; N=50, offset=0, s=1.0)
     return sol, Λ
 end
 
-function generalised_approx_as_sum_of_exp(f, n; N=10)
-    F = zeros(ComplexF64, N - n + 1, n)
+function generalised_approx_as_sum_of_exp(f, n; N=10, T=ComplexF64)
+    F = zeros(T, N - n + 1, n)
 
     for c in axes(F, 2)
         for r in axes(F, 1)
@@ -698,7 +956,7 @@ function generalised_approx_as_sum_of_exp(f, n; N=10)
 
     Λ = eigen(pinv(U1) * U2).values
 
-    A = zeros(ComplexF64, N, n)
+    A = zeros(T, N, n)
     for c in axes(A, 1)
         A[c, :] .= Λ .^ (c)
     end
