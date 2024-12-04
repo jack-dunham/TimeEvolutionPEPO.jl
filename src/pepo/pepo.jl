@@ -184,3 +184,50 @@ function setaxis!(pepo::PEPOWithBuffer, axis)
 
     return pepo
 end
+
+expandspace(p::TensorMap{S}, s::S) where {S<:IndexSpace} = expandspace(p, s * s * s' * s')
+function expandspace(p::TensorMap{S}, s::ProductSpace{S,4}) where {S<:IndexSpace}
+    u = mapreduce((a, b) -> isometry(a', b'), ⊗, s, domain(p))
+
+    return p * _transpose(u)
+end
+
+function expandspace!(pepo, space::IndexSpace)
+
+    pten = tensors(pepo)
+
+    broadcast!(pten, pten, Ref(space)) do p, s
+        return expandspace(p, s)
+    end
+
+    wten = weights(pepo)
+
+    wtennew = broadcast(wten) do w
+        c = codomain(w)
+        d = domain(w)
+
+        println(typeof(w))
+
+        u = TensorMap((T,I) -> delta(T,I...), scalartype(w), space, c)
+        v = TensorMap((T,I) -> delta(T,I...), scalartype(w), d, space)
+
+        return u * w * v
+    end
+
+    for bond in bonditer(pepo)
+        setweight!(pepo, wtennew[bond], bond; copy=false)
+    end
+
+    return pepo
+end
+
+function subpepo(pepo, i1,i2; weights=false)
+    t = Lattice(tensors(pepo)[i1:i1,i2:i2])
+
+    if weights
+        w = EdgeLattice(weights(pepo)[i1:i1,i2:i2])
+        return PEPO(t,w)
+    else
+        return PEPO(t)
+    end
+end
