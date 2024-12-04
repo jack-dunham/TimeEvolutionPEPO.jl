@@ -287,7 +287,7 @@ function fsmlongrangeterm(
         mks = fill(T[eps()], kmax)
         lks = fill(T[eps()], kmax)
     else
-        wk, mks, lks = PEPOKit.twodapprox(alpha, kmax, ngmax; N=N, T=T, gtol=gtol)
+        wk, mks, lks = PEPOKit.twodapprox(alpha, kmax, ngmax; V=1.0, N=N, T=T, gtol=gtol)
     end
 
     println(wk)
@@ -425,11 +425,13 @@ function fsm_long_range_term(
 
     fsmpepo!(data, rules, dt; extend=extend)
 
-    return TensorMap(data, d * d' * d' * d, Dx * Dy * Dx' * Dy')
+    pepo = TensorMap(data, d * d' * d' * d, Dx * Dy * Dx' * Dy')
+
+    return pepo
 end
 
-function fsmaxy(space, dt; J=0.5, alpha=3, nk=10, tol=eps(), T=Float64, hx=0.0, hy=0.0, hz=0.0)
-    wk_, mks_, lks_ = PEPOKit.twodapprox(alpha, nk; N=200, T=T)
+function fsmaxy(space, dt; J=0.5, alpha=3, kmax=15, ngmax=3, tol=eps(), gtol=1e-10, T=Float64, hx=0.0, hy=0.0, hz=0.0)
+    wk_, mks_, lks_ = PEPOKit.twodapprox(alpha, kmax, ngmax;gtol=gtol, N=200, T=T)
 
     numremoved = 0
 
@@ -463,7 +465,7 @@ function fsmaxy(space, dt; J=0.5, alpha=3, nk=10, tol=eps(), T=Float64, hx=0.0, 
 
     for (op, j) in zip((X, Y), (J, -J))
         for (w, mk, lk) in zip(wk, mks, lks)
-            term = fsmgeneral(op, linops, space, dt, w, mk, lk; numterm=scale, J=j, hx=hx, hy=hy, hz=hz)
+            term = fsmgeneral(op, [],linops, space, dt, w, mk, lk; localscaling=scale, J=j)
             push!(rv, term)
         end
     end
@@ -769,9 +771,137 @@ function fsmgeneral(
 
     fsmpepo!(data, rules, dt; extend=extend)
 
-    return TensorMap(data, d * d' * d' * d, Dx * Dy * Dx' * Dy')
+    pepo = TensorMap(data, d * d' * d' * d, Dx * Dy * Dx' * Dy')
+    return pepo
 end
 
+function fsmsymmetric(
+    op,
+    localops,
+    linops,
+    space,
+    dt,
+    w,
+    mks,
+    lks;
+    J=1.0,
+    localscaling = 1.0,
+    extend=true,
+    thermal=false,
+)
+    Id = one(op)
+
+    T = Dict{NTuple{4,Int},Matrix{ComplexF64}}
+
+    rules = (A=T(), B=T(), C=T(), D=T())
+
+    X, Y, Z = PAULI
+    
+    D = kron(zero(Id), zero(Id))
+
+    for A in localops
+        if thermal 
+            D += -0.5 * (kron(A, Id) + kron(Id, transpose(A)))
+        else
+            D += -im * (kron(A, Id) - kron(Id, transpose(A)))
+        end
+    end
+
+    for L in linops
+        acomm = (kron(L' * L, one(L)) + kron(one(L), transpose(L' * L)))
+        D += kron(L, transpose(L')) - 1 / 2 * acomm
+    end
+
+    D = D / localscaling
+
+    rules.A[1, 1, 1, 1] = one(D)
+    rules.D[1, 1, 1, 1] = D
+
+    if thermal
+        j1 = j2 = -J / 2
+    else
+        j1 = -im * J
+        j2 = im * J
+    end
+
+    C1 = kron(op, Id)
+    B1 = kron(op, Id)
+
+    C2 = kron(Id, transpose(op))
+    B2 = kron(Id, transpose(op))
+
+    # Get strides
+
+    hstr = 1
+    vstr = 1
+
+    for (C, B, j) in zip((C1, C2), (B1, B2), (j1,j2))
+        Id = kron(one(op), one(op))
+        gapprox = zip(mks, lks)
+
+        for (n1, (m1, l1)) in enumerate(gapprox)
+            # mklk = mk * lk 
+
+            c = hstr + 2 * n1 - 1
+            u = hstr + 2 * n1
+
+            rules.C[c, 1, 1, 1] = 0.5 * j * w * sqrt(m1 * l1) * C
+            rules.C[1, c, 1, 1] = 0.5 * j * w * sqrt(m1 * l1) * C
+
+            rules.C[1, 1, u, 1] = 0.5 * j * w * sqrt(m1 * l1) * C
+            rules.C[1, 1, 1, u] = 0.5 * j * w * sqrt(m1 * l1) * C
+
+            rules.B[1, 1, c, 1] = sqrt(m1 * l1) * B
+            rules.B[1, 1, 1, c] = sqrt(m1 * l1) * B
+
+            rules.B[u, 1, 1, 1] = sqrt(m1 * l1) * B
+            rules.B[1, u, 1, 1] = sqrt(m1 * l1) * B
+
+            # Continue going east
+            rules.A[c, 1, c, 1] = l1 * Id
+            rules.A[1, c, 1, c] = l1 * Id
+            # Continue going west (unconventional)
+            rules.A[u, 1, u, 1] = l1 * Id
+            rules.A[1, u, 1, u] = l1 * Id
+
+            for (n2, (m2, l2)) in enumerate(gapprox)
+
+                c1 = c
+                u1 = u
+
+                c2 = hstr + 2 * n2 - 1
+                u2 = hstr + 2 * n2
+
+                rules.A[1, 1, c1, c2] = sqrt(m1 * m2 * l1 * l2) * Id
+                rules.A[u1, u2, 1, 1] = sqrt(m1 * m2 * l1 * l2) * Id
+
+                rules.A[u1, 1, 1, c2] = sqrt(m1 * m2 * l1 * l2) * Id
+                rules.A[1, u1, c2, 1] = sqrt(m1 * m2 * l1 * l2) * Id
+            end
+        end
+
+        hstr += 2 * length(gapprox)
+        vstr += 2 * length(gapprox)
+    end
+
+    @info "TNO bond dimension: ($hstr,$vstr)"
+
+    d = space
+    di = dim(d)
+
+    Dx = reduce(oplus, fill(oneunit(d), hstr))
+    Dy = reduce(oplus, fill(oneunit(d), vstr))
+
+    data = zeros(ComplexF64, di, di, di, di, hstr, vstr, hstr, vstr)
+
+    fsmpepo!(data, rules, dt; extend=extend)
+
+    pepo = TensorMap(data, d * d' * d' * d, Dx * Dy * Dx' * Dy')
+
+    # println(pepo ≈  permutedom(pepo, (2,1,4,3)))
+
+    return pepo
+end
 function fsmaxial(
     vecL, space, dt; extend=true, Jx=0.0, Jy=0.0, Jz=0.0, ax=0.0, ay=0.0, az=0.0
 )
@@ -854,15 +984,15 @@ function fsmaxial(
 
     return TensorMap(data, d * d' * d' * d, Dx * Dy * Dx' * Dy')
 end
-function twodapprox(alpha, n, ngmax=2; N=50, T=ComplexF64, gtol = 1e-10, force=false)
-    wks, lam = approx_as_sum_of_exp(T, alpha / 2, n; N=N)
+function twodapprox(alpha, n, ngmax=2; V=1.0, N=50, T=ComplexF64, gtol = 1e-10, force=false)
+    wks, lam = approx_as_sum_of_exp(T, alpha / 2, n; N=N, V=V)
 
     pks = -log.(lam)
 
     mks = Vector{ComplexF64}[]
     lks = Vector{ComplexF64}[]
 
-    for pk in pks
+    for (wk, pk) in zip(wks, pks)
         f = r -> exp(-pk * r^2)
         errf = (m, l) -> maximum(abs.((x -> sum(@. m * l^x)).(1:N) - f.(1:N)))
 
@@ -902,8 +1032,8 @@ end
 function approx_as_sum_of_exp(alpha, n; kwargs...)
     return approx_as_sum_of_exp(Float64, alpha, n; kwargs...)
 end
-function approx_as_sum_of_exp(T, α, n; N=50, offset=0, s=1.0)
-    f = N -> (s * (N + offset))^float(-α)
+function approx_as_sum_of_exp(T, α, n; N=50, offset=0, V=1.0)
+    f = N -> (V * (N + offset))^float(-α)
     F = zeros(T, N - n + 1, n)
 
     for r in axes(F, 1)
