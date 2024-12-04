@@ -158,23 +158,23 @@ function Simulation(
 
     return sim
 end
-function Simulation(model, pepo::PEPO, method::AbstractTimeEvolution)
-    model = model2tuple(model)
 
-    stepper = newstepper(pepo, model, method)
+function Simulation(model, pepo::PEPO, method::AbstractTimeEvolution, info=SimulationInfo(); storeall=true)
 
-    # Construct the time evolving state
+    stepper,_ = newstepper(physicalspace(pepo), model, method)
+
     state = newevolution(pepo, stepper, method)
 
-    # Construct the truncators
     truncators = newtruncators(state, stepper, method.truncalg)
 
-    initialstate = deepcopy(state)
+    initialstate = storeall ? deepcopy(state) : nothing
 
-    sim = Simulation(initialstate, SimulationInfo(), stepper, method, state, truncators)
+    sim = Simulation(info, method, model, state, stepper, truncators, initialstate)
 
     return sim
 end
+
+
 function initenvironment(network, alg::AbstractBoundaryAlgorithm; kwargs...)
     return ITC.initialize(alg, network; kwargs...)
 end
@@ -351,8 +351,8 @@ function measurehook!(output::Vector, sim, args...)
     alg = VUMPS(; tol=1e-10, maxiter=200, bonddim=16, verbose=true)
     # alg = CTMRG(; tol=1e-10, maxiter=100, bonddim=16, verbose=true)
 
-    env = newcontraction(alg, contractphysical(tensors))
-    runcontraction!(env)
+    env = nothing #newcontraction(alg, contractphysical(tensors))
+    # runcontraction!(env)
 
     f = sim -> begin
         exp1 = measurehook!(sim, args...; env=env)

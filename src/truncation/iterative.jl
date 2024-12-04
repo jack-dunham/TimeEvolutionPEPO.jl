@@ -188,7 +188,9 @@ function iterative_simple_update!(
 )
     mode = :none
 
-    if mode === :quick
+    isunit = axis -> any(D -> dim(D) == 1, bondspace.(Ref(pepo!), bonds(pepo!, axis)))
+
+    if mode === :quick || isunit(1) || isunit(2)
         newpepo = evolve(pepo!, stepper)
 
         simple_update_gauge!(newpepo)
@@ -278,10 +280,6 @@ function iterative_simple_update!(
 
         else
             Threads.@threads for bond in collect(bonds)
-                (u, v), s, _ = iterative_simple_update_step(pepo!, stepper, isoms, bond)
-
-                setindex!(newisoms, u => v, bond)
-                newweights[bond] = s
 
                 if check_fidelity && bond == Bond((1,1), (1,2))
                     evolvedpepo = evolve(deepcopy(pepo!), stepper)
@@ -337,6 +335,7 @@ function iterative_simple_update!(
 
                     rvnorm1 = tracecontract_two_layer(FL[1,1], FR[1,1], AC[1,1], AC[1,2], copybuff[1,1], copybuff[1,1])
 
+                    #=
                     overlap = Lattice(map(ITC.TensorPair, currentbuffer(evolvedpepo), currentbuffer(evolvedpepo)))
 
                     vumps = ITC.newcontraction(VUMPS(bonddim=16, verbose=false, maxiter=20), overlap)
@@ -353,10 +352,16 @@ function iterative_simple_update!(
                     FR = vumps.fixedpoints.right
 
                     rvnorm2 = tracecontract_two_layer(FL[1,1], FR[1,1], AC[1,1], AC[1,2], currentbuffer(evolvedpepo)[1,1], currentbuffer(evolvedpepo)[1,1])
+                    =#
 
-                    @warn "overlap:  " 1 - rv/sqrt(rvnorm1 * rvnorm2)
+                    # @warn "overlap:  " 1 - rv/sqrt(rvnorm1 * rvnorm2)
+                    @warn "overlap:  " rv/sqrt(rvnorm1)
 
                 end
+                (u, v), s, _ = iterative_simple_update_step(pepo!, stepper, isoms, bond)
+
+                setindex!(newisoms, u => v, bond)
+                newweights[bond] = s
 
             end
 
@@ -488,16 +493,21 @@ function iterative_simple_update!(
         # mergeinto!(dst, spten)
     end
 
+    # for p in tensors(pepo!)
+    #     copy!(p, 0.5 * (p + permutedom(p, (2,1,4,3))))
+    # end
+
     if gauge > 0
         size(buff) == (1, 1) && minimalcanonicalform!(buff; maxiter=2000)
         size(buff) != (1, 1) && simple_update_gauge!(pepo!; maxiter=100, reset=false)
     end
 
-
     # minimalcanonicalform!(tensors(pepo))
+
 
     quicknormalize!(pepo!)
     hermitianize!(pepo!)
+
 
     return pepo!, infidelity
 end
