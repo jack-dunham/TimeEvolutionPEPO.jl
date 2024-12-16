@@ -37,6 +37,30 @@ function simple_update_gauge!(
     return pepo
 end
 
+function simple_update_gauge_parallel!(
+    pepo; maxiter=100, tol=1e-12, verbose=true, reset=false
+)
+    reset && weights2identity!(pepo)
+
+    prevweights = deepcopy(weights(pepo))
+
+    ϵ = Inf
+    numiter = 0
+
+    while ϵ > tol && numiter < maxiter
+        reverse = isodd(numiter)
+
+        simple_update_gauge_parallel_step!(pepo)
+
+        ϵ = tolerance!(prevweights, weights(pepo), 1.0)
+
+        verbose && @info ϵ
+
+        numiter += 1
+    end
+
+    return pepo
+end
 function simple_update_gauge_isometries!(
     pepo; maxiter=100, tol=1e-12, verbose=true, buffering=false
 )
@@ -73,7 +97,7 @@ function simple_update_gauge_isometries!(
         numiter += 1
     end
 
-    xisoms, yisoms = simple_update_gauging_parallel!(pepo)
+    xisoms, yisoms = simple_update_gauge_parallel_isometries!(pepo)
 
     return xisoms, yisoms
 end
@@ -126,19 +150,11 @@ function simple_update_gauge_step!(pepo, buffer; inreverse=false, absorb=true)
     return pepo
 end
 
-function simple_update_gauging_parallel!(pepo)
+function simple_update_gauge_parallel_isometries!(pepo)
+    newweights = deepcopy(weights(pepo))
+
     isomh, isomv = map((1:2)) do axis
         thebonds = bonds(pepo, axis)
-
-        len, _ = size(thebonds)
-
-        if len < 2
-            throw(
-                ArgumentError(
-                    "at least 2 sites on axis $axis needed for simple update gauging"
-                ),
-            )
-        end
 
         isom = map(thebonds) do bond
 
@@ -148,6 +164,8 @@ function simple_update_gauging_parallel!(pepo)
             # if abs(infid) > 1e-14
             #     @warn infid
             # end
+
+            setweight!(newweights, s, bond; copy=false)
 
             return iso
         end
@@ -163,9 +181,39 @@ function simple_update_gauging_parallel!(pepo)
     isos = broadcast(first, isomv)
     ison = broadcast(last, circshift(isomv, (1, 0)))
 
-    return isomh, isomv
+    return isomh, isomv, newweights
 end
 
+function simple_update_gauge_parallel_step!(pepo)
+
+    isomh, isomv, newweights = simple_update_gauge_parallel_isometries!(pepo)
+
+    ge = broadcast(first, isomh)
+    gw = broadcast(last, circshift(isomh, (1, 0)))
+    #
+    gs = broadcast(first, permutedims(isomv))
+    gn = broadcast(last, permutedims(circshift(isomv, (1, 0))))
+
+    isoms = Isometries(SquareLattice(broadcast(tuple, ge, gs, gw, gn)))
+
+    buff = currentbuffer(pepo)
+
+    for I in eachindex(buff)
+        dst = buff[I]
+        e, s, w, n = isoms[I]
+
+        truncateto!(dst, copy(dst), e, s, w, n)
+
+        # mergeinto!(dst, spten)
+    end
+
+    tolerance!(weights(pepo), newweights, 1.0)
+
+    quicknormalize!(pepo)
+    hermitianize!(pepo)
+
+    return pepo
+end
 function truncate_bond_matrices!(pepo)
     isomh, isomv = map(bonds(pepo)) do axisbonds
         isoms = broadcast(axisbonds) do bond

@@ -322,8 +322,8 @@ end
 function measurehook!(sim::Simulation, A=PAULI[1]; env=nothing)
     pepo = PEPOKit.quantumstate(sim)
 
-    alg = VUMPS(; tol=1e-10, maxiter=200, bonddim=16, verbose=true)
-    # alg = CTMRG(; tol=1e-12, maxiter=50, bonddim=16, verbose=true)
+    # alg = VUMPS(; tol=1e-10, maxiter=200, bonddim=36, verbose=true)
+    alg = CTMRG(; tol=1e-12, maxiter=50, bonddim=16, verbose=true)
     #
     # env = newcontraction(alg, contractphysical(PEPOKit.tensors(pepo)))
     # renormalize!(env, contractphysical(PEPOKit.tensors(pepo)))

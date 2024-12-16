@@ -24,14 +24,14 @@ function axial_trotter_step!(pepo, truncator, stepper; truncalg, kwargs...)
     return pepo
 end
 
-function timestep!(pepo::PEPO, truncator, stepper::LocalStepper, truncalg::SU; kwargs...)
+function fulltimestep!(pepo::PEPO, truncator, stepper::LocalStepper, truncalg::SU; kwargs...)
 
     # Evolve and then truncate each bond in sequence
     axis = stepper.axis
 
     buffer = currentbuffer(pepo)
 
-    size(buffer) < (2,2) && throw(ArgumentError(""))
+    size(buffer) < (2, 2) && throw(ArgumentError(""))
 
     infidelity = similar(buffer)
 
@@ -41,13 +41,12 @@ function timestep!(pepo::PEPO, truncator, stepper::LocalStepper, truncalg::SU; k
 
     checker = true
 
-    if checker 
+    if checker
         altbonds = circshift(axisbonds[:, 2], 1)
         axisbonds = axisbonds[:, 1]
     end
 
     for (i, bond) in enumerate(axisbonds)
-
 
         # println(bond)
         # println("alt:", altbonds[i])
@@ -57,8 +56,8 @@ function timestep!(pepo::PEPO, truncator, stepper::LocalStepper, truncalg::SU; k
         pair = evolve(pepo, stepper, bond)
 
         # (u, v), s, _ = isometries!(pair, pepo, bond, truncalg)
-        absorb_adjacent_weights!(pair, weights(pepo), bond;inverse=false)
-        newpair, s = isometries(pair; axis = bondaxis(bond), xi = truncalg.ξ)
+        absorb_adjacent_weights!(pair, weights(pepo), bond; inverse=false)
+        newpair, s = isometries(pair; axis=bondaxis(bond), xi=truncalg.ξ)
         absorb_adjacent_weights!(newpair, weights(pepo), bond; inverse=true)
 
         # newpair = mapreduce(copy, =>, pepo[bond])
@@ -89,7 +88,6 @@ function timestep!(pepo::PEPO, truncator, stepper::LocalStepper, truncalg::SU; k
         pepo.state[bond] = newpair
 
         if checker
-
             altbond = altbonds[i]
 
             pepo.state[altbond] = mapreduce(copy, =>, newpair)
@@ -107,9 +105,39 @@ function timestep!(pepo::PEPO, truncator, stepper::LocalStepper, truncalg::SU; k
     end
 
     # simple_update_gauge!(pepo; reset=true, verbose=false)
-#
+    #
     return pepo, infidelity
 end
+
+function timestep!(
+    pepo::PEPO, truncator, stepper::LocalStepper, truncalg::SU; kwargs...
+)
+    size(pepo) < (2, 2) && throw(ArgumentError(""))
+
+    axis = stepper.axis
+
+    for bond in bonds(pepo, axis)
+
+        env = environment(pepo, truncalg, bond)
+
+        pair = evolve(pepo, stepper, bond)
+
+        newpair, newweight = updatetensors(pair, env, truncalg, bond)
+
+        pepo[bond] = newpair
+
+        setweight!(pepo, newweight, bond; copy=false)
+
+        # Normalizes each tensor using `norm`; not the same as normalizing the quantum
+        # state. This is for algorithm stability reasons only
+        quicknormalize!(pepo)
+        hermitianize!(pepo)
+    end
+
+    return pepo
+end
+
+environment(pepo::PEPO, ::SU, ::Bond) = weights(pepo)
 
 function timestep!(
     pepo::AxialPEPO, truncator, stepper::LocalStepper, truncalg::NTU; kwargs...
@@ -125,18 +153,16 @@ function timestep!(
 
     infidelity = 0
 
-
     axisbonds = bonds(buffer, 1)
 
     checker = true
 
-    if checker 
+    if checker
         altbonds = circshift(axisbonds[:, 2], 1)
         axisbonds = axisbonds[:, 1]
     end
 
     for (i, bond) in enumerate(axisbonds)
-
         D = bondspace(buffer, bond)
 
         # Evolved the pair of tensors connected by `bond`, leaving the original pair
@@ -144,7 +170,7 @@ function timestep!(
         pair = evolvemerge(buffer, stepper, bond)
         trunc = pair -> ntu_total(pair, buffer, bond)
 
-        (u, v), s, _ = isometries(pair, trunc, bond, truncalg; D = D)
+        (u, v), s, _ = isometries(pair, trunc, bond, truncalg; D=D)
 
         oldA, oldB = pepo[bond]
 
@@ -172,7 +198,6 @@ function timestep!(
         buffer[bond] = newpair
 
         if checker
-
             altbond = altbonds[i]
 
             buffer[altbond] = mapreduce(copy, =>, newpair)
@@ -210,19 +235,20 @@ function timestep!(
 
     infidelity = 0
 
-    truncalg = FET(; alg=VUMPS(bonddim=16, tol=1e-8), ξ=Inf, rankreduce=false, optalg=EVB())
+    truncalg = FET(;
+        alg=VUMPS(; bonddim=16, tol=1e-8), ξ=Inf, rankreduce=false, optalg=EVB()
+    )
 
     axisbonds = bonds(buffer, 1)
 
     checker = true
 
-    if checker 
+    if checker
         altbonds = circshift(axisbonds[:, 2], 1)
         axisbonds = axisbonds[:, 1]
     end
 
     for (i, bond) in enumerate(axisbonds)
-
         D = bondspace(buffer, bond)
 
         # Evolved the pair of tensors connected by `bond`, leaving the original pair
@@ -232,7 +258,7 @@ function timestep!(
         trunc = newtruncators(buffer, truncalg)
         renormalize!(trunc)
 
-        (u, v), s, _ = isometries(pair, trunc, bond, truncalg; D = D)
+        (u, v), s, _ = isometries(pair, trunc, bond, truncalg; D=D)
 
         oldA, oldB = pepo[bond]
 
@@ -260,7 +286,6 @@ function timestep!(
         buffer[bond] = newpair
 
         if checker
-
             altbond = altbonds[i]
 
             buffer[altbond] = mapreduce(copy, =>, newpair)
@@ -329,8 +354,6 @@ function timestep!(
 
     return pepo, infidelity
 end
-
-
 
 # isometries for sequential simple update
 function isometries!(pair::Pair, pepo::AbstractPEPO, bond::Bond, truncalg::SU)
@@ -402,7 +425,7 @@ end
 function simple_update_svd(pair; axis, kwargs...)
     (P, Q), (u0, v0) = rankreduce(pair; axis=axis)
 
-    (u, v), s, infid = isometries_from_svd(P, Q, u0, v0;  axis = axis, kwargs...)
+    (u, v), s, infid = isometries_from_svd(P, Q, u0, v0; axis=axis, kwargs...)
 
     return pinv(u0) * u => v * pinv(v0), s, infid
 end
@@ -410,20 +433,21 @@ end
 function simple_update_svd!(pair; axis, kwargs...)
     (P, Q), (u0, v0) = rankreduce!(pair; axis=axis)
 
-    iso, s, infid = isometries_from_svd(P, Q, u0, v0; axis = axis, kwargs...)
+    iso, s, infid = isometries_from_svd(P, Q, u0, v0; axis=axis, kwargs...)
 
     return iso, s, infid
 end
 
 function isometries_from_svd(P, Q, u0, v0; xi=Inf, trunc=notrunc(), absorb=true, axis)
-    u, s, v, err2 = safetsvd!(normalize(u0 * v0); trunc=trunc)
+    # u, s, v, err2 = safetsvd!(normalize(u0 * v0); trunc=trunc)
+    u, s, v, err2 = safetsvd!(u0 * v0; trunc=trunc)
 
     maxnormalize!(s)
 
     if absorb
         u = u * sqrt(s)
         v = sqrt(s) * v
-        f = localfidelity(u, v, P, Q, u0, v0; axis = axis)
+        f = localfidelity(u, v, P, Q, u0, v0; axis=axis)
     else
         # f = fidelity(u * sqrt(s), sqrt(s) * v, P, Q, u0, v0)
     end
@@ -431,14 +455,14 @@ function isometries_from_svd(P, Q, u0, v0; xi=Inf, trunc=notrunc(), absorb=true,
 
     iso = u => v
 
-    xi < Inf && rescale!(PEPOKit.TruncationIsometries(u,s,v), xi; verbose=false)
+    xi < Inf && rescale!(PEPOKit.TruncationIsometries(u, s, v), xi; verbose=false)
 
-    return  u => v, s, 1 - f
+    return u => v, s, 1 - f
 end
 
-function hori_weights(uten::T, vten::T, U, V; axial) where {T<:AbsTen{2, 4}}
-    s1,w1,n1 = U
-    e2,s2,n2 = V
+function hori_weights(uten::T, vten::T, U, V; axial) where {T<:AbsTen{2,4}}
+    s1, w1, n1 = U
+    e2, s2, n2 = V
 
     if axial
         @tensoropt begin
@@ -447,22 +471,22 @@ function hori_weights(uten::T, vten::T, U, V; axial) where {T<:AbsTen{2, 4}}
         end
     else
         @tensoropt begin
-            unew[k b; e ss ww nn] :=
-                uten[k b; e s w n] * s1[s; ss] * w1[ww; w] * n1[nn; n]
-            vnew[k b; ee ss w nn] :=
-                vten[k b; e s w n] * s2[s; ss] * e2[e; ee] * n2[nn; n]
+            unew[k b; e ss ww nn] := uten[k b; e s w n] * s1[s; ss] * w1[ww; w] * n1[nn; n]
+            vnew[k b; ee ss w nn] := vten[k b; e s w n] * s2[s; ss] * e2[e; ee] * n2[nn; n]
         end
     end
     return unew, vnew
 end
-function hori_weights(uten::T, vten::T, U, V; axial) where {T<:AbsTen{2, 5}}
-    s1,w1,n1 = U
-    e2,s2,n2 = V
+function hori_weights(uten::T, vten::T, U, V; axial) where {T<:AbsTen{2,5}}
+    s1, w1, n1 = U
+    e2, s2, n2 = V
 
     if axial
         @tensoropt begin
-            unew[k b; e1 e2 ss w1 w2 nn] := uten[k b; e1 e2 s w1 w2 n] * s1[s; ss] * n1[nn; n]
-            vnew[k b; e1 e2 ss w1 w2 nn] := vten[k b; e1 e2 s w1 w2 n] * s2[s; ss] * n2[nn; n]
+            unew[k b; e1 e2 ss w1 w2 nn] :=
+                uten[k b; e1 e2 s w1 w2 n] * s1[s; ss] * n1[nn; n]
+            vnew[k b; e1 e2 ss w1 w2 nn] :=
+                vten[k b; e1 e2 s w1 w2 n] * s2[s; ss] * n2[nn; n]
         end
     else
         @tensoropt begin
@@ -475,7 +499,7 @@ function hori_weights(uten::T, vten::T, U, V; axial) where {T<:AbsTen{2, 5}}
     return unew, vnew
 end
 
-function vert_weights(uten::T, vten::T, U, V; axial) where {T<:AbsTen{2, 4}}
+function vert_weights(uten::T, vten::T, U, V; axial) where {T<:AbsTen{2,4}}
     e1, w1, n1 = U
     e2, s2, w2 = V
 
@@ -486,24 +510,24 @@ function vert_weights(uten::T, vten::T, U, V; axial) where {T<:AbsTen{2, 4}}
         end
     else
         @tensoropt begin
-            unew[k b; ee s ww nn] :=
-                uten[k b; e s w n] * e1[e; ee] * w1[ww; w] * n1[nn; n]
-            vnew[k b; ee ss ww n] :=
-                vten[k b; e s w n] * s2[s; ss] * e2[e; ee] * w2[ww; w]
+            unew[k b; ee s ww nn] := uten[k b; e s w n] * e1[e; ee] * w1[ww; w] * n1[nn; n]
+            vnew[k b; ee ss ww n] := vten[k b; e s w n] * s2[s; ss] * e2[e; ee] * w2[ww; w]
         end
     end
 
     return unew, vnew
 end
 
-function vert_weights(uten::T, vten::T, U, V; axial) where {T<:AbsTen{2, 5}}
+function vert_weights(uten::T, vten::T, U, V; axial) where {T<:AbsTen{2,5}}
     e1, w1, n1 = U
     e2, s2, w2 = V
 
     if axial
         @tensoropt begin
-            unew[k b; ee s1 s2 ww n1 n2] := uten[k b; e s1 s2 w n1 n2] * e1[e; ee] * w1[ww; w]
-            vnew[k b; ee s1 s2 ww n1 n2] := vten[k b; e s1 s2 w n1 n2] * e2[e; ee] * w2[ww; w]
+            unew[k b; ee s1 s2 ww n1 n2] :=
+                uten[k b; e s1 s2 w n1 n2] * e1[e; ee] * w1[ww; w]
+            vnew[k b; ee s1 s2 ww n1 n2] :=
+                vten[k b; e s1 s2 w n1 n2] * e2[e; ee] * w2[ww; w]
         end
     else
         @tensoropt begin
@@ -515,7 +539,6 @@ function vert_weights(uten::T, vten::T, U, V; axial) where {T<:AbsTen{2, 5}}
     end
     return unew, vnew
 end
-
 
 function absorb_adjacent_weights!(
     pair::Pair{T}, weights::EdgeLattice, bond::Bond; inverse=false, axial=false
@@ -537,9 +560,9 @@ function absorb_adjacent_weights!(
     axis = bondaxis(bond)
 
     if axis == 1
-        unew, vnew = hori_weights(uten, vten, U, V; axial = axial)
+        unew, vnew = hori_weights(uten, vten, U, V; axial=axial)
     elseif axis == 2
-        unew, vnew = vert_weights(uten, vten, U, V; axial = axial)
+        unew, vnew = vert_weights(uten, vten, U, V; axial=axial)
     end
 
     copy!(uten, unew)
@@ -581,5 +604,3 @@ function absorb_axial_weights!(
 
     return site
 end
-
-

@@ -113,7 +113,7 @@ Base.getindex(isoms::Isometries, bond::Bond) = isoms[first(bond)] => isoms[last(
 function timestep!(
     pepo!::PEPO, truncator!::Isometries, stepper, truncalg::IterativeSU
 )
-    iterative_simple_update!(
+    iterative_simple_update_prototype!(
         pepo!,
         truncator!,
         stepper;
@@ -182,8 +182,27 @@ function newtruncators(pepo, sequence, ::IterativeSU)
     return (rv,rv)
 end
 
+function iterative_simple_update!(pepo!, truncator!, stepper; maxiter, tol)
 
-function iterative_simple_update!(
+    evolvedpepo = lazyevolve(pepo!, stepper)
+
+    while i < maxiter
+        for bond in eachbond(pepo!)
+
+            pair = evolvedpepo[bond]
+
+            newiso, newweight = simpleupdate(pair, weights(pepo!))
+
+            isometries[bond] = newiso
+
+            setweight!(pepo!, newweight, bond;copy=false)
+        end
+    end
+
+    truncate!.(pepo!, evolvedpepo, isometries)
+end
+
+function iterative_simple_update_prototype!(
     pepo!, truncator!, stepper; maxiter, tol, sequential, recycle, gauge
 )
     mode = :none
@@ -193,7 +212,7 @@ function iterative_simple_update!(
     if mode === :quick || isunit(1) || isunit(2)
         newpepo = evolve(pepo!, stepper)
 
-        simple_update_gauge!(newpepo)
+        simple_update_gauge_parallel!(newpepo)
 
         truncate_bond_matrices!(pepo!, newpepo, truncator!)
 
@@ -499,6 +518,7 @@ function iterative_simple_update!(
 
     if gauge > 0
         size(buff) == (1, 1) && minimalcanonicalform!(buff; maxiter=2000)
+        # size(buff) == (1, 1) && simple_update_gauge_parallel!(pepo!; maxiter=200, reset=false)
         size(buff) != (1, 1) && simple_update_gauge!(pepo!; maxiter=100, reset=false)
     end
 

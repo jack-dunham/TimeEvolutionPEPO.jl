@@ -126,7 +126,6 @@
 function autodiffoptimise(
     left, right, pair::Pair, environment, bond::Bond; trunc, rankreduce, xi, optalg
 )
-
     gauge = optalg.gauge
 
     if rankreduce
@@ -308,7 +307,6 @@ function _fidelity(AB, Y, LR; trunc=trunc)
 end
 
 function isometries(pair, environment, bond::Bond, truncalg::Union{FET,NTU}; kwargs...)
-
     return _generic_environment_isometries(
         pair, environment, bond, truncalg; parallel=false, kwargs...
     )
@@ -456,18 +454,16 @@ end
 #     return site
 # end
 
-function localfidelity(u, v, P, Q, u0, v0; axis = 1)
-    f0 = overlap(u0, v0, P, Q, u0, v0; axis = axis)
+function localfidelity(u, v, P, Q, u0, v0; axis=1)
+    f0 = overlap(u0, v0, P, Q, u0, v0; axis=axis)
     f =
-        overlap(u, v, P, Q, u0, v0; axis = axis) * overlap(u0, v0, P, Q, u, v; axis = axis) /
-        overlap(u, v, P, Q, u, v; axis = axis)
+        overlap(u, v, P, Q, u0, v0; axis=axis) * overlap(u0, v0, P, Q, u, v; axis=axis) /
+        overlap(u, v, P, Q, u, v; axis=axis)
     return real(f / f0)
 end
 
 function overlap(ua, va, P, Q, ub, vb; axis)
-
     if axis == 1
-
         @tensoropt rv =
             P[k1 b1; ea s1 w1 n1] *
             (P')[eb s1 w1 n1; k1 b1] *
@@ -477,9 +473,8 @@ function overlap(ua, va, P, Q, ub, vb; axis)
             (vb')[wb; b] *
             Q[k2 b2; e2 s2 wa n2] *
             (Q')[e2 s2 wb n2; k2 b2]
-    
-    elseif axis == 2
 
+    elseif axis == 2
         @tensoropt rv =
             P[k1 b1; e1 sa w1 n1] *
             (P')[e1 sb w1 n1; k1 b1] *
@@ -539,40 +534,44 @@ function rankreduce!(tensors::Pair{T,T}; axis=1) where {T<:AbsTen{2,4}}
     return uten => vten, R => L
 end
 
-function isometries(pair::Pair{T}; axis, xi = Inf) where {T<:AbsTen{2,5}}
+function updatetensors(pair, weights, bond, truncalg::SU)
+    absorb_adjacent_weights!(pair, weights, bond; inverse=false)
+    newpair, s = simple_update_tensors(pair; axis=bondaxis(bond), xi=truncalg.ξ)
+    absorb_adjacent_weights!(newpair, weights, bond; inverse=true)
+    return newpair, s
+end
+
+function simple_update_tensors(pair::Pair{T}; axis, xi=Inf) where {T<:AbsTen{2,5}}
     uten, vten = pair
 
     if axis == 1
-
         D = domain(uten)[3]
 
-        Q1, R = leftorth(uten, (1,2,5,6,7), (3,4))
-        L, Q2 = rightorth(vten, (5,6), (1,2,3,4,7))
+        Q1, R = leftorth(uten, (1, 2, 5, 6, 7), (3, 4))
+        L, Q2 = rightorth(vten, (5, 6), (1, 2, 3, 4, 7))
     elseif axis == 2
-
         D = domain(uten)[4]
 
-        Q1, R = leftorth(uten, (1,2,3,6,7), (4,5))
-        L, Q2 = rightorth(vten, (6,7), (1,2,3,4,5))
+        Q1, R = leftorth(uten, (1, 2, 3, 6, 7), (4, 5))
+        L, Q2 = rightorth(vten, (6, 7), (1, 2, 3, 4, 5))
     end
 
-    u,s,v,err = tsvd!(R * L; trunc=truncdim(dim(D)))
+    u, s, v, err = tsvd!(R * L; trunc=truncdim(dim(D)))
 
     maxnormalize!(s)
 
-    (u,v), s = applyweight(u => v, s, xi; verbose=false)
+    (u, v), s = applyweight(u => v, s, xi; verbose=false)
 
     Q1p = Q1 * u
     Q2p = v * Q2
 
     if axis == 1
-
-        unew = permute(Q1p, (1,2),(6,3,4,5))
-        vnew = permute(Q2p, (2,3),(4,5,1,6))
+        unew = permute(Q1p, (1, 2), (6, 3, 4, 5))
+        vnew = permute(Q2p, (2, 3), (4, 5, 1, 6))
 
     elseif axis == 2
-        unew = permute(Q1p, (1,2),(3,6,4,5))
-        vnew = permute(Q2p, (2,3),(4,5,6,1))
+        unew = permute(Q1p, (1, 2), (3, 6, 4, 5))
+        vnew = permute(Q2p, (2, 3), (4, 5, 6, 1))
     end
 
     return unew => vnew, s
@@ -805,21 +804,22 @@ function dzmtsvd!(cf, iso, u0, v0, min=Inf; trunc, check=false)
 end
 
 function safetsvd!(m; trunc=notrunc())
-    local u 
-    local s 
-    local v 
+    local u
+    local s
+    local v
     local err
     try
-        u,s,v,err = tsvd!(m; trunc=trunc)
+        u, s, v, err = tsvd!(m; trunc=trunc)
     catch e
         if e isa LAPACKException
             @warn "LAPACK routine `gesdd` failed; trying `gesvd`..."
-            u,s,v, err= tsvd!(m; trunc=trunc, alg=TensorKit.SVD())
+            u, s, v, err = tsvd!(m; trunc=trunc, alg=TensorKit.SVD())
         else
             rethrow()
         end
     end
-    return u,s,v,err
+
+    return u, s, v, err
 end
 
 # safetsvd!(m; trunc=notrunc()) = tsvd!(m; trunc=trunc)
