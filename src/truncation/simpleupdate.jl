@@ -455,7 +455,7 @@ function isometries_from_svd(P, Q, u0, v0; xi=Inf, trunc=notrunc(), absorb=true,
 
     iso = u => v
 
-    xi < Inf && rescale!(PEPOKit.TruncationIsometries(u, s, v), xi; verbose=false)
+    xi < Inf && rescale!( TimeEvolutionPEPO.TruncationIsometries(u, s, v), xi; verbose=false)
 
     return u => v, s, 1 - f
 end

@@ -1,4 +1,4 @@
-using PEPOKit
+using TimeEvolutionPEPO
 using TensorKit
 using KrylovKit
 using LinearAlgebra

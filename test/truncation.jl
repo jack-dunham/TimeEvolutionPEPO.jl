@@ -1,4 +1,4 @@
-import PEPOKit: partialtruncate, TruncationIsometries
+import TimeEvolutionPEPO: partialtruncate, TruncationIsometries
 
 randpepo(d, DH, DV=DH) = TensorMap(randn, d * d', DH * DV * DH' * DV')
 

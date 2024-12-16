@@ -287,7 +287,7 @@ function fsmlongrangeterm(
         mks = fill(T[eps()], kmax)
         lks = fill(T[eps()], kmax)
     else
-        wk, mks, lks = PEPOKit.twodapprox(alpha, kmax, ngmax; V=1.0, N=N, T=T, gtol=gtol)
+        wk, mks, lks = TimeEvolutionPEPO.twodapprox(alpha, kmax, ngmax; V=1.0, N=N, T=T, gtol=gtol)
     end
 
     println(wk)
@@ -431,7 +431,7 @@ function fsm_long_range_term(
 end
 
 function fsmaxy(space, dt; J=0.5, alpha=3, kmax=15, ngmax=3, tol=eps(), gtol=1e-10, T=Float64, hx=0.0, hy=0.0, hz=0.0)
-    wk_, mks_, lks_ = PEPOKit.twodapprox(alpha, kmax, ngmax;gtol=gtol, N=200, T=T)
+    wk_, mks_, lks_ = TimeEvolutionPEPO.twodapprox(alpha, kmax, ngmax;gtol=gtol, N=200, T=T)
 
     numremoved = 0
 
@@ -476,7 +476,7 @@ end
 function fsmlongrangeterm2(space, dt; 
                            J=1.0, 
                            alpha=3, kmax=10, ngmax=2, force=false, tol=eps(), T=Float64, hx=0.0, hy=0.0, hz=0.0, N=200)
-    wk_, mks_, lks_ = PEPOKit.twodapprox(alpha, kmax, ngmax; N=N, T=T, force)
+    wk_, mks_, lks_ = TimeEvolutionPEPO.twodapprox(alpha, kmax, ngmax; N=N, T=T, force)
 
     numremoved = 0
 

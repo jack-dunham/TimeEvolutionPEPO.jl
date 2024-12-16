@@ -1,8 +1,8 @@
 using Documenter
 using PEPOKit
 
-makedocs(sitename="PEPOKit.jl")
+makedocs(sitename="TimeEvolutionPEPO.jl")
 
 deploydocs(
-    repo = "github.com/jack-dunham/PEPOKit.git",
+    repo = "github.com/jack-dunham/TimeEvolutionPEPO.git",
 )

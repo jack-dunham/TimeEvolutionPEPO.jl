@@ -1,4 +1,4 @@
-module PEPOKit
+module TimeEvolutionPEPO
 
 import TensorKit.AdjointTensorMap
 import TensorKit.IndexTuple
@@ -17,6 +17,9 @@ using ChainRulesCore
 using SparseArrayKit
 
 const ITC = InfiniteTensorContractions
+const PEPOKit = TimeEvolutionPEPO
+
+export PEPOKit
 
 ## ITC exports
 export Square

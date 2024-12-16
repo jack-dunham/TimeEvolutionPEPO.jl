@@ -1,7 +1,7 @@
 # States
 
 ```@meta
-CurrentModule = PEPOKit
+CurrentModule = TimeEvolutionPEPO
 ```
 
 ## Type hierarchy

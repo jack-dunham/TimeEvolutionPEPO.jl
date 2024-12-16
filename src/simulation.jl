@@ -289,7 +289,7 @@ function testthermal(D)
         alg=TEBD(; timestep=0.02, numsteps=100, truncalg=talg),
     )
 
-    rmul!.(PEPOKit.tensors(sim.state), 0.5)
+    rmul!.(TimeEvolutionPEPO.tensors(sim.state), 0.5)
 
     simulate!(measurehook!, sim)
 
@@ -303,7 +303,7 @@ function dampinghook!(sim::Simulation, xi, output)
 
     if sim.info.convergence < 1e-6
 
-        pepo = PEPOKit.quantumstate(sim)
+        pepo = TimeEvolutionPEPO.quantumstate(sim)
         dm = DensityMatrix(pepo, alg)
 
         rhos = map(ind -> ReducedDensityMatrix(dm, ind), uniqueindices(pepo))
@@ -320,13 +320,13 @@ function dampinghook!(sim::Simulation, xi, output)
 end
 
 function measurehook!(sim::Simulation, A=PAULI[1]; env=nothing)
-    pepo = PEPOKit.quantumstate(sim)
+    pepo = TimeEvolutionPEPO.quantumstate(sim)
 
     # alg = VUMPS(; tol=1e-10, maxiter=200, bonddim=36, verbose=true)
     alg = CTMRG(; tol=1e-12, maxiter=50, bonddim=16, verbose=true)
     #
-    # env = newcontraction(alg, contractphysical(PEPOKit.tensors(pepo)))
-    # renormalize!(env, contractphysical(PEPOKit.tensors(pepo)))
+    # env = newcontraction(alg, contractphysical( TimeEvolutionPEPO.tensors(pepo)))
+    # renormalize!(env, contractphysical( TimeEvolutionPEPO.tensors(pepo)))
 
     dm = DensityMatrix(pepo, alg)
     # dm = DensityMatrix(pepo, env)
@@ -345,7 +345,7 @@ function measurehook!(output::Vector, sim, args...)
 
     # init
     
-    tensors = PEPOKit.tensors(sim.state)
+    tensors = TimeEvolutionPEPO.tensors(sim.state)
 
     # alg = CTMRG(; tol=1e-8, maxiter=200, bonddim=16, verbose=true)
     alg = VUMPS(; tol=1e-10, maxiter=200, bonddim=16, verbose=true)
@@ -379,8 +379,8 @@ function negativityhook!(sim::Simulation)
     alg = VUMPS(; maxiter=100, bonddim=16, verbose=true)
 
     dm = DensityMatrix(pepo, alg)
-    rdm1 = PEPOKit.ReducedDensityMatrix(dm, (1, 1), (2, 1))
-    rdm2 = PEPOKit.ReducedDensityMatrix(dm, (1, 1), (3, 1))
+    rdm1 = TimeEvolutionPEPO.ReducedDensityMatrix(dm, (1, 1), (2, 1))
+    rdm2 = TimeEvolutionPEPO.ReducedDensityMatrix(dm, (1, 1), (3, 1))
 
     return (negativity(rdm1), negativity(rdm2))
 end

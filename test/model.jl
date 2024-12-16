@@ -1,4 +1,4 @@
-import PEPOKit: lazypower, curly, dynamicalmpo
+import TimeEvolutionPEPO: lazypower, curly, dynamicalmpo
 
 function xyzlindblad(; Jx=0.5, Jy=1.2, Jz=1.0, Γ=1.0)
     X, Y, Z = PAULI
