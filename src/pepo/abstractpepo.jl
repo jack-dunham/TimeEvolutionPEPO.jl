@@ -6,6 +6,8 @@ uniqueindices(pepo::AbstractPEPO) = uniqueindices(tensors(pepo))
 
 Base.size(pepo::AbstractPEPO) = size(tensors(pepo))
 
+currentbuffer(pepo::AbstractPEPO) = tensors(pepo)
+
 function TensorKit.truncspace(pepo::AbstractPEPO, bond::Bond)
     D = bondspace(pepo, bond)
     return truncspace(D)
@@ -90,5 +92,9 @@ function weights2identity!(pepo::AbstractPEPO)
 end
 
 Base.getindex(pepo::AbstractPEPO, bond::Bond) = currentbuffer(pepo)[bond]
+function Base.setindex!(pepo::AbstractPEPO, value, bond::Bond) 
+    setindex!(currentbuffer(pepo), value, bond)
+    return pepo
+end
 
 hermitianize!(pepo::AbstractPEPO) = hermitianize!.(tensors(pepo))

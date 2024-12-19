@@ -153,7 +153,7 @@ function bonds(lattice::AbstractLattice)
 end
 bonds(lattice::AbstractLattice, axis) = bonds(lattice)[axis]
 
-bonditer(lat) = Iterators.flatten(bonds(lat))
+eachbond(lat) = Iterators.flatten(bonds(lat))
 
 bondswith(::AbstractLattice{G}, ind) where {G} = bondswith(G, ind)
 function bondswith(::Type{Square}, ind)

@@ -33,3 +33,18 @@ function setaxis!(pepo::AxialPEPO, axis::Int)
 
     return pepo
 end
+
+function setweight!(pepo::AxialPEPO, value, bond::Bond; kwargs...)
+    bond = currentaxis(pepo) == 2 ? transpose(bond) : bond
+    setweight!(pepo.parent, value, bond; kwargs...)
+    return pepo
+end
+
+function setindex!(pepo::AxialPEPO, value, bond::Bond; kwargs...)
+    
+    bond = currentaxis(pepo) == 2 ? transpose(bond) : bond
+
+    setindex!(currentbuffer(pepo), value, bond)
+
+    return pepo
+end

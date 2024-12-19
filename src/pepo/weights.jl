@@ -1,6 +1,4 @@
-function setweight!(weights::EdgeLattice, value, bond::Bond; copy=true, axis=bondaxis(bond))
-    bond = axis == bondaxis(bond) ? bond : transpose(bond)
-
+function setweight!(weights::EdgeLattice, value, bond::Bond; copy=false)
     if copy
         copyindex!(weights, value, bond)
     else
@@ -10,12 +8,12 @@ function setweight!(weights::EdgeLattice, value, bond::Bond; copy=true, axis=bon
     return weights
 end
 
-function tolerance!(buffer::W, weights::W, tau::Float64) where {W<:EdgeLattice}
+function tolerance!(buffer::W, weights::W, tau::Float64 = 1.0) where {W<:EdgeLattice}
     tol = broadcast(buffer, weights) do dst, src
         return _tolerance!(dst, src, tau)
     end
 
-    return maximum(tol[bond] for bond in bonditer(tol))
+    return maximum(tol[bond] for bond in eachbond(tol))
 end
 function _tolerance!(ow, nw, tau::Float64)
     if space(ow) != space(nw)

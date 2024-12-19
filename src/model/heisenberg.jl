@@ -12,7 +12,7 @@ abstract type Abstract2DModel <: AbstractModel end
     L::Vector{LindbladTerm} = []
 end
 
-ModelStyle(::Type{Heisenberg}) = IsAxial()
+ModelStyle(::Type{<:Heisenberg}) = IsAxial()
 
 stepper_type(::Type{Heisenberg}, ::Type{<:TEBD}) = LocalStepper
 stepper_type(::Type{Heisenberg}, ::Type{<:AxialTEBD}) = AxialStepper

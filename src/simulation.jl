@@ -200,7 +200,6 @@ function simulate!(callback, sim::Simulation; maxshots=100, maxtime=Inf)
     numsteps = method.numsteps
     timestep = method.timestep
     breaktol = method.breaktol
-    order = method.trotterorder
 
     r = range(; start=1, step=round(Int, numsteps / maxshots, RoundUp), stop=numsteps)
     shotsat = collect(r)
@@ -230,12 +229,13 @@ function simulate!(callback, sim::Simulation; maxshots=100, maxtime=Inf)
     while numiter < numsteps && tol ≥ breaktol
 
         for (i, step) in enumerate(stepper)
-            trunc = getindex.(truncator, i)
-            if i < 0
-                timestep!(pepo, trunc, step, NTU())
-            else
-                timestep!(pepo, trunc, step, truncalg)
+
+            if truncator isa Vector
+                trunc = getindex.(truncator, i)
+            else 
+                trunc = truncator
             end
+            timestep!(pepo, trunc, step, truncalg)
         end
 
         # Calculate the difference in pepo singular values between timesteps
@@ -323,7 +323,7 @@ function measurehook!(sim::Simulation, A=PAULI[1]; env=nothing)
     pepo = TimeEvolutionPEPO.quantumstate(sim)
 
     # alg = VUMPS(; tol=1e-10, maxiter=200, bonddim=36, verbose=true)
-    alg = CTMRG(; tol=1e-12, maxiter=50, bonddim=16, verbose=true)
+    alg = CTMRG(; tol=1e-10, maxiter=50, bonddim=16, verbose=true)
     #
     # env = newcontraction(alg, contractphysical( TimeEvolutionPEPO.tensors(pepo)))
     # renormalize!(env, contractphysical( TimeEvolutionPEPO.tensors(pepo)))

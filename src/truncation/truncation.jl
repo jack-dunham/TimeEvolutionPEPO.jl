@@ -223,10 +223,6 @@ function newtruncators(::NTuple{2,P}, ::Vector{S}, truncalg::SU) where {P<:Abstr
     return SimpleUpdateState(), SimpleUpdateState()
 end
 
-function newtruncators(::PEPOWithBuffer, ::Vector, ::SU)
-    return SimpleUpdateState(), SimpleUpdateState()
-end
-
 ## 
 
 function ITC.newcontraction(conalg, net::HilbertSchmidt; kwargs...)
@@ -253,6 +249,13 @@ end
 
 newtruncators(tensors, st::SimpleUpdateState) = st
 newtruncators(st::SimpleUpdateState) = st
+
+environment!(pepo, ::SimpleUpdateState, bond) = weights(pepo)
+environment!(pepo, ::NTUState, bond) = pair -> ntu_total(pair, tensors(pepo), bond)
+function environment!(pepo, truncator::ITC.InfiniteContraction, bond) 
+    renormalize!(truncator, hilbertschmidt(pepo))
+    return truncator
+end
 
 function renormalize!(env::InfiniteContraction, network; copy=false)
     if copy

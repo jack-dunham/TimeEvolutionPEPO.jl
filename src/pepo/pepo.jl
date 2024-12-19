@@ -160,31 +160,6 @@ end
 stepstyle(pepo) = pepo.stepstyle
 truncstyle(pepo) = pepo.truncstyle
 
-weights(pepo::PEPOWithBuffer) = weights(pepo.parent)
-tensors(pepo::PEPOWithBuffer) = tensors(pepo.parent)
-
-currentbuffer(pepo::PEPOWithBuffer) = _current_buffer(pepo.parent, pepo.buffer, pepo.state)
-currentbuffer(pepo::PEPO) = tensors(pepo)
-currentbuffer(cell::AbstractUnitCell) = cell
-
-function truncate!(pepo::PEPOWithBuffer, isometries, weights)
-    ustyle = stepstyle(pepo)
-    tstyle = truncstyle(pepo)
-
-    truncate!(ustyle, tstyle, pepo, isometries, weights)
-    return pepo
-end
-
-function setaxis!(pepo::PEPOWithBuffer, axis)
-    pepo.state = axis
-
-    otheraxis = mod(axis + 1, 1:2)
-
-    permutetranspose!(getbuffer(pepo, axis - 1), getbuffer(pepo, otheraxis - 1))
-
-    return pepo
-end
-
 expandspace(p::TensorMap{S}, s::S) where {S<:IndexSpace} = expandspace(p, s * s * s' * s')
 function expandspace(p::TensorMap{S}, s::ProductSpace{S,4}) where {S<:IndexSpace}
     u = mapreduce((a, b) -> isometry(a', b'), ⊗, s, domain(p))
@@ -214,7 +189,7 @@ function expandspace!(pepo, space::IndexSpace)
         return u * w * v
     end
 
-    for bond in bonditer(pepo)
+    for bond in eachbond(pepo)
         setweight!(pepo, wtennew[bond], bond; copy=false)
     end
 

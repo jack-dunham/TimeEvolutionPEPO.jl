@@ -1,5 +1,5 @@
 @kwdef mutable struct IterativeSU <: AbstractTruncationScheme
-    maxiter::Int = 20
+    maxiter::Int = 50
     tol::Float64 = 1e-8
     sequential::Bool = false
     recycle::Bool = true
@@ -110,22 +110,56 @@ end
 Base.getindex(isoms::Isometries, I...) = map(uv -> getindex(uv, I...), unpack(isoms))
 Base.getindex(isoms::Isometries, bond::Bond) = isoms[first(bond)] => isoms[last(bond)]
 
-function timestep!(
-    pepo!::PEPO, truncator!::Isometries, stepper, truncalg::IterativeSU
-)
-    iterative_simple_update_prototype!(
-        pepo!,
-        truncator!,
-        stepper;
-        maxiter=truncalg.maxiter,
-        tol=truncalg.tol,
-        recycle=truncalg.recycle,
-        sequential=truncalg.sequential,
-        gauge=truncalg.gauge
-    )
+# stripped down version
+function iterative_simple_update!(pepo!::PEPO, isometries!, stepper, truncalg::IterativeSU)
+    oldweights = deepcopy(weights(pepo))
+
+    i = 0
+
+    while i < truncalg.maxiter
+        for bond in eachbond(pepo!)
+            trunc = truncspace(bondspace(pepo!, bond))
+
+            evolvedpepo = evolve(pepo!, stepper, isometries!, bond)
+
+            pair = evolvedpepo[bond]
+
+            newiso, newweight = simpleupdate(pair, weights(pepo!), bond; trunc=trunc)
+
+            isometries[bond] = newiso
+            setweight!(pepo!, newweight, bond; copy=false)
+        end
+
+        # Check convergence of singular values 
+        conv = tolerance!(oldweights, weights(pepo!))
+
+        conv < truncalg.tol && break
+    end
+
+    truncate!(pepo!, stepper, isometries!)
+
+    quicknormalize!(pepo!)
+    hermitianize!(pepo!)
 
     return pepo!
 end
+
+function truncate!(pepo, stepper, isometries)
+    buff = currentbuffer(pepo)
+
+    for I in eachindex(buff)
+        dst = buff[I]
+        op = tensors(stepper)[I]
+        e, s, w, n = isometries[I]
+
+        truncateto!(dst, copy(dst), op, e, s, w, n)
+
+        # mergeinto!(dst, spten)
+    end
+
+    return pepo
+end
+
 #
 # function timestep!(
 #     pepo!::AxialPEPO, truncator!::Tuple, stepper, truncalg::IterativeSU
@@ -148,14 +182,8 @@ end
 #
 #     return pepo!
 # end
-function timestep!(
-    pepo!::AbstractPEPO, truncator!::Isometries, sequence, truncalg::NTU,
-)
-    iterative_neighbourhood_update!(
-        pepo!,
-        truncator!,
-        sequence;
-    )
+function timestep!(pepo!::AbstractPEPO, truncator!::Isometries, sequence, truncalg::NTU)
+    iterative_neighbourhood_update!(pepo!, truncator!, sequence;)
 
     return pepo!
 end
@@ -163,7 +191,7 @@ end
 function iterative_simple_update_step(pepo, stepper, isometries, bond)
     pair = currentbuffer(pepo)[bond]
 
-    reducedpair = localevolve(pair, stepper, isometries, bond)
+    reducedpair = evolve(pair, stepper, isometries, bond)
 
     foreach(normalize!, reducedpair)
 
@@ -179,27 +207,7 @@ function newtruncators(pepo, sequence, ::IterativeSU)
         iso = newisometries(tensors(pepo), stepper)
         return iso
     end
-    return (rv,rv)
-end
-
-function iterative_simple_update!(pepo!, truncator!, stepper; maxiter, tol)
-
-    evolvedpepo = lazyevolve(pepo!, stepper)
-
-    while i < maxiter
-        for bond in eachbond(pepo!)
-
-            pair = evolvedpepo[bond]
-
-            newiso, newweight = simpleupdate(pair, weights(pepo!))
-
-            isometries[bond] = newiso
-
-            setweight!(pepo!, newweight, bond;copy=false)
-        end
-    end
-
-    truncate!.(pepo!, evolvedpepo, isometries)
+    return (rv, rv)
 end
 
 function iterative_simple_update_prototype!(
@@ -227,7 +235,7 @@ function iterative_simple_update_prototype!(
         messages = sqrtbeliefpropagation(buff, stepper)
         isoms = newsplitisometries(buff, stepper)
 
-        for bond in bonditer(buff)
+        for bond in eachbond(buff)
             D = bondspace(buff, bond)
 
             (u, v), s = vidalisometries(messages, bond; trunc=truncspace(D))
@@ -263,7 +271,6 @@ function iterative_simple_update_prototype!(
 
     println("Original bond entropy $S0")
 
-
     check_fidelity = false
 
     conv = Inf
@@ -274,21 +281,18 @@ function iterative_simple_update_prototype!(
 
     i = 0
 
-
     local ent0
 
     while i < 2 * maxiter
-
         i += 1
 
-        bonds = bonditer(buff)
+        bonds = eachbond(buff)
 
         if sequential
             itr = iseven(i) ? Iterators.reverse(bonds) : bonds
 
             for bond in itr
                 (u, v), s, _ = iterative_simple_update_step(pepo!, stepper, isoms, bond)
-
 
                 setindex!(isoms, u => v, bond)
                 setweight!(pepo!, s, bond; copy=false)
@@ -299,8 +303,7 @@ function iterative_simple_update_prototype!(
 
         else
             Threads.@threads for bond in collect(bonds)
-
-                if check_fidelity && bond == Bond((1,1), (1,2))
+                if check_fidelity && bond == Bond((1, 1), (1, 2))
                     evolvedpepo = evolve(deepcopy(pepo!), stepper)
 
                     copybuff = deepcopy.(buff)
@@ -318,7 +321,7 @@ function iterative_simple_update_prototype!(
                     end
                     evbuff = currentbuffer(evolvedpepo)
 
-                    alg = VUMPS(bonddim=16, maxiter=20, verbose=false)
+                    alg = VUMPS(; bonddim=16, maxiter=20, verbose=false)
 
                     overlap = Lattice(map(ITC.TensorPair, copybuff, evbuff))
 
@@ -335,7 +338,9 @@ function iterative_simple_update_prototype!(
                     FL = vumps.fixedpoints.left
                     FR = vumps.fixedpoints.right
 
-                    rv = tracecontract_two_layer(FL[1,1], FR[1,1], AC[1,1], AC[1,2], copybuff[1,1], evbuff[1,1])
+                    rv = tracecontract_two_layer(
+                        FL[1, 1], FR[1, 1], AC[1, 1], AC[1, 2], copybuff[1, 1], evbuff[1, 1]
+                    )
 
                     overlap = Lattice(map(ITC.TensorPair, copybuff, copybuff))
 
@@ -352,7 +357,14 @@ function iterative_simple_update_prototype!(
                     FL = vumps.fixedpoints.left
                     FR = vumps.fixedpoints.right
 
-                    rvnorm1 = tracecontract_two_layer(FL[1,1], FR[1,1], AC[1,1], AC[1,2], copybuff[1,1], copybuff[1,1])
+                    rvnorm1 = tracecontract_two_layer(
+                        FL[1, 1],
+                        FR[1, 1],
+                        AC[1, 1],
+                        AC[1, 2],
+                        copybuff[1, 1],
+                        copybuff[1, 1],
+                    )
 
                     #=
                     overlap = Lattice(map(ITC.TensorPair, currentbuffer(evolvedpepo), currentbuffer(evolvedpepo)))
@@ -374,14 +386,12 @@ function iterative_simple_update_prototype!(
                     =#
 
                     # @warn "overlap:  " 1 - rv/sqrt(rvnorm1 * rvnorm2)
-                    @warn "overlap:  " rv/sqrt(rvnorm1)
-
+                    @warn "overlap:  " rv / sqrt(rvnorm1)
                 end
                 (u, v), s, _ = iterative_simple_update_step(pepo!, stepper, isoms, bond)
 
                 setindex!(newisoms, u => v, bond)
                 newweights[bond] = s
-
             end
 
             new = weights(pepo!)
@@ -402,7 +412,7 @@ function iterative_simple_update_prototype!(
         oldconv = conv
         conv = tolerance!(new, old, 1.0)
 
-        diff = abs(oldconv - conv)/max(oldconv, conv)
+        diff = abs(oldconv - conv) / max(oldconv, conv)
 
         @warn "Got $conv after $i; diff = $(diff)"
 
@@ -412,7 +422,6 @@ function iterative_simple_update_prototype!(
         if conv < tol || i > maxiter
             break
         end
-
 
         if bisol
             if !bisoldone
@@ -442,11 +451,14 @@ function iterative_simple_update_prototype!(
             end
         end
 
-
         gauge < 2 && continue
 
-        if size(buff) < (2,2)
-            throw(ErrorException("intermediate gauging not yet implemented for unit cell size < (2,2)"))
+        if size(buff) < (2, 2)
+            throw(
+                ErrorException(
+                    "intermediate gauging not yet implemented for unit cell size < (2,2)"
+                ),
+            )
         end
 
         temppepo = deepcopy(pepo!)
@@ -469,9 +481,7 @@ function iterative_simple_update_prototype!(
         gs = broadcast(first, permutedims(gauge2))
         gn = broadcast(last, permutedims(circshift(gauge2, (1, 0))))
 
-        gisoms = SquareLattice(
-            broadcast(tuple, ge, gs, gw, gn)
-        )
+        gisoms = SquareLattice(broadcast(tuple, ge, gs, gw, gn))
 
         isoms = broadcast(eachindex(buff)) do I
             e1, s1, w1, n1 = isoms[I]
@@ -483,16 +493,15 @@ function iterative_simple_update_prototype!(
             w = w2 * w1
             n = n2 * n1
 
-            return (e,s,w,n)
+            return (e, s, w, n)
         end
 
         isoms = Isometries(Lattice(isoms))
 
-        foreach(bonditer(buff)) do bond
+        foreach(eachbond(buff)) do bond
             s = weights(temppepo)[bond]
             setweight!(pepo!, s, bond; copy=true)
         end
-
     end
 
     # broadcast(
@@ -524,10 +533,8 @@ function iterative_simple_update_prototype!(
 
     # minimalcanonicalform!(tensors(pepo))
 
-
     quicknormalize!(pepo!)
     hermitianize!(pepo!)
-
 
     return pepo!, infidelity
 end
@@ -547,7 +554,7 @@ function iterative_neighbourhood_update!(pepo, truncator, stepper)
     # ξ = 500.0
     ξ = Inf
     # truncalg = NTU(; ξ=ξ, rankreduce=false, optalg=EVB(; gauge=NoGauge()))
-    truncalg = NTU(; ξ=ξ, rankreduce=false, optalg=EVB(maxiter=100))
+    truncalg = NTU(; ξ=ξ, rankreduce=false, optalg=EVB(; maxiter=100))
     # truncalg = FET(; alg=VUMPS(bonddim=16, tol=1e-8), ξ=ξ, rankreduce=false, optalg=EVB())
     # truncalg = NTU(; ξ=ξ, rankreduce=true, optalg=DZM(EAT=false,gauge=NoGauge()))
     # truncalg = NTU(; ξ=ξ, rankreduce=true, optalg=DZM())

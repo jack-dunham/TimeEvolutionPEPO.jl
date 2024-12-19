@@ -142,28 +142,32 @@ function process_model(model)
     return process_model(vec)
 end
 function process_model(invec::Vector)
+
     outvec = map(m -> [m;;], invec)
 
-    T = eltype(outvec)
-    MS = UpdateStyle(T)
+    T = eltype(eltype((outvec)))
+    MS = ModelStyle(T)
+
+    println(MS)
 
     return process_model(MS, outvec)
 end
 
 process_model(invec::Vector{<:OnAxis}) = invec
+# TODO: fix this concept, but for now need to manually set the axis
 # By default, need to wrap non-wrapped axial and local equations.
-function process_model(::Union{IsAxial,IsLocal}, invec::Vector)
-    T = eltype(invec)
-
-    outvec = OnAxis{T}[]
-
-    for v in invec
-        push!(outvec, OnAxis(v, 1))
-        push!(outvec, OnAxis(v, 2))
-    end
-
-    return outvec
-end
+# function process_model(::Union{IsAxial,IsLocal}, invec::Vector)
+#     T = eltype(invec)
+#
+#     outvec = OnAxis{T}[]
+#
+#     for v in invec
+#         push!(outvec, OnAxis(v, 1))
+#         push!(outvec, OnAxis(v, 2))
+#     end
+#
+#     return outvec
+# end
 
 process_model(::UpdateStyle, vec::Vector) = vec
 process_model(::UpdateStyle, vec::Vector{<:OnAxis}) = vec

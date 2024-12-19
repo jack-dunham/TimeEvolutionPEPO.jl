@@ -534,7 +534,7 @@ function rankreduce!(tensors::Pair{T,T}; axis=1) where {T<:AbsTen{2,4}}
     return uten => vten, R => L
 end
 
-function updatetensors(pair, weights, bond, truncalg::SU)
+function updatetensors(pair, weights, truncalg::SU, bond)
     absorb_adjacent_weights!(pair, weights, bond; inverse=false)
     newpair, s = simple_update_tensors(pair; axis=bondaxis(bond), xi=truncalg.ξ)
     absorb_adjacent_weights!(newpair, weights, bond; inverse=true)

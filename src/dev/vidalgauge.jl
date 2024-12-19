@@ -115,7 +115,7 @@ function simple_update_gauge_step!(pepo, buffer; inreverse=false, absorb=true)
     # Iterative calculation 
     isnothing(buffer) || copy!.(buffer, currentbuffer(pepo))
 
-    bonds = bonditer(pepo)
+    bonds = eachbond(pepo)
 
     if inreverse
         itr = Iterators.reverse(bonds)
@@ -252,7 +252,7 @@ function truncate_bond_matrices!(pepo)
 end
 
 function truncate_bond_matrices!(dstpepo, srcpepo, isoms)
-    for bond in bonditer(tensors(dstpepo))
+    for bond in eachbond(tensors(dstpepo))
         D = bondspace(dstpepo, bond)
 
         w = weights(srcpepo)[bond]
@@ -490,7 +490,7 @@ function _splitv(op, η)
     return rv
 end
 
-function localevolve(pair::Pair, stepper::FullStepper, isoms, bond)
+function evolve(pair::Pair, stepper::FullStepper, isoms, bond)
     opspair = tensors(stepper)[bond]
 
     isomspair = isoms[bond]
