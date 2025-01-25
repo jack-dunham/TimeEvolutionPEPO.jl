@@ -23,7 +23,7 @@ function timestep!(
 
     return pepo
 end
-function timestep!(
+function _timestep!(
     pepo::PEPO, truncator, stepper::LocalStepper, truncalg::SU; kwargs...
 )
     size(pepo) < (2, 2) && throw(ArgumentError(""))
@@ -68,6 +68,32 @@ function timestep!(
     return pepo!
 end
 
+# function timestep!(
+#     pepo!::AxialPEPO, truncator, stepper::AxialStepper, truncalg::SU; kwargs...
+# )
+#     axis = stepper.axis
+#
+#     println(axis)
+#
+#     # Evolve and then truncate each bond in sequence
+#     if pepo!.currentaxis != axis
+#         setaxis!(pepo!, stepper.axis)
+#     end
+#
+#     isoms = newisometries(tensors(pepo!), stepper)
+#
+#     newpepo = evolve(pepo!, stepper)
+#
+#     simple_update_gauge_parallel!(newpepo)
+#
+#     truncate_bond_matrices!(pepo!, newpepo, isoms)
+#
+#     quicknormalize!(pepo!)
+#     hermitianize!(pepo!)
+#
+#     return pepo!
+# end
+
 function timestep!(
     pepo::AxialPEPO, truncator, stepper::LocalStepper, truncalg::Union{NTU,FET}; kwargs...
 )
@@ -84,7 +110,7 @@ function timestep!(
 
     axisbonds = bonds(buffer, 1)
 
-    checker = false
+    checker = true
 
     if checker
         altbonds = circshift(axisbonds[:, 2], 1)
@@ -150,21 +176,35 @@ end
 function timestep!(
     pepo::AxialPEPO, truncator, stepper::AxialStepper, truncalg::SU; kwargs...
 )
-
-    # Evolve and then truncate each bond in sequence
-    if pepo.currentaxis != stepper.axis
-        setaxis!(pepo, stepper.axis)
-    end
     axis = stepper.axis
 
-    buffer = tensors(pepo)
+    # Evolve and then truncate each bond in sequence
+    if pepo.currentaxis != axis
+        setaxis!(pepo, stepper.axis)
+    end
+
+    buffer = currentbuffer(pepo)
     infidelity = similar(buffer)
 
-    outweights = deepcopy(weights(pepo))
-
-    inweights = axis == 1 ? weights(pepo) : permutedims(weights(pepo))
+    inweights = axis == 1 ? deepcopy(weights(pepo)) : permutedims(weights(pepo))
 
     evolvedtensors = evolve(pepo, stepper)
+
+    evpepo = PEPO(evolvedtensors)
+
+    axial = false
+
+    if !axial
+        if 1 in size(evpepo)
+            simple_update_gauge_parallel!(evpepo; maxiter=500, tol=1e-10)
+        else
+            simple_update_gauge!(evpepo)
+        end
+        inweights = weights(evpepo)
+    else
+        inweights = weights(pepo)
+    end
+
 
     isoms = map(bonds(buffer, 1)) do bond
         D = bondspace(buffer, bond)
@@ -174,15 +214,12 @@ function timestep!(
 
         pair = evolvedtensors[bond]
 
-        iso, s, _ = isometries(pair, inweights, bond, truncalg; D=D, axial=true)
+        iso, s, _ = isometries(pair, inweights, bond, truncalg; D=D, axial=axial)
 
-        realbond = axis == 1 ? bond : transpose(bond)
-        outweights[realbond] = s
+        setweight!(pepo, s, bond; copy=false)
 
         return iso
     end
-
-    tolerance!(weights(pepo), outweights, 1.0)
 
     isoe = broadcast(first, isoms)
     isow = broadcast(last, circshift(isoms, (1, 0)))
@@ -193,6 +230,7 @@ function timestep!(
 
     quicknormalize!(pepo.parent)
     hermitianize!(pepo.parent)
+
 
     return pepo, infidelity
 end
@@ -208,7 +246,8 @@ function timestep!(
         tol=truncalg.tol,
         recycle=truncalg.recycle,
         sequential=truncalg.sequential,
-        gauge=truncalg.gauge
+        gauge=truncalg.gauge,
+        xi = truncalg.xi,
     )
 
     return pepo!

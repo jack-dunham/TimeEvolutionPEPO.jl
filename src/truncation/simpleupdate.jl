@@ -24,7 +24,7 @@ function axial_trotter_step!(pepo, truncator, stepper; truncalg, kwargs...)
     return pepo
 end
 
-function timestep_prototype!(pepo::PEPO, truncator, stepper::LocalStepper, truncalg::SU; kwargs...)
+function timestep!(pepo::PEPO, truncator, stepper::LocalStepper, truncalg::SU; kwargs...)
 
     # Evolve and then truncate each bond in sequence
     axis = stepper.axis
@@ -35,73 +35,52 @@ function timestep_prototype!(pepo::PEPO, truncator, stepper::LocalStepper, trunc
 
     infidelity = similar(buffer)
 
-    axisbonds = bonds(pepo, stepper.axis)
+    allbonds = bonds(pepo, stepper.axis)
 
-    isreversed(stepper) && (axisbonds = Iterators.Reverse(axisbonds))
+    isreversed(stepper) && (allbonds = collect(Iterators.Reverse(allbonds)))
 
     checker = true
 
-    if checker
-        altbonds = circshift(axisbonds[:, 2], 1)
-        axisbonds = axisbonds[:, 1]
-    end
+    shiftf = checker ? (v, i) -> circshift(v, i - 1) : (v, _) -> circshift(v, 0)
+    
+    bondcols = map(in -> shiftf(in[2], in[1]), enumerate(eachslice(allbonds; dims=2)))
 
-    for (i, bond) in enumerate(axisbonds)
+    while !isempty(bondcols)
+       
+        bondcol = first(bondcols)
 
-        # println(bond)
-        # println("alt:", altbonds[i])
+        while !isempty(bondcol)
 
-        # Evolved the pair of tensors connected by `bond`, leaving the original pair
-        # unmutated.
-        pair = evolve(pepo, stepper, bond)
+            bond = first(bondcol)
 
-        # (u, v), s, _ = isometries!(pair, pepo, bond, truncalg)
-        absorb_adjacent_weights!(pair, weights(pepo), bond; inverse=false)
-        newpair, s = isometries(pair; axis=bondaxis(bond), xi=truncalg.ξ)
-        absorb_adjacent_weights!(newpair, weights(pepo), bond; inverse=true)
+            env = environment!(pepo, SimpleUpdateState(), bond)
 
-        # newpair = mapreduce(copy, =>, pepo[bond])
+            # println(bond)
+            # println("alt:", altbonds[i])
 
-        # oldA, oldB = pepo[bond]
-        #
-        # a1, a2, a3, a4 = domain(oldA)
-        # b1, b2, b3, b4 = domain(oldB)
-        #
-        # Du = domain(u)
-        # Dv = codomain(v)
-        #
-        # if bondaxis(bond) == 1
-        #     domA = Du * a2 * a3 * a4
-        #     domB = b1 * b2 * Dv' * b4
-        # elseif bondaxis(bond) == 2
-        #     domA = a1 * Du * a3 * a4
-        #     domB = b1 * b2 * b3 * Dv'
-        # end
-        #
-        # newA = similar(oldA, codomain(oldA), domA)
-        # newB = similar(oldB, codomain(oldB), domB)
-        #
-        # newpair = newA => newB
-        #
-        # truncateto!(newpair, pair, u => v; axis=bondaxis(bond))
+            # Evolved the pair of tensors connected by `bond`, leaving the original pair
+            # unmutated.
+            pair = evolve(pepo, stepper, bond)
 
-        pepo.state[bond] = newpair
 
-        if checker
-            altbond = altbonds[i]
+            newpair, newweight = updatetensors(pair, env, truncalg, bond)
 
-            pepo.state[altbond] = mapreduce(copy, =>, newpair)
+            # Loop through all the columns 
+            for col in bondcols
+                thisbond = popfirst!(col)
 
-            setweight!(pepo, s, altbond; copy=false)
+                pepo.state[thisbond] = mapreduce(copy, =>, newpair)
+                setweight!(pepo, newweight, thisbond; copy=false)
+
+                # If not a checkerboard lattice, only update the first column
+                checker || break
+            end
+
+            quicknormalize!(pepo)
+            hermitianize!(pepo)
         end
 
-        # copy!(oldA, newA)
-        # copy!(oldB, newB)
-
-        setweight!(pepo, s, bond; copy=false)
-
-        quicknormalize!(pepo)
-        hermitianize!(pepo)
+        popfirst!(bondcols)
     end
 
     # simple_update_gauge!(pepo; reset=true, verbose=false)
@@ -196,22 +175,21 @@ function isometries_from_svd(P, Q, u0, v0; xi=Inf, trunc=notrunc(), absorb=true,
     # u, s, v, err2 = safetsvd!(normalize(u0 * v0); trunc=trunc)
     u, s, v, err2 = safetsvd!(u0 * v0; trunc=trunc)
 
+    # rmul!(s, 1 / tr(s))
     maxnormalize!(s)
 
+    uv = u => v
+
     if absorb
-        u = u * sqrt(s)
-        v = sqrt(s) * v
+        uv, s = applyweight(uv, s, xi)
         f = localfidelity(u, v, P, Q, u0, v0; axis=axis)
     else
+        xi < Inf && rescale!(s, copy(s), xi)
         # f = fidelity(u * sqrt(s), sqrt(s) * v, P, Q, u0, v0)
     end
     f = 0
 
-    iso = u => v
-
-    xi < Inf && rescale!( TimeEvolutionPEPO.TruncationIsometries(u, s, v), xi; verbose=false)
-
-    return u => v, s, 1 - f
+    return uv, s, 1 - f
 end
 
 function hori_weights(uten::T, vten::T, U, V; axial) where {T<:AbsTen{2,4}}

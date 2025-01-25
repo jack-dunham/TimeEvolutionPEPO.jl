@@ -80,10 +80,8 @@ function MPO(eqn::LindbladEquation)
         X, Y = term.term
         alam = term.coeff
 
-        println(term.coeff)
-
-        C[1, i] = -alam * im * kron(X, Id)
-        C[1, i + 1] = alam * im * kron(Id, transpose(X))
+        C[1, i] = -alam * term.decay * im * kron(X, Id)
+        C[1, i + 1] = alam * term.decay * im * kron(Id, transpose(X))
 
         B[i, 1] = kron(Y, Id)
         B[i + 1, 1] = kron(Id, transpose(Y))
@@ -96,19 +94,19 @@ function MPO(eqn::LindbladEquation)
 
     # LOCAL TERMS (divide each by 1/2 on assumption of two-dimensional simulation)
 
-    D[1, 1] = 1 / 2 * sum(eqn.onelocal; init=D[1, 1]) do term
+    foreach(eqn.onelocal) do term
         # Absorb coefficient
         H = Matrix{ComplexF64}(term)
 
-        return -im * (kron(H, one(H)) - kron(one(H), transpose(H)))
+        D[1,1] += -im / 2 * (kron(H, one(H)) - kron(one(H), transpose(H)))
     end
 
-    D[1, 1] = 1 / 2 * sum(eqn.linops; init=D[1, 1]) do term
+    foreach(eqn.linops) do term
         # Absorb coefficient
         L = Matrix{ComplexF64}(term)
 
         anticomm = kron(L' * L, one(L)) + kron(one(L), transpose(L' * L))
-        return kron(L, transpose(L')) - 1 / 2 * anticomm
+        D[1,1] += 1 / 2 * (kron(L, transpose(L')) - 1 / 2 * anticomm)
     end
 
     return MPO(A, B, C, D)

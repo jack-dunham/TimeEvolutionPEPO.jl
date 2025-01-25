@@ -54,13 +54,13 @@ function tebdtensor(model::LindbladEquation, p1::IndexSpace, p2::IndexSpace, dt;
         dt = dt / 2
     else
         vecf = vectorise
-        data = 1 / 2 * sum(vecf, model.linops; init=data)
+        data += 1 / 2 * sum(vecf, model.linops; init=zero(data))
     end
 
     # We divide by half again for local terms as in 2D we effectively apply these twice
-    data = 1 / 2 * sum(vecf, model.onelocal; init=data)
+    data += 1 / 2 * sum(vecf, model.onelocal; init=zero(data))
 
-    data = sum(vecf, model.twolocal; init=data)
+    data += sum(vecf, model.twolocal; init=zero(data))
 
     copyto!(symdata, exp(dt * data))
 

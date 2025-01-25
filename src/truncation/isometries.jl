@@ -357,14 +357,13 @@ function single_bond_metric_isometries!(
         else
             _, (u0, v0) = rankreduce!(pair)
         end
-    else
-        _, (u0, v0) = rankreduce(pair)
-        u0 = one(u0)
-        v0 = one(v0)
-        # u0, v0 = isometryinit(truncmetric, D)
     end
 
     truncmetric = metric(pair, environment, bond)
+
+    if !doreduction
+        u0, v0 = isometryinit(truncmetric, D)
+    end
 
     iso, infid = metricoptimise(
         u0, v0, truncmetric; trunc=truncspace(D), doreduction=doreduction, optkwargs...
@@ -556,7 +555,10 @@ function simple_update_tensors(pair::Pair{T}; axis, xi=Inf) where {T<:AbsTen{2,5
         L, Q2 = rightorth(vten, (6, 7), (1, 2, 3, 4, 5))
     end
 
-    u, s, v, err = tsvd!(R * L; trunc=truncdim(dim(D)))
+    u, s, v, err1 = tsvd!(R * L; trunc=truncdim(dim(D)))
+    # u, s, v, err2 = tsvd!(R * L; trunc=truncspace(D))
+
+    # println(err2)
 
     maxnormalize!(s)
 

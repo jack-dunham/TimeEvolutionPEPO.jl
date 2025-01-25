@@ -10,9 +10,14 @@ function minimalcanonicalform!(lat::AbstractLattice; kwargs...)
 end
 
 function minimalcanonicalform!(tensor::AbsTen{2,4}; tol=1e-10, maxiter=1000)
-    hor = id(domain(tensor)[1])
-    ver = id(domain(tensor)[2])
+    # hor = id(domain(tensor)[1])
+    # ver = id(domain(tensor)[2])
+
+    hor, ver, _, _ = map(id, domain(tensor))
+
+    # Buffer tensor
     T = deepcopy(tensor)
+
     err = Inf
     numiter = 0
 
@@ -40,10 +45,6 @@ function minimalcanonicalform!(tensor::AbsTen{2,4}; tol=1e-10, maxiter=1000)
             @tensor trketbra = tr(p_h1)
             err = 1 / real(trketbra) * (norm(h_diff)^2 + norm(v_diff)^2)
 
-            # if err ≤ tol^2
-            #     break
-            # end
-
             hort *= hor
             vert *= ver
 
@@ -64,7 +65,7 @@ end
 function mcfgauge!(p_out, p_in, g1, g2) #hor, ver
     g1i = permute(inv(g1), (2,), (1,))
     g2i = permute(inv(g2), (2,), (1,))
-    @tensor p_out[k b; e s w n] =
+    @tensoropt p_out[k b; e s w n] =
         p_in[k b; ee ss ww nn] * g1[ee; e] * g2[ss; s] * g1i[ww; w] * g2i[nn; n]
     return p_out
 end

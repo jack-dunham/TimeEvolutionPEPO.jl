@@ -85,6 +85,7 @@ function applyweight(uv, s, xi; verbose=true)
         s = s * sclt
 
         maxnormalize!(s)
+        # rmul!(s, 1 / tr(s))
     end
 
     u =  u0 * sqrt(s)

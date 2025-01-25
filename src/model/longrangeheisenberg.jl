@@ -227,6 +227,10 @@ struct ExponentialBasisFit{T}
     mk::Vector{Vector{T}}
     lk::Vector{Vector{T}}
 end
+struct ExponentialBasisFitSummary{T}
+    fit::ExponentialBasisFit{T}
+    pks::Vector{T}
+end
 
 function (fit::ExponentialBasisFit)(x,y)
     wks = fit.w
@@ -257,6 +261,9 @@ function (fit::ExponentialBasisFit)(x,y)
     end
 
     return cumsum
+end
+
+function summary(fit::ExponentialBasisFit)
 end
 
 function fsmlongrangeterm(
@@ -470,7 +477,7 @@ function fsmaxy(space, dt; J=0.5, alpha=3, kmax=15, ngmax=3, tol=eps(), gtol=1e-
         end
     end
 
-    return rv
+    return rv, ExponentialBasisFit(wk, mks, lks)
 end
 
 function fsmlongrangeterm2(space, dt; 

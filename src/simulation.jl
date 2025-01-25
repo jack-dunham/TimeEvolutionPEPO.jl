@@ -224,20 +224,22 @@ function simulate!(callback, sim::Simulation; maxshots=100, maxtime=Inf)
         truncator = newtruncators(pepo, stepper, truncalg)
     end
 
+    println(typeof(truncator))
+
     t0 = time()
 
     while numiter < numsteps && tol ≥ breaktol
 
         for (i, step) in enumerate(stepper)
 
-            if truncator isa Vector
+            if eltype(truncator) <: AbstractVector
                 trunc = getindex.(truncator, i)
-            else 
+            else
                 trunc = truncator
             end
+
             timestep!(pepo, trunc, step, truncalg)
         end
-
         # Calculate the difference in pepo singular values between timesteps
         tol = tolerance!(prev_weights, weights(pepo), timestep)
         # tol = 0.0
@@ -322,8 +324,8 @@ end
 function measurehook!(sim::Simulation, A=PAULI[1]; env=nothing)
     pepo = TimeEvolutionPEPO.quantumstate(sim)
 
-    # alg = VUMPS(; tol=1e-10, maxiter=200, bonddim=36, verbose=true)
-    alg = CTMRG(; tol=1e-10, maxiter=50, bonddim=16, verbose=true)
+    alg = VUMPS(; tol=1e-10, maxiter=50, bonddim=16, verbose=true)
+    # alg = CTMRG(; tol=1e-10, maxiter=100, bonddim=16, verbose=true)
     #
     # env = newcontraction(alg, contractphysical( TimeEvolutionPEPO.tensors(pepo)))
     # renormalize!(env, contractphysical( TimeEvolutionPEPO.tensors(pepo)))

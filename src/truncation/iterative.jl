@@ -4,6 +4,7 @@
     sequential::Bool = false
     recycle::Bool = true
     gauge::Int = 0
+    xi = Inf
 end
 
 struct Isometries{G,N,U<:AbsTen{N},V<:TenAbs{N}}
@@ -188,7 +189,7 @@ function timestep!(pepo!::AbstractPEPO, truncator!::Isometries, sequence, trunca
     return pepo!
 end
 
-function iterative_simple_update_step(pepo, stepper, isometries, bond)
+function iterative_simple_update_step(pepo, stepper, isometries, bond; kwargs...)
     pair = currentbuffer(pepo)[bond]
 
     reducedpair = evolve(pair, stepper, isometries, bond)
@@ -197,7 +198,7 @@ function iterative_simple_update_step(pepo, stepper, isometries, bond)
 
     D = bondspace(pepo, bond)
 
-    (u, v), s, infid = simpleupdate(reducedpair, weights(pepo), bond; trunc=truncspace(D))
+    (u, v), s, infid = simpleupdate(reducedpair, weights(pepo), bond; trunc=truncspace(D), kwargs...)
 
     return (u, v), s, infid
 end
@@ -211,7 +212,7 @@ function newtruncators(pepo, sequence, ::IterativeSU)
 end
 
 function iterative_simple_update_prototype!(
-    pepo!, truncator!, stepper; maxiter, tol, sequential, recycle, gauge
+    pepo!, truncator!, stepper; maxiter, tol, sequential, recycle, gauge, xi,
 )
     mode = :none
 
@@ -292,7 +293,7 @@ function iterative_simple_update_prototype!(
             itr = iseven(i) ? Iterators.reverse(bonds) : bonds
 
             for bond in itr
-                (u, v), s, _ = iterative_simple_update_step(pepo!, stepper, isoms, bond)
+                (u, v), s, _ = iterative_simple_update_step(pepo!, stepper, isoms, bond; xi=xi)
 
                 setindex!(isoms, u => v, bond)
                 setweight!(pepo!, s, bond; copy=false)
@@ -388,7 +389,7 @@ function iterative_simple_update_prototype!(
                     # @warn "overlap:  " 1 - rv/sqrt(rvnorm1 * rvnorm2)
                     @warn "overlap:  " rv / sqrt(rvnorm1)
                 end
-                (u, v), s, _ = iterative_simple_update_step(pepo!, stepper, isoms, bond)
+                (u, v), s, _ = iterative_simple_update_step(pepo!, stepper, isoms, bond; xi = xi)
 
                 setindex!(newisoms, u => v, bond)
                 newweights[bond] = s

@@ -13,6 +13,7 @@ abstract type Abstract2DModel <: AbstractModel end
 end
 
 ModelStyle(::Type{<:Heisenberg}) = IsAxial()
+ModelStyle(::Type) = IsGlobal()
 
 stepper_type(::Type{Heisenberg}, ::Type{<:TEBD}) = LocalStepper
 stepper_type(::Type{Heisenberg}, ::Type{<:AxialTEBD}) = AxialStepper
@@ -323,7 +324,7 @@ function tebdtensor(
     end
 
     # Local operators
-    lop = sum(vectorise, model.L; init=lop)
+    lop += sum(vectorise, model.L; init=zero(lop))
 
     L = exp(dt / (4 * numops) * lop)
 
@@ -391,7 +392,7 @@ function tebdtensor(model::Heisenberg, p::IndexSpace, method::AbstractTEBD, dt; 
     end
 
     # Local operators
-    lop = sum(model.L; init=lop) do op
+    lop += sum(model.L; init=zero(lop)) do op
         return localvectorise(op) / (4 * numops)
     end
 

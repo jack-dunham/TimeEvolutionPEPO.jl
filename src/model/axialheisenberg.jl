@@ -1,4 +1,7 @@
 struct AxialHeisenberg <: AbstractLindbladEquation
+    hx::Float64
+    hy::Float64
+    hz::Float64
     Jx::Float64
     Jy::Float64
     Jz::Float64
@@ -16,11 +19,11 @@ end
 
 Base.broadcastable(o::AxialHeisenberg) = Ref(o)
 
-function AxialHeisenberg(L...; Jx=0.0, Jy=0.0, Jz=0.0, Kx=0.0, Ky=0.0, Kz=0.0)
+function AxialHeisenberg(L...; hx = 0.0, hy = 0.0, hz = 0.0, Jx=0.0, Jy=0.0, Jz=0.0, Kx=0.0, Ky=0.0, Kz=0.0)
     itr = map(L) do op
         return op isa LindbladTerm ? op : lin(op)
     end
-    return AxialHeisenberg(Jx, Jy, Jz, Kx, Ky, Kz, collect(itr))
+    return AxialHeisenberg(hx, hy, hz, Jx, Jy, Jz, Kx, Ky, Kz, collect(itr))
 end
 
 getparams(axp::AxialHeisenberg) = (axp.Jx, axp.Jy, axp.Jz, axp.Kx, axp.Ky, axp.Kz)
@@ -67,7 +70,7 @@ function MPO(model::AxialHeisenberg)
 
     Id = Matrix{ComplexF64}(I, 2, 2)
 
-    chi = 2 * count(!iszero, getparams(model))
+    chi = 3 * count(!iszero, getparams(model))
 
     T = BlockMatrix
 
@@ -87,6 +90,14 @@ function MPO(model::AxialHeisenberg)
 
     i = 1
 
+    if isempty(linops)
+        @info "Is thermal"
+        c1 = c2 = -1/ 2
+    else
+        c1 = -im
+        c2 = im
+    end
+
     for (J, K, O) in zip((Jx, Jy, Jz), (Kx, Ky, Kz), PAULI)
         if iszero(J) && iszero(K)
             continue
@@ -95,8 +106,8 @@ function MPO(model::AxialHeisenberg)
         if iszero(J)
             J = 1
         else
-            B[i, 1] = -J * im * kron(O, Id)
-            B[i + 1, 1] = J * im * kron(Id, transpose(O))
+            B[i, 1] = J * c1 * kron(O, Id)
+            B[i + 1, 1] = J * c2 * kron(Id, transpose(O))
         end
 
         # Always need these rules
@@ -109,24 +120,34 @@ function MPO(model::AxialHeisenberg)
         if iszero(K)
             str = 2
         else
-            str = 4
+            str = 6
 
-            A[i, i + 2] = kron(Id, Id)
-            A[i + 1, i + 3] = kron(Id, Id)
+            C[1, i + 2] = kron(O, Id) # ket
+            C[1, i + 3] = kron(Id, transpose(O)) # bra
 
-            B[i + 2, i] = -K * im * kron(O, Id)
-            B[i + 3, i] = K * im * kron(Id, transpose(O))
+            A[i + 2, i + 4] = kron(Id, Id)
+            A[i + 3, i + 5] = kron(Id, Id)
+
+            B[i + 4, i] = K * c1 * kron(O, Id)
+            B[i + 5, i] = K * c2 * kron(Id, transpose(O))
         end
 
         i += str
     end
 
-    D[1, 1] = 1 / 2 * sum(linops; init=D[1, 1]) do term
+    foreach(linops) do term
         # Absorb coefficient
         L = Matrix{ComplexF64}(term)
 
         anticomm = kron(L' * L, one(L)) + kron(one(L), transpose(L' * L))
-        return kron(L, transpose(L')) - 1 / 2 * anticomm
+        D[1,1] += 1 / 2 * kron(L, transpose(L')) - 1 / 2 * anticomm
+    end
+
+    foreach((model.hx, model.hy, model.hz), PAULI) do coeff, op
+        # Absorb coefficient
+        H = Matrix{ComplexF64}(coeff * op)
+
+        D[1,1] += 1 / 2 * (c1 * kron(H, one(H)) + c2 * kron(one(H), transpose(H)))
     end
 
     return MPO(A, B, C, D)

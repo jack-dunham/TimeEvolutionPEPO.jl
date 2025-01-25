@@ -24,6 +24,7 @@ function setaxis!(pepo::AxialPEPO, axis::Int)
     oldaxis = currentaxis(pepo)
 
     if currentaxis(pepo) == axis
+        @warn "Nothing to do..."
         return pepo
     end
 
@@ -40,7 +41,7 @@ function setweight!(pepo::AxialPEPO, value, bond::Bond; kwargs...)
     return pepo
 end
 
-function setindex!(pepo::AxialPEPO, value, bond::Bond; kwargs...)
+function Base.setindex!(pepo::AxialPEPO, value, bond::Bond; kwargs...)
     
     bond = currentaxis(pepo) == 2 ? transpose(bond) : bond
 
