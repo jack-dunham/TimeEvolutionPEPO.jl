@@ -20,6 +20,32 @@ struct AxialLongRangeHeisenberg <: AbstractModel
     L::Vector{LindbladTerm}
 end
 
+struct PowerLawTerm
+    op::Matrix{ComplexF64}
+    localops::Vector{Matrix{ComplexF64}}
+    linops::Vector{Matrix{ComplexF64}}
+    weight::ComplexF64
+    subweights::Vector{ComplexF64}
+    exponents::Vector{ComplexF64}
+    localscaling::Int
+    coeff::Float64
+end
+
+function (model::PowerLawTerm)(hilbertspace, ::TEPEPSO; kwargs...)
+    return timestep -> fsmgeneral(
+        model.op,
+        model.localops,
+        model.linops,
+        hilbertspace,
+        timestep,
+        model.weight,
+        model.subweights,
+        model.exponents;
+        localscaling=model.localscaling,
+        J=model.coeff,
+    )
+end
+
 UpdateStyle(::Type{LongRangeHeisenberg}) = IsGlobal()
 UpdateStyle(::Type{AxialLongRangeHeisenberg}) = IsGlobal()
 
@@ -232,7 +258,7 @@ struct ExponentialBasisFitSummary{T}
     pks::Vector{T}
 end
 
-function (fit::ExponentialBasisFit)(x,y)
+function (fit::ExponentialBasisFit)(x, y)
     wks = fit.w
     mks = fit.mk
     lks = fit.lk
@@ -244,7 +270,6 @@ function (fit::ExponentialBasisFit)(x,y)
     cumsum = 0
 
     for (wk, mkis, lkis) in zip(wks, mks, lks)
-
         itr = zip(mkis, lkis)
 
         for (mki, lki) in itr
@@ -263,30 +288,29 @@ function (fit::ExponentialBasisFit)(x,y)
     return cumsum
 end
 
-function summary(fit::ExponentialBasisFit)
-end
+function summary(fit::ExponentialBasisFit) end
 
 function fsmlongrangeterm(
     op,
     localops,
     linops,
-    space, 
-    dt; 
+    space,
+    dt;
     # Interaction strength parameters
     alpha=Inf,
-    kmax = 1,
-    ngmax = 1,
+    kmax=1,
+    ngmax=1,
     N=200,
-    T= ComplexF64,
+    T=ComplexF64,
     gtol=1e-8,
     # Model parameters
-    hx = 0.0,
-    hy = 0.0,
-    hz = 0.0,
-    J = 0.0,
+    hx=0.0,
+    hy=0.0,
+    hz=0.0,
+    J=0.0,
     # FSM parameters
-    extend = true,
-    thermal = false,
+    extend=true,
+    thermal=false,
 )
     if alpha == Inf
         wk = zeros(T, kmax)
@@ -294,7 +318,9 @@ function fsmlongrangeterm(
         mks = fill(T[eps()], kmax)
         lks = fill(T[eps()], kmax)
     else
-        wk, mks, lks = TimeEvolutionPEPO.twodapprox(alpha, kmax, ngmax; V=1.0, N=N, T=T, gtol=gtol)
+        wk, mks, lks = TimeEvolutionPEPO.twodapprox(
+            alpha, kmax, ngmax; V=1.0, N=N, T=T, gtol=gtol
+        )
     end
 
     println(wk)
@@ -314,9 +340,9 @@ function fsmlongrangeterm(
             mk,
             lk;
             J=J,
-            localscaling = length(wk),
-            extend = extend,
-            thermal = thermal,
+            localscaling=length(wk),
+            extend=extend,
+            thermal=thermal,
         )
         push!(rv, term)
     end
@@ -437,8 +463,10 @@ function fsm_long_range_term(
     return pepo
 end
 
-function fsmaxy(space, dt; J=0.5, alpha=3, kmax=15, ngmax=3, tol=eps(), gtol=1e-10, T=Float64, hx=0.0, hy=0.0, hz=0.0)
-    wk_, mks_, lks_ = TimeEvolutionPEPO.twodapprox(alpha, kmax, ngmax;gtol=gtol, N=200, T=T)
+function fsmaxy(; J=0.5, alpha=3, kmax=10, ngmax=4, tol=eps(), gtol=1e-10)
+    wk_, mks_, lks_ = TimeEvolutionPEPO.twodapprox(
+        alpha, kmax, ngmax; gtol=gtol, N=200, T=ComplexF64
+    )
 
     numremoved = 0
 
@@ -447,7 +475,6 @@ function fsmaxy(space, dt; J=0.5, alpha=3, kmax=15, ngmax=3, tol=eps(), gtol=1e-
     lks = empty(lks_)
 
     for i in eachindex(wk_)
-
         if abs(wk_[i]) < tol
             numremoved += 1
             continue
@@ -464,7 +491,7 @@ function fsmaxy(space, dt; J=0.5, alpha=3, kmax=15, ngmax=3, tol=eps(), gtol=1e-
 
     X, Y, _ = PAULI
 
-    rv = []
+    rv = PowerLawTerm[]
 
     linops = [LADDER[1]]
 
@@ -472,7 +499,8 @@ function fsmaxy(space, dt; J=0.5, alpha=3, kmax=15, ngmax=3, tol=eps(), gtol=1e-
 
     for (op, j) in zip((X, Y), (J, -J))
         for (w, mk, lk) in zip(wk, mks, lks)
-            term = fsmgeneral(op, [],linops, space, dt, w, mk, lk; localscaling=scale, J=j)
+            # term = fsmgeneral(op, [], linops, space, dt, w, mk, lk; localscaling=scale, J=j)
+            term = PowerLawTerm(op, [], linops, w, mk, lk, scale, j)
             push!(rv, term)
         end
     end
@@ -480,9 +508,21 @@ function fsmaxy(space, dt; J=0.5, alpha=3, kmax=15, ngmax=3, tol=eps(), gtol=1e-
     return rv, ExponentialBasisFit(wk, mks, lks)
 end
 
-function fsmlongrangeterm2(space, dt; 
-                           J=1.0, 
-                           alpha=3, kmax=10, ngmax=2, force=false, tol=eps(), T=Float64, hx=0.0, hy=0.0, hz=0.0, N=200)
+function fsmlongrangeterm2(
+    space,
+    dt;
+    J=1.0,
+    alpha=3,
+    kmax=10,
+    ngmax=2,
+    force=false,
+    tol=eps(),
+    T=Float64,
+    hx=0.0,
+    hy=0.0,
+    hz=0.0,
+    N=200,
+)
     wk_, mks_, lks_ = TimeEvolutionPEPO.twodapprox(alpha, kmax, ngmax; N=N, T=T, force)
 
     numremoved = 0
@@ -492,7 +532,6 @@ function fsmlongrangeterm2(space, dt;
     lks = empty(lks_)
 
     for i in eachindex(wk_)
-
         if abs(wk_[i]) < tol
             numremoved += 1
             continue
@@ -524,11 +563,28 @@ function fsmlongrangeterm2(space, dt;
     for (w, mk, lk) in zip(wk, mks, lks)
         println(w)
         println(w * mk .* lk)
-        for ((mkx, mky), (lkx, lky)) in zip(Iterators.product(mk, mk), Iterators.product(lk, lk))
+        for ((mkx, mky), (lkx, lky)) in
+            zip(Iterators.product(mk, mk), Iterators.product(lk, lk))
             # println("(1,0): ", w * mkx * lkx)
             # println(w * mkx * lkx * mky * lky)
             # println(w * mkx * lkx^2 * mky * lky)
-            term = fsmbigeneral(op, linops, space, dt, w, mkx, lkx, mky,lky; numterm=scale, ng = length(mk), J=J, hx=hx, hy=hy, hz=hz)
+            term = fsmbigeneral(
+                op,
+                linops,
+                space,
+                dt,
+                w,
+                mkx,
+                lkx,
+                mky,
+                lky;
+                numterm=scale,
+                ng=length(mk),
+                J=J,
+                hx=hx,
+                hy=hy,
+                hz=hz,
+            )
             push!(rv, term)
         end
     end
@@ -608,7 +664,7 @@ function fsmbigeneral(
         ## X-Rules
 
         # Start going east
-        rules.C[c, 1, 1, 1] =  wk * mkx * lkx * C / ng
+        rules.C[c, 1, 1, 1] = wk * mkx * lkx * C / ng
 
         # Finish going east
         rules.B[1, 1, c, 1] = B
@@ -667,7 +723,7 @@ function fsmgeneral(
     mks,
     lks;
     J=1.0,
-    localscaling = 1.0,
+    localscaling=1.0,
     extend=true,
     thermal=false,
 )
@@ -678,11 +734,11 @@ function fsmgeneral(
     rules = (A=T(), B=T(), C=T(), D=T())
 
     X, Y, Z = PAULI
-    
+
     D = kron(zero(Id), zero(Id))
 
     for A in localops
-        if thermal 
+        if thermal
             D += -0.5 * (kron(A, Id) + kron(Id, transpose(A)))
         else
             D += -im * (kron(A, Id) - kron(Id, transpose(A)))
@@ -792,7 +848,7 @@ function fsmsymmetric(
     mks,
     lks;
     J=1.0,
-    localscaling = 1.0,
+    localscaling=1.0,
     extend=true,
     thermal=false,
 )
@@ -803,11 +859,11 @@ function fsmsymmetric(
     rules = (A=T(), B=T(), C=T(), D=T())
 
     X, Y, Z = PAULI
-    
+
     D = kron(zero(Id), zero(Id))
 
     for A in localops
-        if thermal 
+        if thermal
             D += -0.5 * (kron(A, Id) + kron(Id, transpose(A)))
         else
             D += -im * (kron(A, Id) - kron(Id, transpose(A)))
@@ -842,7 +898,7 @@ function fsmsymmetric(
     hstr = 1
     vstr = 1
 
-    for (C, B, j) in zip((C1, C2), (B1, B2), (j1,j2))
+    for (C, B, j) in zip((C1, C2), (B1, B2), (j1, j2))
         Id = kron(one(op), one(op))
         gapprox = zip(mks, lks)
 
@@ -872,7 +928,6 @@ function fsmsymmetric(
             rules.A[1, u, 1, u] = l1 * Id
 
             for (n2, (m2, l2)) in enumerate(gapprox)
-
                 c1 = c
                 u1 = u
 
@@ -991,7 +1046,7 @@ function fsmaxial(
 
     return TensorMap(data, d * d' * d' * d, Dx * Dy * Dx' * Dy')
 end
-function twodapprox(alpha, n, ngmax=2; V=1.0, N=50, T=ComplexF64, gtol = 1e-10, force=false)
+function twodapprox(alpha, n, ngmax=2; V=1.0, N=50, T=ComplexF64, gtol=1e-10, force=false)
     wks, lam = approx_as_sum_of_exp(T, alpha / 2, n; N=N, V=V)
 
     pks = -log.(lam)
@@ -1012,7 +1067,6 @@ function twodapprox(alpha, n, ngmax=2; V=1.0, N=50, T=ComplexF64, gtol = 1e-10, 
         ngfinal = 1
 
         for ng in (ng0 + 1):ngmax
-
             errfinal < gtol && break
 
             mkisnew, lkisnew = generalised_approx_as_sum_of_exp(f, ng; N=N, T=T)
