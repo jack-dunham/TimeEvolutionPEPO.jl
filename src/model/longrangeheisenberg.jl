@@ -293,57 +293,36 @@ function summary(fit::ExponentialBasisFit) end
 function fsmlongrangeterm(
     op,
     localops,
-    linops,
-    space,
-    dt;
+    linops;
     # Interaction strength parameters
     alpha=Inf,
     kmax=1,
     ngmax=1,
     N=200,
-    T=ComplexF64,
     gtol=1e-8,
     # Model parameters
-    hx=0.0,
-    hy=0.0,
-    hz=0.0,
     J=0.0,
     # FSM parameters
     extend=true,
     thermal=false,
 )
     if alpha == Inf
-        wk = zeros(T, kmax)
+        wk = zeros(ComplexF64, kmax)
         wk[1] = eps()^(-2)
-        mks = fill(T[eps()], kmax)
-        lks = fill(T[eps()], kmax)
+        mks = fill(ComplexF64[eps()], kmax)
+        lks = fill(ComplexF64[eps()], kmax)
     else
         wk, mks, lks = TimeEvolutionPEPO.twodapprox(
-            alpha, kmax, ngmax; V=1.0, N=N, T=T, gtol=gtol
+            alpha, kmax, ngmax; V=1.0, N=N, T=ComplexF64, gtol=gtol
         )
     end
 
     println(wk)
 
-    X, Y, Z = PAULI
-
-    rv = []
+    rv = PowerLawTerm[]
 
     for (w, mk, lk) in zip(wk, mks, lks)
-        term = fsmgeneral(
-            op,
-            localops,
-            linops,
-            space,
-            dt,
-            w,
-            mk,
-            lk;
-            J=J,
-            localscaling=length(wk),
-            extend=extend,
-            thermal=thermal,
-        )
+        term = PowerLawTerm(op, localops, linops, w, mk, lk, length(wk), J)
         push!(rv, term)
     end
 
