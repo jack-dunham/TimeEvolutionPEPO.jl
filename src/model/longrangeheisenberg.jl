@@ -443,25 +443,32 @@ function fsm_long_range_term(
 end
 
 function fsmaxy(; J=0.5, alpha=3, kmax=10, ngmax=4, tol=eps(), gtol=1e-10)
-    wk_, mks_, lks_ = TimeEvolutionPEPO.twodapprox(
-        alpha, kmax, ngmax; gtol=gtol, N=200, T=ComplexF64
-    )
+    if alpha == Inf
+        wk = zeros(ComplexF64, kmax)
+        wk[1] = eps()^(-2)
+        mks = fill(ComplexF64[eps()], kmax)
+        lks = fill(ComplexF64[eps()], kmax)
+    else
+        wk_, mks_, lks_ = TimeEvolutionPEPO.twodapprox(
+            alpha, kmax, ngmax; gtol=gtol, N=200, T=ComplexF64
+        )
 
-    numremoved = 0
+        numremoved = 0
 
-    wk = empty(wk_)
-    mks = empty(mks_)
-    lks = empty(lks_)
+        wk = empty(wk_)
+        mks = empty(mks_)
+        lks = empty(lks_)
 
-    for i in eachindex(wk_)
-        if abs(wk_[i]) < tol
-            numremoved += 1
-            continue
+        for i in eachindex(wk_)
+            if abs(wk_[i]) < tol
+                numremoved += 1
+                continue
+            end
+
+            push!(wk, wk_[i])
+            push!(mks, mks_[i])
+            push!(lks, lks_[i])
         end
-
-        push!(wk, wk_[i])
-        push!(mks, mks_[i])
-        push!(lks, lks_[i])
     end
 
     println(wk)

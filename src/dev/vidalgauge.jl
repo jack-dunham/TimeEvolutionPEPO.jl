@@ -1,13 +1,6 @@
 function simple_update_gauge!(
     pepo; maxiter=100, tol=1e-12, verbose=true, buffering=false, reset=false
 )
-    if 1 in size(pepo)
-        throw(
-            ErrorException(
-                "simple update gauging requires at least two unitcell tensors in each direction",
-            ),
-        )
-    end
 
     reset && weights2identity!(pepo)
 
@@ -25,7 +18,11 @@ function simple_update_gauge!(
     while ϵ > tol && numiter < maxiter
         reverse = isodd(numiter)
 
-        simple_update_gauge_step!(pepo, buffer; inreverse=reverse)
+        if 1 in size(pepo)
+            simple_update_gauge_parallel_step!(pepo)
+        else
+            simple_update_gauge_step!(pepo, buffer; inreverse=reverse)
+        end
 
         ϵ = tolerance!(prevweights, weights(pepo), 1.0)
 
@@ -64,14 +61,6 @@ end
 function simple_update_gauge_isometries!(
     pepo; maxiter=100, tol=1e-12, verbose=true, buffering=false
 )
-    if 1 in size(pepo)
-        throw(
-            ErrorException(
-                "simple update gauging requires at least two unitcell tensors in each direction",
-            ),
-        )
-    end
-
     # weights2identity!(pepo)
 
     prevweights = deepcopy(weights(pepo))
@@ -88,7 +77,11 @@ function simple_update_gauge_isometries!(
     while ϵ > tol && numiter < maxiter
         reverse = isodd(numiter)
 
-        simple_update_gauge_step!(pepo, buffer; inreverse=reverse)
+        if 1 in size(pepo)
+            simple_update_gauge_parallel_step!(pepo)
+        else
+            simple_update_gauge_step!(pepo, buffer; inreverse=reverse)
+        end
 
         ϵ = tolerance!(prevweights, weights(pepo), 1.0)
 
@@ -99,7 +92,7 @@ function simple_update_gauge_isometries!(
 
     xisoms, yisoms = simple_update_gauge_parallel_isometries!(pepo)
 
-    return xisoms, yisoms
+    return xisoms, yisoms, (ϵ, numiter)
 end
 
 function simple_update_gauge_get_pair(pepo, ::Nothing, bond)

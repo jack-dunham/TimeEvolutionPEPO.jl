@@ -65,7 +65,7 @@ function DensityMatrix(
     pepo::Union{AbstractPEPO,Simulation,DensityMatrix}, env::InfiniteContraction, kwargs...
 )
     data = tensors(pepo)
-    renormalize!(env, contractphysical(data ))
+    renormalize!(env, contractphysical(data))
     return DensityMatrix(data, env)
 end
 
@@ -689,3 +689,303 @@ end
         @tensoropt rv = $e_einsum
     end
 end
+
+
+function lefteigen(TMS, A, M, numeigs = 1, which = :LM; kwargs...)
+    fl = ITC._initfixedpoints(rand, A[1, 1], M[1,1], :left)
+    return eigsolve(fl, numeigs, which;kwargs...) do x0
+        fl = x0
+        for tm in TMS
+            fl = fl * tm
+        end
+        return fl
+    end
+end
+
+
+function testextrap(;Jy = 1.2, D = 4)
+    s = ComplexSpace(2)
+    S = ComplexSpace(D)
+
+    rho = fill((1,0,0),2,2)
+
+    xi0 = 100.0
+    model = PEPOKit.Heisenberg(LADDER[1];  Jx = 0.5, Jy = Jy, Jz= 1.0);
+    method = PEPOKit.TEBD(breaktol = 1e-5, trotterorder=1, numsteps=10000, timestep=0.01, truncalg=PEPOKit.SU(ξ = xi0))
+    sim = Simulation([PEPOKit.OnAxis(model,1),PEPOKit.OnAxis(model,2)], rho, S; physical=s, method=method)
+
+    alg = VUMPS(bonddim=16)
+
+    xis = []
+    xvals = []
+    clens = []
+
+    for i in 1:25
+
+        xi0 += 20.0
+
+        method = PEPOKit.TEBD(breaktol = 1e-5, trotterorder=1, numsteps=10000, timestep=0.01, truncalg=PEPOKit.SU(ξ = xi0))
+        sim = Simulation(sim.model, PEPOKit.quantumstate(sim), method, SimulationInfo())
+
+        simulate!(sim)
+
+        if i < 6
+            continue
+        end
+
+        pepo = PEPOKit.quantumstate(sim)
+
+        dm = DensityMatrix(pepo, VUMPS(bonddim=32))
+
+        rhos = map(ind -> ReducedDensityMatrix(dm, ind), uniqueindices(pepo))
+        expt = map(x -> expval(x, PAULI[1]), rhos)
+
+        clen = PEPOKit.correlationlength(dm)
+
+        push!(xis, xi0)
+        push!(xvals, real.(expt)[1,1])
+        push!(clens, clen)
+
+    end
+
+    return xis, xvals, clens
+end
+
+function testCFconv(; D = 4)
+    s = ComplexSpace(2)
+    S = ComplexSpace(D)
+
+    rho = fill((1,0,0),2,2)
+
+
+    xvals = []
+    clens = []
+
+    method = PEPOKit.TEBD(breaktol = 1e-5, trotterorder=1, numsteps=10000, timestep=0.01, truncalg=PEPOKit.SU(ξ = Inf))
+
+    for Jy in (Js = 1.45:0.05:1.55)
+
+        model = PEPOKit.Heisenberg(LADDER[1];  Jx = 0.5, Jy = Jy, Jz= 1.0);
+
+        sim = Simulation([PEPOKit.OnAxis(model,1),PEPOKit.OnAxis(model,2)], rho, S; physical=s, method=method)
+
+        simulate!(sim)
+
+        pepo = PEPOKit.quantumstate(sim)
+
+        dm = DensityMatrix(pepo, VUMPS(bonddim=32))
+
+        rhos = map(ind -> ReducedDensityMatrix(dm, ind), uniqueindices(pepo))
+        expt = map(x -> expval(x, PAULI[1]), rhos)
+
+        clen = PEPOKit.correlationlength(dm)
+
+        push!(xvals, real.(expt)[1,1])
+        push!(clens, clen)
+
+    end
+
+    return Js, xvals, clens
+end
+function _correlationlength(dm::DensityMatrix, op = one(PAULI[1]))
+    mps = dm.environment.runtime.mps
+
+    AL, _, _, _ = ITC.unpack(mps)
+
+    bulk = contractphysical.(dm.data)
+
+    funcop = b -> TensorMap(kron(op, one(op)), codomain(b), codomain(b))
+
+    bulkop = broadcast(dm.data) do b
+        ten =  funcop(b) * b
+        return contractphysical(ten)
+    end
+            
+
+    tms = ITC.TransferMatrix.(AL[:, 1], bulk[:, 1], AL[:, 2])
+    tmsop = ITC.TransferMatrix.(AL[:, 1], bulkop[:, 1], AL[:, 2])
+
+    fl = ITC._initfixedpoints(rand, AL[1, 1], bulk[1,1], :left)
+
+    xis, _, _ = eigsolve(fl, 4, :LM) do x0
+        fl = x0
+        for tm in tms
+            fl = fl * tm
+        end
+        return fl
+    end
+
+    @. xis = xis / xis[1] 
+
+    eps1 = -log(abs(xis[2]))
+    ind = isapprox(abs(xis[2]), abs(xis[3])) ? 4 : 3
+    eps2 = -log(abs(xis[ind]))
+
+    display(xis)
+
+    return eps1, eps2
+end
+
+function correlationlength(dm::DensityMatrix) 
+    eps1, _ = _correlationlength(dm)
+    return 1 / eps1
+end
+
+function correlationlength(f, qs, chis = 8:1:16)
+
+    eps1_vec = Float64[]
+    delt_vec = Float64[]
+
+    for chi in chis
+        dm = DensityMatrix(qs, f(chi))
+        eps1, eps2 = _correlationlength(dm)
+
+        push!(eps1_vec, eps1)
+        push!(delt_vec, eps2 - eps1)
+    end
+
+    return delt_vec, eps1_vec
+end
+
+function _testising(;xi = Inf, D = 2)
+
+    rho = fill(ThermalState(),2,2)
+
+    # βc = log(1 + sqrt(2)) / 2
+    βc = 1/1.2737
+
+    H = Heisenberg(;  Jz = -1.0, hx = 2.5);
+    # Until b = 0.8
+    method_coarse = TEBD(
+        numsteps=1050, 
+        timestep=0.001*βc, 
+        truncalg=PEPOKit.NTU(ξ = xi)
+    )
+    method_fine= TEBD(
+        numsteps=20, 
+        timestep=0.02*βc, 
+        truncalg=PEPOKit.SU(ξ = xi)
+    )
+
+    model = [OnAxis(H,1), OnAxis(H,2)]
+
+    alg = VUMPS(bonddim=4, maxiter=200, tol=1e-10)
+
+    s = ComplexSpace(2)
+    S = ComplexSpace(D)
+
+    output = Float64[]
+
+    sim = Simulation(model, rho, S; physical = s, method = method_coarse)
+
+    # simulate!(sim)
+    #
+    t0 = sim.info.iterations * method_coarse.timestep
+    t0 = 0
+
+    # sim = Simulation(model, quantumstate(sim), method_fine, SimulationInfo())
+
+    # Observables
+    Zs = Float64[]
+    Ls = Tuple{Vector{Float64},Vector{Float64}}[]
+    ts = Float64[]
+    converged = Bool[]
+
+    simulate!(sim; maxshots=525) do sim
+
+        if sim.info.iterations < 950
+             return sim
+        end
+
+
+        dm = DensityMatrix(quantumstate(sim), alg)
+        rdm = ReducedDensityMatrix(dm, (1,1))
+
+        Z = abs(expval(rdm, PAULI[3]))
+        L = correlationlength(dm)
+
+        # ds,es = PEPOKit.correlationlength(
+        #     D -> VUMPS(bonddim=D, tol=1e-10), 
+        #     PEPOKit.quantumstate(sim), 
+        #     20:1:20
+        # )
+        
+        push!(Zs, Z)
+        push!(Ls, ([L],[L]))
+
+        push!(converged, dm.environment.info.converged)
+        push!(ts, 1 / (t0 + sim.info.iterations * method_coarse.timestep))
+    end
+
+    return Zs, Ls, ts, converged
+end
+
+function testising(;D = 2)
+
+    # xis = [1e4,2e4,4e4,8e4]
+    xis = [exp10(i) for i in 5:0.5:6]
+    # xis = [exp10(i) for i in 3:0.5:4]
+    push!(xis, Inf)
+
+    Zs = Vector{Float64}[]
+    Ls = Vector{Tuple{Vector{Float64},Vector{Float64}}}[]
+    Ts = Vector{Float64}[]
+    converged = Vector{Bool}[]
+
+    out = foreach(xis) do xi
+        zs,ls,ts,cs = _testising(;xi = xi, D = D)
+
+        push!(Zs,zs)
+        push!(Ls,ls)
+        push!(Ts,ts)
+
+        push!(converged,cs)
+    end
+
+    return xis,Zs,Ls,Ts,converged
+end
+
+function test_ising_extrap(;D = 2, numsteps = 1000)
+    βc = log(1 + sqrt(2)) / 2
+
+    xis = [exp10(i) for i in 4:0.1:6]
+
+    Ls = Float64[]
+    Zs = Float64[]
+
+    rho = fill(ThermalState(),2,2)
+
+    s = ComplexSpace(2)
+    S = ComplexSpace(D)
+
+    H = Heisenberg(;  Jz = -1.0);
+    model = [OnAxis(H,1), OnAxis(H,2)]
+
+    alg = VUMPS(bonddim=16, maxiter=200, tol=1e-10)
+
+    for xi in [xis..., Inf]
+
+        method = TEBD(
+            numsteps=numsteps, 
+            timestep=0.001*βc, 
+            truncalg=PEPOKit.SU(ξ = xi)
+        )
+
+        sim = Simulation(model, rho, S; physical = s, method = method)
+
+        simulate!(identity, sim; maxshots=numsteps)
+
+        dm = DensityMatrix(quantumstate(sim), alg)
+
+        rdm = ReducedDensityMatrix(dm, (1,1))
+        Z = abs(expval(rdm, PAULI[3]))
+
+        L = correlationlength(dm)
+
+        push!(Ls, L)
+        push!(Zs, Z)
+    end
+
+    return xis, Zs, Ls
+end
+

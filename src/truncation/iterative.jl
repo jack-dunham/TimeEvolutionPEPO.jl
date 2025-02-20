@@ -198,7 +198,9 @@ function iterative_simple_update_step(pepo, stepper, isometries, bond; kwargs...
 
     D = bondspace(pepo, bond)
 
-    (u, v), s, infid = simpleupdate(reducedpair, weights(pepo), bond; trunc=truncspace(D), kwargs...)
+    (u, v), s, infid = simpleupdate(
+        reducedpair, weights(pepo), bond; trunc=truncspace(D), kwargs...
+    )
 
     return (u, v), s, infid
 end
@@ -212,7 +214,7 @@ function newtruncators(pepo, sequence, ::IterativeSU)
 end
 
 function iterative_simple_update_prototype!(
-    pepo!, truncator!, stepper; maxiter, tol, sequential, recycle, gauge, xi,
+    pepo!, truncator!, stepper; maxiter, tol, sequential, recycle, gauge, xi
 )
     mode = :none
 
@@ -293,7 +295,9 @@ function iterative_simple_update_prototype!(
             itr = iseven(i) ? Iterators.reverse(bonds) : bonds
 
             for bond in itr
-                (u, v), s, _ = iterative_simple_update_step(pepo!, stepper, isoms, bond; xi=xi)
+                (u, v), s, _ = iterative_simple_update_step(
+                    pepo!, stepper, isoms, bond; xi=xi
+                )
 
                 setindex!(isoms, u => v, bond)
                 setweight!(pepo!, s, bond; copy=false)
@@ -389,7 +393,9 @@ function iterative_simple_update_prototype!(
                     # @warn "overlap:  " 1 - rv/sqrt(rvnorm1 * rvnorm2)
                     @warn "overlap:  " rv / sqrt(rvnorm1)
                 end
-                (u, v), s, _ = iterative_simple_update_step(pepo!, stepper, isoms, bond; xi = xi)
+                (u, v), s, _ = iterative_simple_update_step(
+                    pepo!, stepper, isoms, bond; xi=xi
+                )
 
                 setindex!(newisoms, u => v, bond)
                 newweights[bond] = s
@@ -454,13 +460,9 @@ function iterative_simple_update_prototype!(
 
         gauge < 2 && continue
 
-        if size(buff) < (2, 2)
-            throw(
-                ErrorException(
-                    "intermediate gauging not yet implemented for unit cell size < (2,2)"
-                ),
-            )
-        end
+        wtgisometries!(isoms, pepo!, stepper)
+
+        continue
 
         temppepo = deepcopy(pepo!)
 
@@ -474,7 +476,10 @@ function iterative_simple_update_prototype!(
             # mergeinto!(dst, spten)
         end
 
-        gauge1, gauge2 = simple_update_gauge_isometries!(temppepo; verbose=false)
+        gauge1, gauge2, info = simple_update_gauge_isometries!(
+            temppepo; tol=1e-10, verbose=false
+        )
+        @info "Gauged to $(info[1]) after $(info[2]) iterations"
 
         ge = broadcast(first, gauge1)
         gw = broadcast(last, circshift(gauge1, (1, 0)))
@@ -512,23 +517,76 @@ function iterative_simple_update_prototype!(
     #     mergeinto!(dst, spten)
     # end
 
+    @info "gauging..."
+    # simple_update_gauge!(pepo!; maxiter=200, tol=1e-10, verbose=false, reset=false)
+    #=
+    for numiter in 1:1
+        conv = 0
+
+        temppepo = deepcopy(pepo!)
+
+        # Formulate the hypthoetical state using isometries isoms
+        for I in eachindex(buff)
+            dst = tensors(temppepo)[I]
+            op = tensors(stepper)[I]
+            let (e, s, w, n) = isoms[I]
+                truncateto!(dst, deepcopy(dst), op, e, s, w, n)
+            end
+        end
+
+        for (i, bond) in enumerate(eachbond(pepo!))
+
+            # Compute the environment
+            env = weightenvironment(temppepo[bond], weights(pepo!), bond)
+
+            if bondaxis(bond) == 1
+                (u, _, _, _), (_, _, v, _) = isoms[bond]
+            elseif bondaxis(bond) == 2
+                (_, u, _, _), (_, _, _, v) = isoms[bond]
+            end
+
+            s = weights(temppepo)[bond]
+            oldS = bondentropy(weights(pepo!))[i][bondaxis(bond)]
+            barewtg!(u, s, v, env)
+
+            newconv = abs(bondentropy(weights(pepo!))[i][bondaxis(bond)] - oldS)
+
+            newconv > conv && (conv = newconv)
+        end
+
+        tolerance!(weights(pepo!), weights(temppepo), 1.0)
+
+        println(conv)
+        if conv < 1e-8
+            break
+        end
+    end
+    =#
+
     for I in eachindex(buff)
         dst = buff[I]
         op = tensors(stepper)[I]
-        e, s, w, n = isoms[I]
-
-        truncateto!(dst, copy(dst), op, e, s, w, n)
+        let (e, s, w, n) = isoms[I]
+            truncateto!(dst, copy(dst), op, e, s, w, n)
+        end
 
         # mergeinto!(dst, spten)
     end
 
-    # for p in tensors(pepo!)
-    #     copy!(p, 0.5 * (p + permutedom(p, (2,1,4,3))))
+    # for (i, p) in enumerate(tensors(pepo!))
+    #     # copy!(p, 0.5 * (p + permutedom(p, (2,1,4,3))))
+    #     w = weights(pepo!)[i]
+    #     wnew = 0.5 * (w[1] + w[2])
+    #     maxnormalize!(wnew)
+    #     copy!(w[1], wnew)
+    #     copy!(w[2], wnew)
     # end
 
-    if gauge > 0
+    if gauge == 1
+        @info "Gauge fixing"
         size(buff) == (1, 1) && minimalcanonicalform!(buff; maxiter=2000)
-        # size(buff) == (1, 1) && simple_update_gauge_parallel!(pepo!; maxiter=200, reset=false)
+        # size(buff) == (1, 1) &&
+        #     simple_update_gauge!(pepo!; maxiter=200, tol=1e-10, verbose=false, reset=false)
         size(buff) != (1, 1) && simple_update_gauge!(pepo!; maxiter=100, reset=false)
     end
 

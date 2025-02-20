@@ -324,7 +324,7 @@ end
 function measurehook!(sim::Simulation, A=PAULI[1]; env=nothing)
     pepo = TimeEvolutionPEPO.quantumstate(sim)
 
-    alg = VUMPS(; tol=1e-10, maxiter=50, bonddim=16, verbose=true)
+    alg = VUMPS(; tol=1e-10, maxiter=200, bonddim=32, verbose=true)
     # alg = CTMRG(; tol=1e-10, maxiter=100, bonddim=16, verbose=true)
     #
     # env = newcontraction(alg, contractphysical( TimeEvolutionPEPO.tensors(pepo)))
@@ -350,7 +350,7 @@ function measurehook!(output::Vector, sim, args...)
     tensors = TimeEvolutionPEPO.tensors(sim.state)
 
     # alg = CTMRG(; tol=1e-8, maxiter=200, bonddim=16, verbose=true)
-    alg = VUMPS(; tol=1e-10, maxiter=200, bonddim=16, verbose=true)
+    alg = VUMPS(; tol=1e-10, maxiter=200, bonddim=20, verbose=true)
     # alg = CTMRG(; tol=1e-10, maxiter=100, bonddim=16, verbose=true)
 
     env = nothing #newcontraction(alg, contractphysical(tensors))
@@ -371,6 +371,29 @@ function errorhook!(output)
     end
     return f
 end
+
+function correlatorhook!(output)
+    alg = VUMPS(; tol=1e-10, maxiter=200, bonddim=4, verbose=true)
+    f = sim -> begin
+        dm = DensityMatrix(quantumstate(sim), alg)
+        xi = PEPOKit.correlationlength(dm)
+        push!(output, xi)
+    end
+    return f
+end
+
+function fullcorrelatorhook!(output)
+    f = sim -> begin
+        ds,es = PEPOKit.correlationlength(
+            D -> VUMPS(bonddim=D), 
+            PEPOKit.quantumstate(sim), 
+            10:1:20
+        )
+        push!(output, (ds,es))
+    end
+    return f
+end
+
 function negativityhook!(sim::Simulation)
     # if sim.info.iterations < 1
     #     return sim

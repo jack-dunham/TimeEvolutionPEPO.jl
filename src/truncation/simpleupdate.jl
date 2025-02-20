@@ -42,15 +42,13 @@ function timestep!(pepo::PEPO, truncator, stepper::LocalStepper, truncalg::SU; k
     checker = true
 
     shiftf = checker ? (v, i) -> circshift(v, i - 1) : (v, _) -> circshift(v, 0)
-    
+
     bondcols = map(in -> shiftf(in[2], in[1]), enumerate(eachslice(allbonds; dims=2)))
 
     while !isempty(bondcols)
-       
         bondcol = first(bondcols)
 
         while !isempty(bondcol)
-
             bond = first(bondcol)
 
             env = environment!(pepo, SimpleUpdateState(), bond)
@@ -61,7 +59,6 @@ function timestep!(pepo::PEPO, truncator, stepper::LocalStepper, truncalg::SU; k
             # Evolved the pair of tensors connected by `bond`, leaving the original pair
             # unmutated.
             pair = evolve(pepo, stepper, bond)
-
 
             newpair, newweight = updatetensors(pair, env, truncalg, bond)
 
@@ -335,4 +332,36 @@ function absorb_axial_weights!(
     end
 
     return site
+end
+
+function weightenvironment(pair, weights, bond)
+    U, V = adjacent(weights, bond)
+
+    QL, QR = pair
+    # s/e Q <-u<-
+    # n/w   <-v<- Q
+
+    if bondaxis(bond) == 2
+        weights = permutedims(weights)
+
+        QL = permutedom(QL, (2, 1, 4, 3))
+        QR = permutedom(QR, (2, 1, 4, 3))
+    end
+
+    s1, w1, n1 = U
+    e2, s2, n2 = V
+
+    @tensoropt M[D7 E1; D1 E7] :=
+        QL[k1 b1; D1 D2 D3 D4] *
+        (QL')[E1 E2 E3 E4; k1 b1] *
+        QR[k2 b2; D5 D6 D7 D8] *
+        (QR')[E5 E6 E7 E8; k2 b2] *
+        s1[D2; E2] *
+        w1[E3; D3] *
+        n1[E4; D4] *
+        e2[D5; E5] *
+        s2[D6; E6] *
+        n2[E8; D8]
+
+    return M
 end
