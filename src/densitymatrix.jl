@@ -1,7 +1,8 @@
 """
     struct DensityMatrix{P<:AbstractLattice, T<:InfiniteContraction}
 
-Concrete type representing a *normalized* density matrix with associated trace environment.
+Concrete type representing a *normalized* density matrix with associated trace environment 
+of type `T`.
 """
 struct DensityMatrix{P<:AbstractLattice,T<:InfiniteContraction}
     data::P

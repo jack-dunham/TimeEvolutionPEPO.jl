@@ -30,6 +30,11 @@ struct Simulation{E<:AbstractTimeEvolution,P<:AbstractPEPO,L<:AbstractTimeSteppe
     end
 end
 
+"""
+    quantumstate(obj) -> PEPO
+
+Return the quantum state associated with object `obj`.
+"""
 quantumstate(s::Simulation) = quantumstate(s.state)
 quantumstate(p::PEPO) = p
 quantumstate(p::AxialPEPO) = p.parent
@@ -180,8 +185,7 @@ function initenvironment(network, alg::AbstractBoundaryAlgorithm; kwargs...)
 end
 
 """
-    simulate(sim::Simulation)
-    simulate(hook::Function, sim::Simulation)
+    simulate([callback = identity], sim::Simulation)
 
 Equivalent to `simulate!(hook, deepcopy(sim))`. 
 """
@@ -190,6 +194,11 @@ simulate(hook, sim::Simulation) = simulate!(hook, deepcopy(sim))
 
 simulate!(sim::Simulation) = simulate!(identity, sim)
 
+"""
+    simulate([callback = identity], sim::Simulation; maxshots=100, maxtime=Inf)
+
+Run the simulation defined in `sim`.
+"""
 function simulate!(callback, sim::Simulation; maxshots=100, maxtime=Inf)
     method = sim.method
     pepo = sim.state
@@ -264,38 +273,6 @@ function simulate!(callback, sim::Simulation; maxshots=100, maxtime=Inf)
     pepo isa AxialPEPO && setaxis!(pepo, 1)
 
     return sim
-end
-
-function testthermal(D)
-    s2 = ℂ^2
-    Ds = ℂ^D
-
-    Z = Matrix{ComplexF64}([1 0; 0 -1])
-    ZZ = kron(Z, Z)
-
-    βc = log(1 + sqrt(2)) / 2
-
-    data = -1 / 2 * βc * ((kron(ZZ, one(ZZ)) + kron(one(ZZ), ZZ)))
-
-    model = Model(data, data)
-
-    talg = SU()
-    # talg = FET(; alg=VUMPS(; bonddim=4))
-
-    sim = initialize(
-        model,
-        [0, 0, 0],
-        fill(s2, 2, 2),
-        fill(Ds, 2, 2);
-        output=[],
-        alg=TEBD(; timestep=0.02, numsteps=100, truncalg=talg),
-    )
-
-    rmul!.(TimeEvolutionPEPO.tensors(sim.state), 0.5)
-
-    simulate!(measurehook!, sim)
-
-    return sim.output
 end
 
 function dampinghook!(sim::Simulation, xi, output)
