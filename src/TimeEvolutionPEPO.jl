@@ -19,6 +19,9 @@ using SparseArrayKit
 const ITC = InfiniteTensorContractions
 const PEPOKit = TimeEvolutionPEPO
 
+import InfiniteTensorContractions: AbsTen
+import InfiniteTensorContractions: TenAbs
+
 export PEPOKit
 
 ## ITC exports
@@ -32,11 +35,9 @@ export cj, conjugate
 
 export σ0, σ1, σ2, σ3, σp, σm, PAULI, LADDER
 
-# Lattice
-export AbstractLattice, Lattice, SquareLattice
 # PEPO
 export ThermalState
-export AbstractPEPO, PEPO, EdgeLattice
+export AbstractPEPO, PEPO, UnitCellBonds
 export Bond
 
 export TEBD, DMPO
@@ -64,8 +65,7 @@ include("abstractlattice.jl")
 include("edgelattice.jl")
 include("updatestyle.jl")
 
-include("sparsetensormap.jl")
-
+# include("sparsetensormap.jl")
 
 ## PEPO OBJECTS
 include("pepo/weights.jl")
@@ -74,9 +74,9 @@ include("pepo/pepo.jl")
 include("pepo/axialpepo.jl")
 
 ### UPDATABLE PEPOS
-include("pepo/abstractupdatablepepo.jl")
-include("pepo/localpepo.jl")
-include("pepo/globalpepo.jl")
+# include("pepo/abstractupdatablepepo.jl")
+# include("pepo/localpepo.jl")
+# include("pepo/globalpepo.jl")
 
 ### OTHER
 include("pepo/hilbertschmidt.jl")
@@ -120,7 +120,7 @@ include("densitymatrix.jl")
 
 # include("dev/tno_evolve.jl")
 # include("dev/longrange.jl")
-include("dev/beliefpropagation.jl")
+# include("dev/beliefpropagation.jl")
 include("dev/vidalgauge.jl")
 
 end # module
