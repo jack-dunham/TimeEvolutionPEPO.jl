@@ -1,5 +1,6 @@
 abstract type AbstractIsometryOptimisation{G<:Union{NoGauge,WTG}} end
 
+using InfiniteTensorContractions: newrenormalization, RenormalizationProblem
 function Base.show(io::IO, m::MIME"text/plain", sim::AbstractIsometryOptimisation)
     return shownested(io, m, sim)
 end
@@ -36,21 +37,21 @@ struct TruncationIsometries{TU,TS,TV}
 end
 
 struct BondIsometries{Geom,U,S,V}
-    u::Lattice{Geom,U,Matrix{U}}
-    s::Lattice{Geom,S,Matrix{S}}
-    v::Lattice{Geom,V,Matrix{V}}
+    u::UnitCell{Geom,U,Matrix{U}}
+    s::UnitCell{Geom,S,Matrix{S}}
+    v::UnitCell{Geom,V,Matrix{V}}
 end
 
 struct SiteIsometries{Geom,U,V}
-    ux::Lattice{Geom,U,Matrix{U}}
-    vx::Lattice{Geom,V,Matrix{V}}
-    uy::Lattice{Geom,U,Matrix{U}}
-    vy::Lattice{Geom,V,Matrix{V}}
+    ux::UnitCell{Geom,U,Matrix{U}}
+    vx::UnitCell{Geom,V,Matrix{V}}
+    uy::UnitCell{Geom,U,Matrix{U}}
+    vy::UnitCell{Geom,V,Matrix{V}}
     function SiteIsometries(
-        ux::Lattice{Geom,U,Matrix{U}},
-        vx::Lattice{Geom,V,Matrix{V}},
-        uy::Lattice{Geom,U,Matrix{U}},
-        vy::Lattice{Geom,V,Matrix{V}},
+        ux::UnitCell{Geom,U,Matrix{U}},
+        vx::UnitCell{Geom,V,Matrix{V}},
+        uy::UnitCell{Geom,U,Matrix{U}},
+        vy::UnitCell{Geom,V,Matrix{V}},
     ) where {Geom,U,V}
         @assert size(ux) == size(vx) == size(uy) == size(vy)
         return new{Geom,U,V}(ux, vx, uy, vy)
@@ -102,17 +103,18 @@ function Base.getindex(iso::SiteIsometries, I::Dims)
 end
 
 function seperateweights(
-    horizontal::Lattice{G,Tuple{Pair{TU,TV},TS}}, vertical::Lattice{G,Tuple{Pair{TU,TV},TS}}
+    horizontal::UnitCell{G,Tuple{Pair{TU,TV},TS}},
+    vertical::UnitCell{G,Tuple{Pair{TU,TV},TS}},
 ) where {G,TU,TV,TS}
     nxny = size(isometries)
 
-    uhlat = Lattice{G,TU}(undef, nxny)
-    vhlat = Lattice{G,TV}(undef, nxny)
-    shlat = Lattice{G,TS}(undef, nxny)
+    uhlat = UnitCell{G,TU}(undef, nxny)
+    vhlat = UnitCell{G,TV}(undef, nxny)
+    shlat = UnitCell{G,TS}(undef, nxny)
 
-    uvlat = Lattice{G,TU}(undef, nxny)
-    vvlat = Lattice{G,TV}(undef, nxny)
-    svlat = Lattice{G,TS}(undef, nxny)
+    uvlat = UnitCell{G,TU}(undef, nxny)
+    vvlat = UnitCell{G,TV}(undef, nxny)
+    svlat = UnitCell{G,TS}(undef, nxny)
 
     hind = eachindex(horizontal)
     vind = eachindex(vertical)
@@ -124,7 +126,7 @@ function seperateweights(
     populate_isometries_weights!(uhlat, vhlat, shlat, horizontal; axis=1)
     populate_isometries_weights!(uvlat, vvlat, svlat, vertical; axis=2)
 
-    return SiteIsometries(uhlat, vhlat, uvlat, vvlat), EdgeLattice(shlat, svlat)
+    return SiteIsometries(uhlat, vhlat, uvlat, vvlat), UnitCellBonds(shlat, svlat)
 end
 
 function populate_isometries_weights!(ulat, vlat, slat, isometries; axis)
@@ -206,7 +208,7 @@ function newtruncators(
 end
 
 function newtruncators(pepo::PEPO, _, truncalg::Union{FET,NTU})
-    xenv = newtruncators(tensors(pepo), truncalg)
+    xenv = newtruncators(pepo, truncalg)
     return xenv, xenv
 end
 function newtruncators(::PEPO, _, truncalg::SU)
@@ -214,8 +216,8 @@ function newtruncators(::PEPO, _, truncalg::SU)
     return xenv, xenv
 end
 function newtruncators(pepo::AxialPEPO, _, truncalg::Union{FET,NTU})
-    xenv = newtruncators(tensors(pepo, 1), truncalg)
-    yenv = newtruncators(tensors(pepo, 2), truncalg)
+    xenv = newtruncators(getaxis(pepo, 1), truncalg)
+    yenv = newtruncators(getaxis(pepo, 2), truncalg)
     return xenv, yenv
 end
 
@@ -225,16 +227,16 @@ end
 
 ## 
 
-function ITC.newcontraction(conalg, net::HilbertSchmidt; kwargs...)
-    return newcontraction(conalg, net.data; kwargs...)
+function ITC.newrenormalization(net::HilbertSchmidt; alg=alg, kwargs...)
+    return newrenormalization(net.data; alg=alg, kwargs...)
 end
 
 ## Initalialize truncators for lattice of tensors
 newtruncators(bulk, fet::FET) = newtruncators(bulk, fet.alg)
-newtruncators(bulk, conalg::InfiniteContraction) = newtruncators(bulk, conalg.algorithm)
+newtruncators(bulk, conalg::RenormalizationProblem) = newtruncators(bulk, conalg.alg)
 
 function newtruncators(bulk, conalg::AbstractBoundaryAlgorithm)
-    return newcontraction(conalg, hilbertschmidt(bulk); store_initial=true)
+    return newrenormalization(hilbertschmidt(bulk); alg=conalg)
 end
 
 function newtruncators(bulk, ::NTU)
@@ -250,47 +252,44 @@ end
 newtruncators(tensors, st::SimpleUpdateState) = st
 newtruncators(st::SimpleUpdateState) = st
 
-environment!(pepo, ::SimpleUpdateState, bond) = weights(pepo)
-environment!(pepo, ::NTUState, bond) = pair -> ntu_total(pair, tensors(pepo), bond)
-function environment!(pepo, truncator::ITC.InfiniteContraction, bond) 
-    renormalize!(truncator, hilbertschmidt(pepo))
+environment!(pepo, ::SimpleUpdateState, ::Bond) = weights(pepo)
+environment!(pepo, ::NTUState, bond::Bond) = pair -> ntu_total(pair, pepo, bond)
+
+function environment!(pepo, truncator::RenormalizationProblem, ::Bond)
+    hs = hilbertschmidt(pepo)
+    ITC.renormalize!(truncator, hs)
     return truncator
 end
 
-function renormalize!(env::InfiniteContraction, network; copy=false)
-    if copy
-        elcopy!(env.network, network)
-        ITC.reset!(env)
-    else
-        ITC.recycle!(env, network)
-    end
-    ITC.runcontraction!(env)
+function ITC.renormalize!(env::RenormalizationProblem, network)
+    ITC.recycle!(env, network)
+    ITC.renormalize!(env)
     return env
 end
 
-function renormalize!(env::InfiniteContraction)
-    ITC.reset!(env)
-    ITC.runcontraction!(env)
-    return env
-end
+# function ITC.renormalize!(env::RenormalizationProblem)
+#     ITC.reset!(env)
+#     ITC.runcontraction!(env)
+#     return env
+# end
 
-renormalize!(st::NTUState) = calculate_neighbourhood!(st)
-renormalize!(st::SimpleUpdateState) = st
+ITC.renormalize!(st::NTUState) = calculate_neighbourhood!(st)
+ITC.renormalize!(st::SimpleUpdateState) = st
 
-function renormalize(tensors, truncalg)
+function ITC.renormalize(tensors, truncalg)
     truncs = newtruncators(tensors, truncalg)
     renormalize!(truncs)
     return truncs
 end
 
-function renormalize!(truncator::NTuple{2}, buffer)
-    truncx, truncy = truncator
-
-    renormalize!(truncx, buffer)
-    renormalize!(truncy, PermuteTranpose(buffer))
-
-    return truncator
-end
+# function renormalize!(truncator::NTuple{2}, buffer)
+#     truncx, truncy = truncator
+#
+#     renormalize!(truncx, buffer)
+#     renormalize!(truncy, PermuteTranpose(buffer))
+#
+#     return truncator
+# end
 
 """
     metric(pepo::LocallyEvolvingPEPO, environment::AbstractEnvironment)
@@ -300,17 +299,17 @@ Construct the truncation metric calculated from `environmnet`. The first method 
 truncation around `currentbond(pepo)`. The second method returns metrics for all bonds on the lattice.
 
 """
-function metric(pepo::LocalUpdatablePEPO, environment)
-    return metric(pepo, environment, currentbond(pepo))
-end
+# function metric(pepo::LocalUpdatablePEPO, environment)
+#     return metric(pepo, environment, currentbond(pepo))
+# end
 
-function metric(state::Union{AbstractPEPO,AbstractLattice}, environment, bond::Bond)
+function metric(state::Union{AbstractPEPO,AbstractUnitCell}, environment, bond::Bond)
     left, right = state[bond]
     return _metric(left, right, environment, bond)
 end
 
 function metric(
-    ::Union{AbstractPEPO,AbstractLattice}, environment::AbstractTensorMap, ::Bond
+    ::Union{AbstractPEPO,AbstractUnitCell}, environment::AbstractTensorMap, ::Bond
 )
     return environment
 end
@@ -318,51 +317,51 @@ function metric(pair::Pair, env, bond)
     left, right = pair
     return _metric(left, right, env, bond)
 end
-function _metric(left, right, env::InfiniteContraction, bond::Bond)
+function _metric(left, right, env::RenormalizationProblem, bond::Bond)
     return _metric(left, right, env.runtime, bond)
 end
 function _metric(left, right, env::NTUState, bond::Bond)
     return _metric(left, right, env.tensors, bond)
 end
 _metric(left, right, env::AbstractTensorMap, bond::Bond) = env
-_metric(left, right, env::AbstractLattice, bond::Bond) = env
+_metric(left, right, env::AbstractUnitCell, bond::Bond) = env
 
 """
     truncate!(pepo::AbstractUpdatablePEPO, iso::TruncationIsometries)
 
 Truncate the state `pepo` according to truncation matrices `iso`.
 """
-function truncate!(pepo::AbstractUpdatablePEPO, iso)
-    @debug "Before truncation:" isevolved(pepo)
+# function truncate!(pepo::AbstractUpdatablePEPO, iso)
+#     @debug "Before truncation:" isevolved(pepo)
+#
+#     _truncate!(pepo, iso)
+#     setisevolved!(pepo, false)
+#
+#     @debug "After truncation:" isevolved(pepo)
+#
+#     return pepo
+# end
 
-    _truncate!(pepo, iso)
-    setisevolved!(pepo, false)
-
-    @debug "After truncation:" isevolved(pepo)
-
-    return pepo
-end
-
-# Truncate a locally evolving pepo
-function _truncate!(pepo::LocalUpdatablePEPO, iso::TruncationIsometries; axis...)
-    bond = currentbond(pepo)
-
-    @debug "Truncating bond $bond"
-
-    new_left, new_right = evolvedpair(pepo)
-    old_left, old_right = parentpair(pepo, bond)
-
-    # Truncate the left site with an isometry on the right bond
-    truncateto!(old_left, new_left, iso.u; axis...)
-    # Truncate the right site with an isometry on the left bond
-    truncateto!(old_right, iso.v, new_right; axis...)
-
-    setweight!(pepo, iso.s, bond)
-
-    @debug "" weight = iso.s
-
-    return pepo
-end
+# # Truncate a locally evolving pepo
+# function _truncate!(pepo::LocalUpdatablePEPO, iso::TruncationIsometries; axis...)
+#     bond = currentbond(pepo)
+#
+#     @debug "Truncating bond $bond"
+#
+#     new_left, new_right = evolvedpair(pepo)
+#     old_left, old_right = parentpair(pepo, bond)
+#
+#     # Truncate the left site with an isometry on the right bond
+#     truncateto!(old_left, new_left, iso.u; axis...)
+#     # Truncate the right site with an isometry on the left bond
+#     truncateto!(old_right, iso.v, new_right; axis...)
+#
+#     setweight!(pepo, iso.s, bond)
+#
+#     @debug "" weight = iso.s
+#
+#     return pepo
+# end
 
 partialtruncate(site::AbsTen, iso) = _partialtruncate(site, iso.u)
 partialtruncate(iso, site::AbsTen) = _partialtruncate(iso.v, site)
@@ -387,15 +386,15 @@ function similar_but_truncated(iso::AbsTen{1,1}, pepo_tensor)
     return _similar_but_truncated(pepo_tensor, codomain(iso)', 3)
 end
 
-function _truncate!(pepo::GlobalUpdatablePEPO, iso::TruncationIsometries)
-    @assert size(tensors(pepo)) == (1, 1)
-
-    # Truncate all bonds simultaneously.
-
-    _truncate!.(tensors(pepo), currentbuffer(pepo), Ref(iso.u), Ref(iso.v))
-
-    return pepo
-end
+# function _truncate!(pepo::GlobalUpdatablePEPO, iso::TruncationIsometries)
+#     @assert size(tensors(pepo)) == (1, 1)
+#
+#     # Truncate all bonds simultaneously.
+#
+#     _truncate!.(tensors(pepo), currentbuffer(pepo), Ref(iso.u), Ref(iso.v))
+#
+#     return pepo
+# end
 
 function vidaltruncation!(pepo_dst, pepo_src, tno, vidal)
     truncateto!(pepo_dst, pepo_src, tno, vidal.east, vidal.west, vidal.south, vidal.north)
