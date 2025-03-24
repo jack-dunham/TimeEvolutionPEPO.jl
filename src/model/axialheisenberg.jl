@@ -19,7 +19,9 @@ end
 
 Base.broadcastable(o::AxialHeisenberg) = Ref(o)
 
-function AxialHeisenberg(L...; hx = 0.0, hy = 0.0, hz = 0.0, Jx=0.0, Jy=0.0, Jz=0.0, Kx=0.0, Ky=0.0, Kz=0.0)
+function AxialHeisenberg(
+    L...; hx=0.0, hy=0.0, hz=0.0, Jx=0.0, Jy=0.0, Jz=0.0, Kx=0.0, Ky=0.0, Kz=0.0
+)
     itr = map(L) do op
         return op isa LindbladTerm ? op : lin(op)
     end
@@ -28,7 +30,7 @@ end
 
 getparams(axp::AxialHeisenberg) = (axp.Jx, axp.Jy, axp.Jz, axp.Kx, axp.Ky, axp.Kz)
 
-function AxialIsing(L...; J=0.0, K = 0.0)
+function AxialIsing(L...; J=0.0, K=0.0)
     itr = map(L) do op
         return op isa LindbladTerm ? op : lin(op)
     end
@@ -62,7 +64,6 @@ function (model::AxialHeisenberg)(physical, method::AbstractDMPO; kwargs...)
     return rv
 end
 
-
 function MPO(model::AxialHeisenberg)
     linops = model.L
 
@@ -70,7 +71,14 @@ function MPO(model::AxialHeisenberg)
 
     Id = Matrix{ComplexF64}(I, 2, 2)
 
-    chi = 3 * count(!iszero, getparams(model))
+    chi = 0
+    for (J, K) in zip((Jx, Jy, Jz), (Kx, Ky, Kz))
+        if !iszero(K)
+            chi += 4
+        elseif !iszero(J)
+            chi += 2
+        end
+    end
 
     T = BlockMatrix
 
@@ -92,7 +100,7 @@ function MPO(model::AxialHeisenberg)
 
     if isempty(linops)
         @info "Is thermal"
-        c1 = c2 = -1/ 2
+        c1 = c2 = -1 / 2
     else
         c1 = -im
         c2 = im
@@ -103,9 +111,7 @@ function MPO(model::AxialHeisenberg)
             continue
         end
 
-        if iszero(J)
-            J = 1
-        else
+        if !iszero(J)
             B[i, 1] = J * c1 * kron(O, Id)
             B[i + 1, 1] = J * c2 * kron(Id, transpose(O))
         end
@@ -120,16 +126,13 @@ function MPO(model::AxialHeisenberg)
         if iszero(K)
             str = 2
         else
-            str = 6
+            str = 4
 
-            C[1, i + 2] = kron(O, Id) # ket
-            C[1, i + 3] = kron(Id, transpose(O)) # bra
+            A[i, i + 2] = kron(Id, Id)
+            A[i + 1, i + 3] = kron(Id, Id)
 
-            A[i + 2, i + 4] = kron(Id, Id)
-            A[i + 3, i + 5] = kron(Id, Id)
-
-            B[i + 4, i] = K * c1 * kron(O, Id)
-            B[i + 5, i] = K * c2 * kron(Id, transpose(O))
+            B[i + 2, 1] = K * c1 * kron(O, Id)
+            B[i + 3, 1] = K * c2 * kron(Id, transpose(O))
         end
 
         i += str
@@ -140,14 +143,14 @@ function MPO(model::AxialHeisenberg)
         L = Matrix{ComplexF64}(term)
 
         anticomm = kron(L' * L, one(L)) + kron(one(L), transpose(L' * L))
-        D[1,1] += 1 / 2 * kron(L, transpose(L')) - 1 / 2 * anticomm
+        D[1, 1] += 1 / 2 * kron(L, transpose(L')) - 1 / 2 * anticomm
     end
 
     foreach((model.hx, model.hy, model.hz), PAULI) do coeff, op
         # Absorb coefficient
         H = Matrix{ComplexF64}(coeff * op)
 
-        D[1,1] += 1 / 2 * (c1 * kron(H, one(H)) + c2 * kron(one(H), transpose(H)))
+        D[1, 1] += 1 / 2 * (c1 * kron(H, one(H)) + c2 * kron(one(H), transpose(H)))
     end
 
     return MPO(A, B, C, D)
@@ -156,8 +159,7 @@ end
 function (model::AxialIsing)(physical, method::TEPEPSO; kwargs...)
     rv =
         timestep -> begin
-
-            tensor = fsmaxialising(Matrix.(model.L), physical, timestep; J = model.J, K = model.K)
+            tensor = fsmaxialising(Matrix.(model.L), physical, timestep; J=model.J, K=model.K)
 
             return tensor
         end
@@ -165,14 +167,7 @@ function (model::AxialIsing)(physical, method::TEPEPSO; kwargs...)
     return rv
 end
 
-function fsmaxialising(
-    vecL,
-    space,
-    dt;
-    extend=true,
-    J,
-    K,
-)
+function fsmaxialising(vecL, space, dt; extend=true, J, K)
     T = Dict{NTuple{4,Int},Matrix{ComplexF64}}
 
     rules = (A=T(), B=T(), C=T(), D=T())
@@ -207,12 +202,12 @@ function fsmaxialising(
 
     Id = one(A)
 
-        # We need these rules if either term is present, we just use J = 1 if no nearest-
-        # neighbour term present
+    # We need these rules if either term is present, we just use J = 1 if no nearest-
+    # neighbour term present
     rules.C[i, 1, 1, 1] = kron(A, Id)
     rules.C[i + 1, 1, 1, 1] = kron(Id, transpose(A))
 
-    rules.C[1, 1, 1, j] =  kron(A, Id)
+    rules.C[1, 1, 1, j] = kron(A, Id)
     rules.C[1, 1, 1, j + 1] = kron(Id, transpose(A))
 
     rules.B[1, j, 1, 1] = c1 * J * kron(A, Id)
