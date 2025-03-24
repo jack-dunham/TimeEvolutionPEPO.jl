@@ -442,7 +442,7 @@ function fsm_long_range_term(
     return pepo
 end
 
-function fsmaxy(; J=0.5, alpha=3, kmax=10, ngmax=4, tol=eps(), gtol=1e-10)
+function fsmaxy(; J=0.5, alpha=3, kmax=10, ngmax=4, tol=eps(), gtol=1e-10, hx = 0.0)
     if alpha == Inf
         wk = zeros(ComplexF64, kmax)
         wk[1] = eps()^(-2)
@@ -475,18 +475,24 @@ function fsmaxy(; J=0.5, alpha=3, kmax=10, ngmax=4, tol=eps(), gtol=1e-10)
 
     @info "Removed $numremoved terms from expansion"
 
-    X, Y, _ = PAULI
+    X, Y, Z = PAULI
 
     rv = PowerLawTerm[]
 
     linops = [LADDER[1]]
 
+    localops = []
+
+    if hx > 0.0
+        push!(localops, hx * X)
+    end
+        
     scale = length(wk) * 2
 
     for (op, j) in zip((X, Y), (J, -J))
         for (w, mk, lk) in zip(wk, mks, lks)
             # term = fsmgeneral(op, [], linops, space, dt, w, mk, lk; localscaling=scale, J=j)
-            term = PowerLawTerm(op, [], linops, w, mk, lk, scale, j)
+            term = PowerLawTerm(op, localops, linops, w, mk, lk, scale, j)
             push!(rv, term)
         end
     end
