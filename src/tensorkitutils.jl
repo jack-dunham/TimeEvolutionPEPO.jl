@@ -23,8 +23,8 @@ function _transpose(tsrc::AbsTen{N,M}) where {N,M}
 end
 
 # TODO move to ITC
-function permutecod(t::ITC.TensorPair, p::NTuple{M,Int}) where {M}
-    return ITC.TensorPair(permutecod(t.top, p), permutecod(t.bot, p))
+function permutecod(t::CompositeTensor{2}, p::NTuple{M,Int}) where {M}
+    return CompositeTensor(ITC.mapbefore(i -> permutecod(i, p), t))
 end
 
 function permutecod(t::AbsTen{N,M}, p::NTuple{N,Int}) where {N,M}
@@ -38,8 +38,8 @@ function permutecod!(tdst, tsrc::AbsTen{N,M}, p::NTuple{N,Int}) where {N,M}
 end
 
 # TODO move to ITC
-function permutedom(t::ITC.TensorPair, p::NTuple{M,Int}) where {M}
-    return ITC.TensorPair(permutedom(t.top, p), permutedom(t.bot, p))
+function permutedom(t::CompositeTensor{2}, p::NTuple{M,Int}) where {M}
+    return CompositeTensor(ITC.mapbefore(i -> permutedom(i, p), t))
 end
 
 function permutedom(t::AbsTen{N,M}, p::NTuple{M,Int}) where {N,M}
@@ -78,13 +78,11 @@ function _rightorth(t::AbsTen{N,2}) where {N}
     return l_out, t_out
 end
 
-function contractphysical(tsrc::AbstractTensorMap{S,2,4}) where {S}
+function contractphysical(tsrc::ITC.AbsTen{2,4,S}) where {S}
     tdst = similar(tsrc, one(S), domain(tsrc))
     return contractphysical!(tdst, tsrc)
 end
-function contractphysical(
-    tsrc_1::AbstractTensorMap{S,2,4}, tsrc_2::AbstractTensorMap{S,4,2}
-) where {S}
+function contractphysical(tsrc_1::ITC.AbsTen{2,4,S}, tsrc_2::ITC.AbsTen{4,2,S}) where {S}
     DomType = ProductSpace{S,8}
 
     outdom = DomType(map((x, y) -> x * y', domain(tsrc_1), codomain(tsrc_2)))
@@ -100,7 +98,7 @@ function contractphysical!(tdst::AbsTen{0,4}, tsrc::AbsTen{2,4})
     return tdst
 end
 
-function mergevirtual(t::AbstractTensorMap{S,0,8}) where {S}
+function mergevirtual(t::ITC.AbsTen{0,8,S}) where {S}
     DomType = ProductSpace{S,4}
 
     outdom = DomType(map(i -> fuse(domain(t, i) * domain(t, i + 1)), 1:2:8))
@@ -121,7 +119,6 @@ function hermitianize!(t::AbsTen{2,4})
 end
 
 function posapprox!(t::AbsTen{N,N}; tol=1e3 * eps(), verbose=false) where {N}
-
     tol ≥ -Inf || return t
 
     if verbose

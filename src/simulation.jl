@@ -55,20 +55,6 @@ function Base.show(io::IO, m::MIME"text/plain", sim::Simulation)
     return nothing
 end
 
-"""
-    getpepo(obj::Union{AbstractPEPO, Simulation}) -> PEPO
-
-Return the unwrapped `PEPO` object of `obj`. If `obj isa PEPO` then `getpepo(obj) === obj`.
-"""
-pepo(sim::Simulation) = sim.state
-
-"""
-    latticetensors(obj::Union{AbstractPEPO, DensityMatrix, Simulation}) -> AbstractLattice
-
-Return the `AbstractLattice` of underyling pepo tensors associated with `obj`.
-"""
-tensors(sim::Simulation) = tensors(pepo(sim))
-
 unitcellsize(x::AbstractMatrix) = size(x)
 unitcellsize(_) = (1, 1)
 
@@ -94,14 +80,14 @@ function promotelattice(model::NTuple, args...; geometry::G=Square()) where {G}
             end
         end
 
-        return Lattice{G}(mat)
+        return UnitCell{G}(mat)
     end
 
     return outlat
 end
 
 geometrytype(::Type{G}) where {G<:ITC.AbstractUnitCellGeometry} = G
-geometrytype(::Type{<:AbstractLattice{G}}) where {G} = G
+geometrytype(::Type{<:AbstractUnitCell{G}}) where {G} = G
 geometrytype(::Type{<:AbstractMatrix}) = Square
 geometrytype(T::DataType) = Square
 geometrytype(g) = geometrytype(typeof(g))
@@ -145,7 +131,7 @@ function Simulation(
 
     G = promote_geometry_type(physical, horizontal, vertical)
 
-    stepper, physicalspace = newstepper(Lattice{G}([physical;;]), model, method)
+    stepper, physicalspace = newstepper(UnitCell{G}([physical;;]), model, method)
 
     pepo = PEPO([rho0;;], [physicalspace;;], [horizontal;;], [vertical;;])
 
@@ -218,12 +204,17 @@ function simulate!(
 )
     method = sim.method
     pepo = sim.state
-    info = sim.info
     model = sim.model
+
+    # Get simulation infomation and set appropriate fields
+    info = sim.info
+    setfield!(info, :finished, false)
+    setfield!(info, :converged, convergence(info) < breaktol)
 
     truncalg = method.truncalg
     timestep = method.timestep
 
+    # Shots are taken at these interations
     r = range(; start=0, step=round(Int, numsteps / maxshots, RoundUp), stop=numsteps)
     shotsat = collect(r)
 
@@ -233,6 +224,8 @@ function simulate!(
     # Need to copy the weights otherwise they will mutate
     prev_weights = deepcopy(weights(pepo))
 
+    # Only do the first callback if the simulation is just starting, otherwise it will
+    # duplicate
     info.iterations == 0 && callback(sim)
 
     if isdefined(sim, :stepper)
@@ -249,7 +242,7 @@ function simulate!(
 
     t0 = time()
 
-    while numiter < numsteps && tol ≥ breaktol
+    while numiter < numsteps
 
         for (i, step) in enumerate(stepper)
 
@@ -280,13 +273,16 @@ function simulate!(
         if time() - t0 > maxtime 
             break
         elseif info.convergence < breaktol
-            info.isconverged = true
+            info.converged = true
+            info.finished= true
             @info "Simulation reached break tolerance $(info.convergence) < $breaktol."
             break
         end
     end
 
     pepo isa AxialPEPO && setaxis!(pepo, 1)
+
+    info.finished = true
 
     return sim
 end
@@ -317,12 +313,13 @@ end
 function measurehook!(sim::Simulation, A=PAULI[1]; env=nothing)
     pepo = TimeEvolutionPEPO.quantumstate(sim)
 
-    alg = VUMPS(; tol=1e-10, maxiter=200, bonddim=32, verbose=true)
-    # alg = CTMRG(; tol=1e-10, maxiter=100, bonddim=16, verbose=true)
+    alg = VUMPS(; tol=1e-10, maxiter=200, bonddim=16, verbose=true)
+    # alg = CTMRG(; tol=1e-10, maxiter=200, bonddim=16, verbose=true, randinit=false)
     #
     # env = newcontraction(alg, contractphysical( TimeEvolutionPEPO.tensors(pepo)))
     # renormalize!(env, contractphysical( TimeEvolutionPEPO.tensors(pepo)))
 
+    # dm = DensityMatrix(trivialise(pepo), alg)
     dm = DensityMatrix(pepo, alg)
     # dm = DensityMatrix(pepo, env)
 
@@ -340,11 +337,9 @@ function measurehook!(output::Vector, sim, args...)
 
     # init
     
-    tensors = TimeEvolutionPEPO.tensors(sim.state)
-
     # alg = CTMRG(; tol=1e-8, maxiter=200, bonddim=16, verbose=true)
-    alg = VUMPS(; tol=1e-10, maxiter=200, bonddim=20, verbose=true)
-    # alg = CTMRG(; tol=1e-10, maxiter=100, bonddim=16, verbose=true)
+    # alg = VUMPS(; tol=1e-10, maxiter=200, bonddim=20, verbose=true)
+    alg = CTMRG(; tol=1e-10, maxiter=100, bonddim=16, verbose=true, randinit=true)
 
     env = nothing #newcontraction(alg, contractphysical(tensors))
     # runcontraction!(env)
@@ -392,7 +387,7 @@ function negativityhook!(sim::Simulation)
     #     return sim
     # end
 
-    pepo = tensors(sim)
+    pepo = getaxis(sim)
 
     alg = VUMPS(; maxiter=100, bonddim=16, verbose=true)
 

@@ -1,6 +1,6 @@
 # Convenience const. 
-const AbsTen{N₁,N₂,S} = AbstractTensorMap{S,N₁,N₂}
-const TenAbs{N₂,N₁,S} = AbstractTensorMap{S,N₁,N₂}
+# const AbsTen{N₁,N₂,S} = AbstractTensorMap{S,N₁,N₂}
+# const TenAbs{N₂,N₁,S} = AbstractTensorMap{S,N₁,N₂}
 
 const _DIR_TO_DOMIND = (east=1, south=2, west=3, north=4)
 
