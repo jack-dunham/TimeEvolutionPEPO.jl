@@ -1,37 +1,24 @@
-# function newevolution(
-#     pepo::AbstractPEPO, map::Vector{T}, _
-# ) where {T<:Union{OneBondStepper,TwoBondStepper}}
-#     xind = findfirst(s -> bondaxis(s) == 1, map)
-#     yind = findfirst(s -> bondaxis(s) == 2, map)
-#
-#     xpepo = newevolution(pepo, map[xind])
-#     ypepo = newevolution(changeaxis(pepo), map[yind])
-#
-#     return xpepo, ypepo
-# end
+# This file defines the top level `timestep` function
 
 newevolution(pepo, steps, method) = newevolution(eltype(steps), pepo, steps, method)
 newevolution(::Type{<:AxialStepper}, pepo, steps, method) = AxialPEPO(pepo)
 newevolution(::Type{<:AbstractTimeStepper}, pepo, steps, method) = pepo
-newevolution(::Type{<:LocalStepper}, pepo, steps, method::TEBD{<:Union{FET, NTU}}) = AxialPEPO(pepo)
+function newevolution(::Type{<:LocalStepper}, pepo, steps, method::TEBD{<:Union{FET,NTU}})
+    return AxialPEPO(pepo)
+end
 
 # Default
-function timestep!(
-    pepo, truncator, stepper, truncalg; kwargs...
-)
+function timestep!(pepo, truncator, stepper, truncalg; kwargs...)
     timestep!(pepo, first(truncator), stepper, truncalg; kwargs...)
 
     return pepo
 end
-function _timestep!(
-    pepo::PEPO, truncator, stepper::LocalStepper, truncalg::SU; kwargs...
-)
+function _timestep!(pepo::PEPO, truncator, stepper::LocalStepper, truncalg::SU; kwargs...)
     size(pepo) < (2, 2) && throw(ArgumentError(""))
 
     axis = stepper.axis
 
     for bond in bonds(pepo, axis)
-
         env = environment!(pepo, SimpleUpdateState(), bond)
 
         pair = evolve(pepo, stepper, bond)
@@ -51,10 +38,8 @@ function _timestep!(
     return pepo
 end
 
-function timestep!(
-    pepo!::PEPO, truncator, stepper::FullStepper, truncalg::SU; kwargs...
-)
-    isoms = newisometries(tensors(pepo!), stepper)
+function timestep!(pepo!::PEPO, truncator, stepper::FullStepper, truncalg::SU; kwargs...)
+    isoms = newisometries(pepo!, stepper)
 
     newpepo = evolve(pepo!, stepper)
 
@@ -104,11 +89,9 @@ function timestep!(
         setaxis!(pepo, stepper.axis)
     end
 
-    buffer = currentbuffer(pepo)
-
     infidelity = 0
 
-    axisbonds = bonds(buffer, 1)
+    axisbonds = bonds(pepo, 1)
 
     checker = true
 
@@ -118,11 +101,11 @@ function timestep!(
     end
 
     for (i, bond) in enumerate(axisbonds)
-        D = bondspace(buffer, bond)
+        D = bondspace(pepo, bond)
 
         # Evolved the pair of tensors connected by `bond`, leaving the original pair
         # unmutated.
-        pair = evolvemerge(buffer, stepper, bond)
+        pair = evolvemerge(pepo, stepper, bond)
         env = environment!(pepo, truncator[axis], bond)
 
         (u, v), s, _ = isometries(pair, env, bond, truncalg; D=D)
@@ -150,20 +133,20 @@ function timestep!(
 
         truncateto!(newpair, pair, u => v; axis=bondaxis(bond))
 
-        buffer[bond] = newpair
+        pepo[bond] = newpair
 
         if checker
             altbond = altbonds[i]
 
-            buffer[altbond] = mapreduce(copy, =>, newpair)
+            pepo[altbond] = mapreduce(copy, =>, newpair)
 
             setweight!(pepo, s, altbond; copy=false)
         end
 
         setweight!(pepo, s, bond; copy=false)
 
-        normalize!.(buffer)
-        hermitianize!.(buffer)
+        normalize!(pepo)
+        hermitianize!(pepo)
     end
 
     # if axis == 1
@@ -183,14 +166,11 @@ function timestep!(
         setaxis!(pepo, stepper.axis)
     end
 
-    buffer = currentbuffer(pepo)
-    infidelity = similar(buffer)
+    infidelity = similar(ITC.getdata(pepo))
 
     inweights = axis == 1 ? deepcopy(weights(pepo)) : permutedims(weights(pepo))
 
-    evolvedtensors = evolve(pepo, stepper)
-
-    evpepo = PEPO(evolvedtensors)
+    evpepo = evolve(pepo, stepper)
 
     axial = false
 
@@ -205,14 +185,13 @@ function timestep!(
         inweights = weights(pepo)
     end
 
-
-    isoms = map(bonds(buffer, 1)) do bond
-        D = bondspace(buffer, bond)
+    isoms = map(bonds(pepo, 1)) do bond
+        D = bondspace(pepo, bond)
 
         # Evolved the pair of tensors connected by `bond`, leaving the original pair
         # unmutated.
 
-        pair = evolvedtensors[bond]
+        pair = evpepo[bond]
 
         iso, s, _ = isometries(pair, inweights, bond, truncalg; D=D, axial=axial)
 
@@ -224,20 +203,66 @@ function timestep!(
     isoe = broadcast(first, isoms)
     isow = broadcast(last, circshift(isoms, (1, 0)))
 
-    broadcast(buffer, evolvedtensors, isoe, isow) do dst, src, e, w
+    broadcast(pepo, evpepo, isoe, isow) do dst, src, e, w
         truncateto!(dst, src, e, w)
     end
 
-    quicknormalize!(pepo.parent)
-    hermitianize!(pepo.parent)
-
+    quicknormalize!(pepo)
+    hermitianize!(pepo)
 
     return pepo, infidelity
 end
 
 function timestep!(
-    pepo!::PEPO, truncator!::Isometries, stepper, truncalg::IterativeSU
+    pepo::AxialPEPO, truncator, stepper::AxialStepper, truncalg::NTU; kwargs...
 )
+    axis = stepper.axis
+
+    if pepo.currentaxis != axis
+        setaxis!(pepo, stepper.axis)
+    end
+
+    infidelity = similar(pepo)
+
+    evpepo = evolve(pepo, stepper)
+
+    T = tensormaptype(spacetype(pepo), 1, 1, scalartype(pepo))
+
+    isomu = similar(getaxis(pepo, axis), T)
+    isomv = similar(getaxis(pepo, axis), T)
+
+    # This can happen in parallel
+    Threads.@threads for bond in bonds(pepo, 1)
+    # isoms = map(bonds(pepo, 1)) do bond
+        D = bondspace(pepo, bond)
+
+        env = environment!(evpepo, truncator[axis], bond)
+
+        pair = evpepo[bond]
+
+        (u, v), s, _ = isometries(pair, env, bond, truncalg; D=D, parallel=true)
+
+        setweight!(pepo, s, bond; copy=false)
+
+        isomu[first(bond)] = u
+        isomv[last(bond)] = v
+
+        # return u => v
+    end
+
+    # isomu = broadcast(first, isoms)
+    # isomv = broadcast(last, circshift(isoms,(1,0)))
+
+    broadcast(pepo, evpepo, isomu, isomv) do dst, src, u, v
+        truncateto!(dst, src, u, v)
+    end
+
+    quicknormalize!(pepo)
+    hermitianize!(pepo)
+
+    return pepo, infidelity
+end
+function timestep!(pepo!::PEPO, truncator!::Isometries, stepper, truncalg::IterativeSU)
     iterative_simple_update_prototype!(
         pepo!,
         truncator!,
@@ -247,18 +272,32 @@ function timestep!(
         recycle=truncalg.recycle,
         sequential=truncalg.sequential,
         gauge=truncalg.gauge,
-        xi = truncalg.xi,
+        xi=truncalg.xi,
+    )
+
+    return pepo!
+end
+function timestep!(pepo!::PEPO, truncator!::Isometries, stepper, truncalg::IterativeSUTest)
+    iterative_simple_update_prototype!(
+        pepo!,
+        truncator!,
+        stepper;
+        maxiter=truncalg.maxiter,
+        tol=truncalg.tol,
+        recycle=truncalg.recycle,
+        sequential=truncalg.sequential,
+        gauge=truncalg.gauge,
+        xi=truncalg.xi,
+        check_fidelity=true,
     )
 
     return pepo!
 end
 
-
 ## TODO: Old methods below
 
 # Parallel Semi Parallel
 function _timestep!(pepo::AxialPEPO, truncator, stepper, truncalg; kwargs...)
-
     axis = stepper.axis
 
     pepo.currentaxis == axis || setaxis!(pepo, axis)
@@ -267,7 +306,7 @@ function _timestep!(pepo::AxialPEPO, truncator, stepper, truncalg; kwargs...)
 
     infidelity = 0
 
-    buffer = tensors(pepo)
+    buffer = axisbuffer(pepo)
 
     if truncalg isa FET
         trunc = newtruncators(evolvedtensors, truncalg)
@@ -307,181 +346,181 @@ function _timestep!(pepo::AxialPEPO, truncator, stepper, truncalg; kwargs...)
     return pepo, infidelity
 end
 
-function itrtimestep_deprec!(
-    pepo,
-    truncator,
-    stepper::Vector{<:FullStepper{<:Any,<:SparseTensorMap}},
-    ::Number;
-    kwargs...,
-)
-    stepper = only(stepper)
-
-    infidelity = 0
-
-    buff = currentbuffer(pepo)
-
-    weightsbuff = deepcopy(weights(pepo))
-    oldweights = deepcopy(weights(pepo))
-
-    isoms_data = broadcast(buff, tensors(stepper)) do dst, src
-        return stepstitchisometries(storagetype(dst), domain(dst), domain(src))
-    end
-
-    isoms = Isometries(isoms_data)
-    isomsbuff = similar(isoms)
-
-    local isoe
-    local isow
-
-    local ison
-    local isos
-
-    schedule = :sequential
-    # schedule = :parallel
-
-    for i in 1:15
-
-        isomh = broadcast(bonds(buff, 1)) do bond
-            reducedpair = localevolve(buff[bond], stepper, isoms, bond)
-
-            foreach(normalize!, reducedpair)
-
-            D = bondspace(pepo, bond)
-            (u, v), s, _ = simpleupdate(reducedpair, weights(pepo), bond; trunc=truncspace(D))
-
-
-            if schedule === :sequential
-                setindex!(isoms, u => v, bond)
-                setweight!(pepo, s, bond; copy=true)
-            elseif schedule === :parallel
-                setindex!(isomsbuff, u => v, bond)
-                weightsbuff[bond] = s
-            end
-
-            return (u, v)
-        end
-
-        isomv = broadcast(bonds(buff, 2)) do bond
-            reducedpair = localevolve(buff[bond], stepper, isoms, bond)
-
-            foreach(normalize!, reducedpair)
-
-            D = bondspace(pepo, bond)
-            (u, v), s, _ = simpleupdate(reducedpair, weights(pepo), bond; trunc=truncspace(D))
-
-
-            if schedule === :sequential
-                setindex!(isoms, u => v, bond)
-                setweight!(pepo, s, bond; copy=true)
-            elseif schedule === :parallel
-                setindex!(isomsbuff, u => v, bond)
-                weightsbuff[bond] = s
-            end
-
-            return (u, v)
-        end
-
-        # foreach(bonditer(buff)) do bond
-        #     s = weightsbuff[bond]
-        #     setweight!(pepo, s, bond; copy=false)
-        # end
-
-        # isoe = broadcast(first, isomh)
-        # isow = broadcast(last, circshift(isomh, (1, 0)))
-        #
-        # isos = broadcast(first, permutedims(isomv))
-        # ison = broadcast(last, permutedims(circshift(isomv, (1, 0))))
-        #
-        #
-        # isoms = SquareLattice(
-        #     broadcast(tuple, isoe, isos, isow, ison)
-        # )
-
-
-        if schedule === :sequential
-            tol = tolerance!(weightsbuff, weights(pepo), 1.0)
-        else
-            elcopy!(isoms, isomsbuff)
-            tol = tolerance!(weights(pepo), weightsbuff, 1.0)
-        end
-
-        @warn "Got $tol after $i"
-
-        if tol < 1e-6 && i > 0
-            break
-        end
-
-        # temppepo = deepcopy(pepo)
-        #
-        # broadcast(
-        #     tensors(temppepo), tensors(stepper), isoe, isos, isow, ison
-        # ) do dst, op, e, s, w, n
-        #     spten = truncateto(dst, dst, op, e, s, w, n)
-        #     mergeinto!(dst, spten)
-        # end
-        #
-        # gauge1, gauge2 = simple_update_gauge_isometries!(temppepo)
-        #
-        # ge = broadcast(first, gauge1)
-        # gw = broadcast(last, circshift(gauge1, (1, 0)))
-        #
-        # gs = broadcast(first, permutedims(gauge2))
-        # gn = broadcast(last, permutedims(circshift(gauge2, (1, 0))))
-        #
-        # gisoms = SquareLattice(
-        #     broadcast(tuple, ge, gs, gw, gn)
-        # )
-
-        # isoms = broadcast(isoms, gisoms) do iso, g
-        #     e1, s1, w1, n1 = iso
-        #     e2, s2, w2, n2 = g
-        #
-        #     e = e1 * e2
-        #     s = s1 * s2
-        #
-        #     w = w2 * w1
-        #     n = n2 * n1
-        #
-        #     return (e,s,w,n)
-        # end
-        #
-        # foreach(bonditer(buff)) do bond
-        #     s = weights(temppepo)[bond]
-        #     setweight!(pepo, s, bond; copy=true)
-        # end
-    end
-
-    # broadcast(
-    #     buff, tensors(stepper), isoe, isos, isow, ison
-    # ) do dst, op, e, s, w, n
-    #     spten = truncateto(dst, dst, op, e, s, w, n)
-    #     mergeinto!(dst, spten)
-    # end
-
-    for I in eachindex(buff)
-
-        dst = buff[I]
-        op = tensors(stepper)[I]
-        e, s, w, n = isoms[I]
-
-        spten = truncateto(dst, dst, op, e, s, w, n)
-
-        mergeinto!(dst, spten)
-    end
-
-    size(buff) == (1, 1) && minimalcanonicalform!(buff)
-
-    size(buff) != (1, 1) && simple_update_gauge!(pepo; maxiter=100)
-
-    pepo.state = 0
-
-    # minimalcanonicalform!(tensors(pepo))
-
-    quicknormalize!(pepo.parent)
-    hermitianize!(pepo.parent)
-
-    return pepo, infidelity
-end
+# function itrtimestep_deprec!(
+#     pepo,
+#     truncator,
+#     stepper::Vector{<:FullStepper{<:Any,<:SparseTensorMap}},
+#     ::Number;
+#     kwargs...,
+# )
+#     stepper = only(stepper)
+#
+#     infidelity = 0
+#
+#     buff = currentbuffer(pepo)
+#
+#     weightsbuff = deepcopy(weights(pepo))
+#     oldweights = deepcopy(weights(pepo))
+#
+#     isoms_data = broadcast(buff, tensors(stepper)) do dst, src
+#         return stepstitchisometries(storagetype(dst), domain(dst), domain(src))
+#     end
+#
+#     isoms = Isometries(isoms_data)
+#     isomsbuff = similar(isoms)
+#
+#     local isoe
+#     local isow
+#
+#     local ison
+#     local isos
+#
+#     schedule = :sequential
+#     # schedule = :parallel
+#
+#     for i in 1:15
+#
+#         isomh = broadcast(bonds(buff, 1)) do bond
+#             reducedpair = localevolve(buff[bond], stepper, isoms, bond)
+#
+#             foreach(normalize!, reducedpair)
+#
+#             D = bondspace(pepo, bond)
+#             (u, v), s, _ = simpleupdate(reducedpair, weights(pepo), bond; trunc=truncspace(D))
+#
+#
+#             if schedule === :sequential
+#                 setindex!(isoms, u => v, bond)
+#                 setweight!(pepo, s, bond; copy=true)
+#             elseif schedule === :parallel
+#                 setindex!(isomsbuff, u => v, bond)
+#                 weightsbuff[bond] = s
+#             end
+#
+#             return (u, v)
+#         end
+#
+#         isomv = broadcast(bonds(buff, 2)) do bond
+#             reducedpair = localevolve(buff[bond], stepper, isoms, bond)
+#
+#             foreach(normalize!, reducedpair)
+#
+#             D = bondspace(pepo, bond)
+#             (u, v), s, _ = simpleupdate(reducedpair, weights(pepo), bond; trunc=truncspace(D))
+#
+#
+#             if schedule === :sequential
+#                 setindex!(isoms, u => v, bond)
+#                 setweight!(pepo, s, bond; copy=true)
+#             elseif schedule === :parallel
+#                 setindex!(isomsbuff, u => v, bond)
+#                 weightsbuff[bond] = s
+#             end
+#
+#             return (u, v)
+#         end
+#
+#         # foreach(bonditer(buff)) do bond
+#         #     s = weightsbuff[bond]
+#         #     setweight!(pepo, s, bond; copy=false)
+#         # end
+#
+#         # isoe = broadcast(first, isomh)
+#         # isow = broadcast(last, circshift(isomh, (1, 0)))
+#         #
+#         # isos = broadcast(first, permutedims(isomv))
+#         # ison = broadcast(last, permutedims(circshift(isomv, (1, 0))))
+#         #
+#         #
+#         # isoms = SquareLattice(
+#         #     broadcast(tuple, isoe, isos, isow, ison)
+#         # )
+#
+#
+#         if schedule === :sequential
+#             tol = tolerance!(weightsbuff, weights(pepo), 1.0)
+#         else
+#             elcopy!(isoms, isomsbuff)
+#             tol = tolerance!(weights(pepo), weightsbuff, 1.0)
+#         end
+#
+#         @warn "Got $tol after $i"
+#
+#         if tol < 1e-6 && i > 0
+#             break
+#         end
+#
+#         # temppepo = deepcopy(pepo)
+#         #
+#         # broadcast(
+#         #     tensors(temppepo), tensors(stepper), isoe, isos, isow, ison
+#         # ) do dst, op, e, s, w, n
+#         #     spten = truncateto(dst, dst, op, e, s, w, n)
+#         #     mergeinto!(dst, spten)
+#         # end
+#         #
+#         # gauge1, gauge2 = simple_update_gauge_isometries!(temppepo)
+#         #
+#         # ge = broadcast(first, gauge1)
+#         # gw = broadcast(last, circshift(gauge1, (1, 0)))
+#         #
+#         # gs = broadcast(first, permutedims(gauge2))
+#         # gn = broadcast(last, permutedims(circshift(gauge2, (1, 0))))
+#         #
+#         # gisoms = SquareLattice(
+#         #     broadcast(tuple, ge, gs, gw, gn)
+#         # )
+#
+#         # isoms = broadcast(isoms, gisoms) do iso, g
+#         #     e1, s1, w1, n1 = iso
+#         #     e2, s2, w2, n2 = g
+#         #
+#         #     e = e1 * e2
+#         #     s = s1 * s2
+#         #
+#         #     w = w2 * w1
+#         #     n = n2 * n1
+#         #
+#         #     return (e,s,w,n)
+#         # end
+#         #
+#         # foreach(bonditer(buff)) do bond
+#         #     s = weights(temppepo)[bond]
+#         #     setweight!(pepo, s, bond; copy=true)
+#         # end
+#     end
+#
+#     # broadcast(
+#     #     buff, tensors(stepper), isoe, isos, isow, ison
+#     # ) do dst, op, e, s, w, n
+#     #     spten = truncateto(dst, dst, op, e, s, w, n)
+#     #     mergeinto!(dst, spten)
+#     # end
+#
+#     for I in eachindex(buff)
+#
+#         dst = buff[I]
+#         op = tensors(stepper)[I]
+#         e, s, w, n = isoms[I]
+#
+#         spten = truncateto(dst, dst, op, e, s, w, n)
+#
+#         mergeinto!(dst, spten)
+#     end
+#
+#     size(buff) == (1, 1) && minimalcanonicalform!(buff)
+#
+#     size(buff) != (1, 1) && simple_update_gauge!(pepo; maxiter=100)
+#
+#     pepo.state = 0
+#
+#     # minimalcanonicalform!(tensors(pepo))
+#
+#     quicknormalize!(pepo.parent)
+#     hermitianize!(pepo.parent)
+#
+#     return pepo, infidelity
+# end
 
 function _timestep!(
     pepo, truncator, stepper::Vector{<:FullStepper{<:Any,<:TensorMap}}, ::Number; kwargs...
@@ -523,10 +562,10 @@ function _timestep!(
     # truncy = newtruncators(ybuff, truncalg)
     # renormalize!(truncy)
 
-    reducedbuffer = broadcast(baretruncation!, similar.(tensors(pepo)), buff)
+    reducedbuffer = broadcast(baretruncation!, similar.(axisbuffer(pepo)), buff)
 
-    xisoms = stitchisometries.(tensors(pepo), buff)
-    yisoms = stitchisometries.(permutetranspose(tensors(pepo)), ybuff)
+    xisoms = stitchisometries.(axisbuffer(pepo), buff)
+    yisoms = stitchisometries.(permutetranspose(axisbuffer(pepo)), ybuff)
 
     weightsbuff = deepcopy(weights(pepo))
 
@@ -634,7 +673,7 @@ function _timestep!(
 
     @warn "isometries converged to $tol after"
 
-    copy!.(tensors(pepo), reducedbuffer)
+    copy!.(axisbuffer(pepo), reducedbuffer)
 
     # foreach(
     #     tensors(pepo), buff, isoe, permutedims(isos), isow, permutedims(ison)
@@ -666,7 +705,7 @@ function halftimestep!(
 )
     pepo = allpepo[dir]
     otherpepo = allpepo[3 - dir]
-    dst = tensors(otherpepo)
+    dst = axisbuffer(otherpepo)
     stepper = stepper[dir]
 
     # truncalg = NTU(; rankreduce=false, optalg=EVB())
@@ -716,7 +755,7 @@ function _timestep!(
 ) where {N}
     pepo = pepo[1]
 
-    dstpepo = tensors(pepo)
+    dstpepo = axisbuffer(pepo)
     srcpepo = currentbuffer(pepo)
 
     site = dstpepo[1]
@@ -726,7 +765,7 @@ function _timestep!(
     bondv = Bond(CartesianIndex(1, 1), CartesianIndex(1, 2))
 
     # mts = beliefpropagation(srcpepo)
-    op = tensors(stepper[1])
+    op = axisbuffer(stepper[1])
     mts = beliefpropagation(dstpepo, op)
 
     # gauge
@@ -805,10 +844,10 @@ function _bptimestep!(
     pepox, pepoy = pepo
     stepper = stepper[1]
 
-    dstpepo = tensors(pepox)
+    dstpepo = axisbuffer(pepox)
     srcpepo = currentbuffer(pepox)
 
-    mts = beliefpropagation(dstpepo, tensors(stepper))
+    mts = beliefpropagation(dstpepo, axisbuffer(stepper))
 
     bondh = bonds(pepox, 1)
     bondv = bonds(pepox, 2)
@@ -860,7 +899,7 @@ function _bptimestep!(
     ison = map(iso -> iso.v, circshift(isomv, (1, 0)))
 
     foreach(srcpepo, dstpepo, isoe, isos, isow, ison) do src, dst, e, s, w, n
-        step = tensors(stepper)[1]
+        step = axisbuffer(stepper)[1]
         truncateto!(dst, deepcopy(dst), step, e, s, w, n)
     end
     #=
@@ -958,16 +997,6 @@ function copysymmetric!(array::AbstractMatrix)
         @views circshift!(array[:, c], copy.(array[:, 1]), -(c - 1))
     end
     return array
-end
-
-function applybothtrotter!(pev, pin, gates::LocalStepper; kwargs...)
-    return _applybothtrotter!.(pev, pin, gates.u, gates.v; kwargs...)
-end
-# function applybothtrotter!(pev, pin, gates::SimpleGates)
-#     return _applybothtrotter!.(pev, pin, gates.east, gates.west, gates.loc)
-# end
-function applybothtrotter!(pev, pin, mpo::TwoBondStepper; kwargs...)
-    return _applybothtrotter!.(pev, pin, mpo.t)
 end
 
 function _applybothtrotter!(pev, pin, op_l, op_r; reverse=false)

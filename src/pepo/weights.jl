@@ -1,4 +1,4 @@
-function setweight!(weights::EdgeLattice, value, bond::Bond; copy=false)
+function setweight!(weights::UnitCellBonds, value, bond::Bond; copy=false)
     if copy
         copyindex!(weights, value, bond)
     else
@@ -8,32 +8,53 @@ function setweight!(weights::EdgeLattice, value, bond::Bond; copy=false)
     return weights
 end
 
-function tolerance!(buffer::W, weights::W, tau::Float64 = 1.0) where {W<:EdgeLattice}
+function tolerance!(buffer::W, weights::W, tau::Float64=1.0) where {W<:UnitCellBonds}
     tol = broadcast(buffer, weights) do dst, src
         return _tolerance!(dst, src, tau)
     end
 
     return maximum(tol[bond] for bond in eachbond(tol))
 end
-function _tolerance!(ow, nw, tau::Float64)
-    if space(ow) != space(nw)
+function _tolerance!(old, new, tau::Float64)
+    if space(old) != space(new)
         return Inf
     end
 
-    rv = norm(ow - nw) / (tau * norm(nw) * dim(codomain(nw)))
-    copy!(ow, nw)
+    rv = norm(old - new) / (tau * norm(new) * dim(codomain(new)))
+
+    # rv = abs(bondentropy(new; normalised=true) - bondentropy(old; normalised=true)) / tau
+
+    # Its a good idea to create a copy of the old weights, rather than updating the buffer
+    # lattice to prevent further mutation to the old weights
+    copy!(old, new)
     return rv
 end
 
-function bondentropy(weights::W) where {W<:EdgeLattice}
+bondentropy(weights; kwargs...) = broadcast(w -> bondentropy(w; kwargs...), weights)
+function bondentropy(w::AbstractTensorMap; normalised=false)
+    w = maxnormalize!(copy(w))
 
-    entropies = broadcast(weights) do w
-        wvec = diag(convert(Array, w))
+    wvec = diag(convert(Array, w))
 
-        entropy = sum(λ -> - λ * log(λ), wvec)
+    wvec /= sum(wvec)
 
-        return entropy 
-    end
+    entf = λ -> λ ≈ 0 ? zero(λ) : -λ * log(λ)
 
-    return entropies
+    entropy = sum(entf, wvec) / log(length(wvec))^normalised
+
+    return entropy
 end
+
+# function bondentropy(weight::DiagonalTensorMap; normalised=false)
+#     entropies = broadcast(weights) do w
+#         w = maxnormalize!(copy(w))
+#
+#         wvec = diag(convert(Array, w))
+#
+#         entropy = sum(λ -> -λ * log(λ), wvec) / log(length(wvec)^normalised)
+#
+#         return entropy
+#     end
+#
+#     return entropies
+# end

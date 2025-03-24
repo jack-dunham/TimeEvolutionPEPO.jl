@@ -26,18 +26,18 @@ struct VidalTruncationState{M<:MessageTensors,U<:VidalIsometries,S<:VidalWeights
     map::T
 end
 # Truncate a globally evolving pepo
-function _truncate!(pepo::GlobalUpdatablePEPO, truncators::VidalTruncationState)
-    dst = tensors(pepo)
-    src = currentbuffer(pepo)
-
-    tno = truncators.map
-    vidals = truncators.isometries
-
-    vidaltruncation!.(dst, src, tno.data, vidals)
-    copy!.(src, dst)
-
-    return pepo
-end
+# function _truncate!(pepo::GlobalUpdatablePEPO, truncators::VidalTruncationState)
+#     dst = tensors(pepo)
+#     src = currentbuffer(pepo)
+#
+#     tno = truncators.map
+#     vidals = truncators.isometries
+#
+#     vidaltruncation!.(dst, src, tno.data, vidals)
+#     copy!.(src, dst)
+#
+#     return pepo
+# end
 
 function newtruncators(pepo, dynamical_map, ::VGU)
     map = dynamical_map.x

@@ -471,7 +471,7 @@ function construct_exact_tebd_time_stepper(model, physical, method::AbstractTEBD
     return ts
 end
 function finalize_exact_tebd_time_stepper(
-    lattice_of_vectors::Lattice{G,Vector{Tuple{U,V}}}, ::TEBD, numops=Int; axis
+    lattice_of_vectors::UnitCell{G,Vector{Tuple{U,V}}}, ::TEBD, numops=Int; axis
 ) where {G,U,V}
     ulats = [similar(lattice_of_vectors, U) for _ in 1:numops]
     vlats = [similar(lattice_of_vectors, V) for _ in 1:numops]
@@ -507,7 +507,7 @@ function finalize_exact_tebd_time_stepper(
 end
 
 function finalize_exact_tebd_time_stepper(
-    lattice_of_vectors::Lattice{G,Vector{T}}, ::AbstractTEBD, numops=Int; kwargs...
+    lattice_of_vectors::UnitCell{G,Vector{T}}, ::AbstractTEBD, numops=Int; kwargs...
 ) where {G,T}
     first_lattice = getindex.(lattice_of_vectors, 1)
 

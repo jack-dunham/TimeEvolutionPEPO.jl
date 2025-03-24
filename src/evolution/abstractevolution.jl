@@ -3,74 +3,43 @@ abstract type AbstractUpdateStyle end
 struct LocalUpdate <: AbstractUpdateStyle end
 struct GlobalUpdate <: AbstractUpdateStyle end
 
-abstract type AbstractTimeStepper end
+abstract type AbstractTimeStepper{G,PType} <: AbstractUnitCell{G,PType,Matrix{PType}} end
+ITC.getdata(s::AbstractTimeStepper) = s.data
 
-latticetuple(s::AbstractTimeStepper) = s.data
-
-abstract type AbstractTrotterizedTimeStepper <: AbstractTimeStepper end
+abstract type AbstractTrotterizedTimeStepper{G,PType} <: AbstractTimeStepper{G,PType} end
 
 bondaxis(s::AbstractTrotterizedTimeStepper) = s.axis
 isreversed(s::AbstractTrotterizedTimeStepper) = s.isreversed
 
 function Base.reverse(s::S) where {S<:AbstractTrotterizedTimeStepper}
-    return S(latticetuple(s), bondaxis(s), !isreversed(s))
+    return S(ITC.getdata(s), bondaxis(s), !isreversed(s))
 end
 
-# # Updates along a single bond on an axis. 
-# struct LocalStepper{G,MType} <: AbstractTrotterizedTimeStepper
-#     data::NTuple{2,Lattice{G,MType,Matrix{MType}}} #left (u, e bond), right (v, w bond)
-#     axis::Int
-#     isreversed::Bool
-# end
-
-struct LocalStepper{G,MType} <: AbstractTrotterizedTimeStepper
-    data::Lattice{G,NTuple{2,MType},Matrix{NTuple{2,MType}}} #left (u, e bond), right (v, w bond)
+struct LocalStepper{G,MType} <: AbstractTrotterizedTimeStepper{G,MType}
+    data::UnitCell{G,NTuple{2,MType},Matrix{NTuple{2,MType}}} #left (u, e bond), right (v, w bond)
     axis::Int
     isreversed::Bool
 end
 
-function LocalStepper(lat; axis=1, inreverse=false)
-    return LocalStepper(lat, axis, inreverse)
-end
-
-Base.size(ls::LocalStepper) = size(ls.data)
-
-tensors(s::LocalStepper) = s.data
+LocalStepper(lat; axis=1, inreverse=false) = LocalStepper(lat, axis, inreverse)
 
 function Base.getindex(stepper::LocalStepper, bond::Bond)
     i1, i2 = bond
 
-    data = tensors(stepper)
-
-    u1, _ = data[i1]
-    _, v2 = data[i2]
+    u1, _ = stepper[i1]
+    _, v2 = stepper[i2]
 
     return u1, v2
 end
-# Updates along both bonds on an axis
-struct TwoBondStepper{G,MType<:AbsTen{4,2}} <: AbstractTrotterizedTimeStepper
-    data::NTuple{2,Lattice{G,MType,Matrix{MType}}}
-    axis::Int
-    isreversed::Bool
-end
 
-struct AxialStepper{G,MType<:AbsTen{4,2}} <: AbstractTrotterizedTimeStepper
-    data::Lattice{G,MType,Matrix{MType}}
+struct AxialStepper{G,MType<:AbsTen{4,2}} <: AbstractTrotterizedTimeStepper{G,MType}
+    data::UnitCell{G,MType,Matrix{MType}}
     axis::Int
 end
 
 AxialStepper(lat; axis, kwargs...) = AxialStepper(lat, axis)
 
-Base.size(s::AxialStepper) = size(tensors(s))
-
-tensors(s::AxialStepper) = s.data
-
-function tensors(s::TwoBondStepper)
-    (t1, t2) = latticetuple(s)
-    return isreversed(s) ? t2 : t1
-end
-
-function twobondstepper(u::L, v::L) where {G,L<:AbstractLattice{G,<:AbsTen{4,1}}}
+function twobondstepper(u::L, v::L) where {G,L<:AbstractUnitCell{G,<:AbsTen{4,1}}}
     t1 = broadcast(u, v) do ui, vi
         @tensoropt begin
             op[ook oob ik ib; e w] := vi[ok ob ik ib; w] * ui[ook oob ok ob; e]
@@ -86,11 +55,11 @@ function twobondstepper(u::L, v::L) where {G,L<:AbstractLattice{G,<:AbsTen{4,1}}
     return t1, t2
 end
 
-struct FullStepper{G,MType} <: AbstractTimeStepper
-    t::Lattice{G,MType,Matrix{MType}}
+struct FullStepper{G,MType} <: AbstractTimeStepper{G,MType}
+    data::UnitCell{G,MType,Matrix{MType}}
 end
 
-FullStepper(t; kwargs...) = FullStepper(t)
+FullStepper(data; kwargs...) = FullStepper(data)
 
 # function stepper_type(t1::Type, t2::Type)
 #     throw(ArgumentError("Unknown stepper type for types $t1 and $t2"))
@@ -102,22 +71,18 @@ stepper_type(m1::Type{<:AbstractMatrix}, m2::Type) = stepper_type(eltype(m1), m2
 totype(t::Type) = t
 totype(t) = typeof(t)
 
-Base.size(fs::FullStepper) = size(fs.t)
-
-tensors(s::FullStepper) = s.t
 Base.reverse(s::FullStepper) = s
 
 stepstyle(::Type{<:FullStepper}) = Global()
 
-struct SplitStepper{G,MType} <: AbstractTimeStepper
-    t::Lattice{G,MType,Matrix{MType}}
+struct SplitStepper{G,MType} <: AbstractTimeStepper{G,MType}
+    data::UnitCell{G,MType,Matrix{MType}}
 end
 
-tensors(s::SplitStepper) = s.t
 Base.reverse(s::SplitStepper) = s
 
 struct TrotterizedHeisenbergStepper{G,MType}
-    t::Vector{Lattice{G,MType,Matrix{MType}}}
+    t::Vector{UnitCell{G,MType,Matrix{MType}}}
 end
 
 struct GenericStepper end
@@ -221,7 +186,7 @@ end
 function evolve(pepo::AxialPEPO, stepper::AxialStepper)
     @assert pepo.currentaxis == stepper.axis
 
-    rv = broadcast(tensors(pepo), tensors(stepper)) do pin, mpo
+    rv = broadcast(pepo, stepper) do pin, mpo
         d1, d2, d3, d4 = domain(pin)
         D1, D3 = domain(mpo)
 
@@ -234,11 +199,11 @@ function evolve(pepo::AxialPEPO, stepper::AxialStepper)
         mergeinto!(dst, pout)
     end
 
-    return rv
+    return PEPO(rv)
 end
 
 function apply_four_bond_stepper!(dst, src, stepper::FullStepper)
-    broadcast(dst, src, tensors(stepper)) do pev, pin, mpo
+    broadcast(dst, src, stepper) do pev, pin, mpo
         @tensoropt begin
             pout[ok ob; e ee s ss w ww n nn] :=
                 mpo[ok ob ik ib; ee ss ww nn] * pin[ik ib; e s w n]
@@ -247,7 +212,7 @@ function apply_four_bond_stepper!(dst, src, stepper::FullStepper)
         mergeinto!(pev, pout)
     end
 
-    return pepo
+    return dst
 end
 function apply_four_bond_stepper!(pev, pin, mpo::AbstractTensorMap)
     @tensoropt begin
@@ -566,18 +531,18 @@ function apply_four_bond_stepper_locally_vert(src, op, isoms)
     return ten1 => ten2
 end
 
-function applystepper!(pepo::GlobalUpdatablePEPO, stepper::SplitStepper)
-    setisevolved!(pepo, false)
-
-    broadcast(tensors(pepo), currentbuffer(pepo), tensors(stepper)) do pin, pev, mpo
-        @tensoropt begin
-            pout[ok ob; e ee s w ww n] := mpo[ok ob ik ib; ee ww] * pin[ik ib; e s w n]
-        end
-        mergeinto!(pev, pout)
-    end
-
-    return pepo
-end
+# function applystepper!(pepo::GlobalUpdatablePEPO, stepper::SplitStepper)
+#     setisevolved!(pepo, false)
+#
+#     broadcast(tensors(pepo), currentbuffer(pepo), tensors(stepper)) do pin, pev, mpo
+#         @tensoropt begin
+#             pout[ok ob; e ee s w ww n] := mpo[ok ob ik ib; ee ww] * pin[ik ib; e s w n]
+#         end
+#         mergeinto!(pev, pout)
+#     end
+#
+#     return pepo
+# end
 
 # function applysplitstepper!(
 #     pin::AbstractTensorMap{S,2,4}, mpo::AbstractTensorMap{S,3,2}
@@ -607,10 +572,8 @@ Base.parent(dmpo::AbstractDMPO) = getfield(dmpo, :parent)
 
 @kwdef struct DMPO{TAlg<:AbstractTruncationScheme} <: AbstractDMPO
     approx::Bool = true
-    breaktol::Float64 = 0.0
     compress::Bool = true
     extend::Bool = true
-    numsteps::Int = 100
     order::Int = 1
     timestep::Float64 = 0.01
     trotterorder::Int = 1
@@ -635,9 +598,9 @@ abstract type AbstractTEBD <: AbstractTimeEvolution end
 Base.show(io::IO, m::MIME"text/plain", sim::AbstractTEBD) = shownested(io, m, sim)
 showheader(::Type{<:AbstractTEBD}) = "Time-evolving block decimation (TEBD)"
 
-Base.parent(tebd::Union{AbstractTEBD, AbstractDMPO}) = getfield(tebd, :parent)
+Base.parent(tebd::Union{AbstractTEBD,AbstractDMPO}) = getfield(tebd, :parent)
 
-function Base.getproperty(method::Union{AbstractTEBD, AbstractDMPO}, sym::Symbol)
+function Base.getproperty(method::Union{AbstractTEBD,AbstractDMPO}, sym::Symbol)
     if sym === :parent
         return getfield(method, sym)
     else
@@ -646,10 +609,8 @@ function Base.getproperty(method::Union{AbstractTEBD, AbstractDMPO}, sym::Symbol
 end
 
 @kwdef mutable struct TEBD{TAlg<:AbstractTruncationScheme} <: AbstractTEBD
-    breaktol::Float64 = 0.0
     compresstol::Float64 = eps()
     trotterlevel::Symbol = :max
-    numsteps::Int = 100
     timestep::Float64 = 0.01
     trotterorder::Int = 1
     truncalg::TAlg = SU()
@@ -677,8 +638,6 @@ GlobalTEBD(; kwargs...) = GlobalTEBD(TEBD(; kwargs...))
 UpdateStyle(::Type{<:GlobalTEBD}) = IsGlobal()
 
 @kwdef struct TETNO{TAlg,Style} <: AbstractTimeEvolution
-    breaktol::Float64 = 0.0
-    numsteps::Int = 100
     timestep::Float64 = 0.1
     trotterorder::Int = 1
     truncalg::TAlg = SU()
@@ -691,8 +650,6 @@ truncstyle(method::TETNO) = method.truncstyle
 showheader(::Type{<:TETNO}) = "Time-evolving tensor network operator (TETNO)"
 
 @kwdef struct TEPEPSO{TAlg} <: AbstractTimeEvolution
-    breaktol::Float64 = 0.0
-    numsteps::Int = 100
     timestep::Float64 = 0.1
     trotterorder::Int = 1
     truncalg::TAlg = IterativeSU()

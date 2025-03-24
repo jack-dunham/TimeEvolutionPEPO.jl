@@ -107,15 +107,7 @@ function wtg!(iso, metric; kwargs...)
     @info "Fixing to weighted trace gauge..."
     return wtg!(iso.u, iso.s, iso.v, metric; kwargs...)
 end
-function barewtg!(
-    u::TensorMap{S,1,1}, # u[x] 
-    s::TensorMap{S,1,1}, # s[x]
-    v::TensorMap{S,1,1}, # v[x+1]
-    yiso::TensorMap{S,2,2}; # γ[x]
-    test=true,
-    skiptol=1e-10,
-    postol=eps(),
-) where {S<:IndexSpace}
+function barewtg!(u, s, v, yiso; test=true, skiptol=1e-10, postol=eps())
     if test == true && bareverifywtg(s, yiso; verbose=false)
         @info "Already in weighted trace gauge"
         return u, s, v
@@ -194,15 +186,7 @@ function barewtg!(
 
     return u, s, v
 end
-function wtg!(
-    u::TensorMap{S,1,1}, # u[x] 
-    s::TensorMap{S,1,1}, # s[x]
-    v::TensorMap{S,1,1}, # v[x+1]
-    Y::TensorMap{S,2,2}; # γ[x]
-    test=true,
-    skiptol=1e-10,
-    postol=eps(),
-) where {S<:IndexSpace}
+function wtg!(u, s, v, Y; test=true, skiptol=1e-10, postol=eps())
     if test == true && verifywtg(u, s, v, Y; verbose=false)
         @info "Already in weighted trace gauge"
         return u, s, v
@@ -288,14 +272,7 @@ function wtg!(
     return u, s, v
 end
 
-function wtg2!(
-    u::TensorMap{S,1,1}, # u[x] 
-    s::TensorMap{S,1,1}, # s[x]
-    v::TensorMap{S,1,1}, # v[x+1]
-    Y::TensorMap{S,2,2}; # γ[x]
-    skiptol=1e-10,
-    postol=eps(),
-) where {S<:IndexSpace}
+function wtg2!(u, s, v, Y; skiptol=1e-10, postol=eps())
     svals = diag(convert(Array, s))
     smin = minimum(abs.(svals))
 
@@ -367,9 +344,7 @@ function wtg2!(
     return u, s, v
 end
 
-function bareverifywtg(
-    s::TensorMap{S,1,1}, γin::TensorMap{S,2,2}; verbose=true
-) where {S<:IndexSpace}
+function bareverifywtg(s, γin; verbose=true)
 
     # @tensoropt γin[-1 -2; -3 -4] :=
     #     γ[1 2 3 4; 5 6 7 8] * u[5 6; -3] * v[-1; 1 2] * (u')[-2; 3 4] * (v')[7 8; -4]
@@ -429,13 +404,7 @@ function bareverifywtg(
     return isgauged
 end
 #TODO: Tidy this once I am sure it is working.
-function verifywtg(
-    u::TensorMap{S,1,1},
-    s::TensorMap{S,1,1},
-    v::TensorMap{S,1,1},
-    γ::TensorMap{S,2,2};
-    verbose=true,
-) where {S<:IndexSpace}
+function verifywtg(u, s, v, γ; verbose=true)
     @tensoropt γin[-1 -2; -3 -4] :=
         γ[1 2; 3 4] * u[3; -3] * v[-1; 1] * (u')[-2; 2] * (v')[4; -4]
 
@@ -501,12 +470,12 @@ function wtgisometries!(isoms, pepo, stepper; maxiter=100, tol=1e-8, verbose=fal
     conv = Inf
 
     for numiter in 1:maxiter
-        for bond in eachbond(tensors(pepo))
+        for bond in eachbond(axisbuffer(pepo))
             temppepo = deepcopy(pepo)
 
-            for I in eachindex(tensors(temppepo))
-                dst = tensors(temppepo)[I]
-                op = tensors(stepper)[I]
+            for I in eachindex(axisbuffer(temppepo))
+                dst = axisbuffer(temppepo)[I]
+                op = axisbuffer(stepper)[I]
                 let (e, s, w, n) = isoms[I]
                     truncateto!(dst, deepcopy(dst), op, e, s, w, n)
                 end
@@ -519,7 +488,7 @@ function wtgisometries!(isoms, pepo, stepper; maxiter=100, tol=1e-8, verbose=fal
             elseif bondaxis(bond) == 2
                 (_, u, _, _), (_, _, _, v) = isoms[bond]
             end
-            
+
             s = weights(pepo)[bond]
 
             oldS = bondentropy(weights(pepo))[1, 1][bondaxis(bond)]

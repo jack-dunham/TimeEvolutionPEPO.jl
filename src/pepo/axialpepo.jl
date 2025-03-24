@@ -1,22 +1,23 @@
-mutable struct AxialPEPO{G,PType,CType} <: AbstractPEPO
+mutable struct AxialPEPO{G,PType,CType} <: AbstractPEPO{G,PType}
     const parent::PEPO{G,PType,CType}
-    const vstate::Lattice{G,PType,Matrix{PType}}
+    const vstate::UnitCell{G,PType,Matrix{PType}}
     currentaxis::Int
 end
 
-AxialPEPO(pepo) = AxialPEPO(pepo, permutetranspose(tensors(pepo)), 1)
+AxialPEPO(pepo) = AxialPEPO(pepo, permutetranspose(ITC.getdata(pepo)), 1)
 
 currentaxis(axp::AxialPEPO) = axp.currentaxis
 
-function tensors(axp::AxialPEPO, axis=currentaxis(axp))
+ITC.getdata(axp::AxialPEPO) = getaxis(axp, currentaxis(axp))
+function getaxis(axp::AxialPEPO, axis)
     if axis == 1
-        return tensors(axp.parent)
+        return ITC.getdata(axp.parent)
     elseif axis == 2
         return axp.vstate
+    else
+        throw(ArgumentError("argument `axis` must be either 1 or 2, got $axis"))
     end
 end
-
-currentbuffer(axp::AxialPEPO) = tensors(axp)
 
 weights(axp::AxialPEPO) = weights(axp.parent)
 
@@ -24,11 +25,10 @@ function setaxis!(pepo::AxialPEPO, axis::Int)
     oldaxis = currentaxis(pepo)
 
     if currentaxis(pepo) == axis
-        @warn "Nothing to do..."
         return pepo
     end
 
-    permutetranspose!(tensors(pepo, axis), tensors(pepo, oldaxis))
+    permutetranspose!(getaxis(pepo, axis), getaxis(pepo, oldaxis))
 
     pepo.currentaxis = axis
 
@@ -41,11 +41,15 @@ function setweight!(pepo::AxialPEPO, value, bond::Bond; kwargs...)
     return pepo
 end
 
-function Base.setindex!(pepo::AxialPEPO, value, bond::Bond; kwargs...)
-    
-    bond = currentaxis(pepo) == 2 ? transpose(bond) : bond
+function Base.setindex!(
+    pepo::AxialPEPO{G,T}, value::Union{Pair{T,T},Tuple{T,T}}, bond::Bond; kwargs...
+) where {G,T}
+    axis = currentaxis(pepo)
 
-    setindex!(currentbuffer(pepo), value, bond)
+    # Transpose bond if on axis 2.
+    bond = axis == 2 ? transpose(bond) : bond
+
+    setindex!(getaxis(pepo, axis), value, bond)
 
     return pepo
 end

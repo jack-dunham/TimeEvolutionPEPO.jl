@@ -185,7 +185,7 @@ function initenvironment(network, alg::AbstractBoundaryAlgorithm; kwargs...)
 end
 
 """
-    simulate([callback = identity], sim::Simulation)
+    simulate([callback = identity,] sim::Simulation)
 
 Equivalent to `simulate!(hook, deepcopy(sim))`. 
 """
@@ -195,22 +195,36 @@ simulate(hook, sim::Simulation) = simulate!(hook, deepcopy(sim))
 simulate!(sim::Simulation) = simulate!(identity, sim)
 
 """
-    simulate([callback = identity], sim::Simulation; maxshots=100, maxtime=Inf)
+    simulate([callback = identity], sim::Simulation, numsteps; kwargs...)
 
-Run the simulation defined in `sim`.
+Run the simulation defined in `sim` for `numsteps` iterations. Additional runtime options
+can be specified via the keyword arguments:
+
+# Keywords
+
+- `maxshots::Integer=numsteps`: `callback` will be executed at most `maxshots` number of times
+    at evenly spaced intervals throughout the time evolution
+- `maxtime::Float64=Inf`: maximum wall clock time allowed. If the wall clock time since the
+    start `simulate` was called exceeds this value, then no more iterations occur.
+- `verbose::Bool=true`: if `true`, log simulation progress at the `@info` log level
 """
-function simulate!(callback, sim::Simulation; maxshots=100, maxtime=Inf)
+function simulate!(
+    callback,
+    sim::Simulation,
+    numsteps::Integer;
+    maxshots::Integer=numsteps,
+    maxtime::Float64=Inf,
+    breaktol::Float64=0.0,
+)
     method = sim.method
     pepo = sim.state
     info = sim.info
     model = sim.model
 
     truncalg = method.truncalg
-    numsteps = method.numsteps
     timestep = method.timestep
-    breaktol = method.breaktol
 
-    r = range(; start=1, step=round(Int, numsteps / maxshots, RoundUp), stop=numsteps)
+    r = range(; start=0, step=round(Int, numsteps / maxshots, RoundUp), stop=numsteps)
     shotsat = collect(r)
 
     numiter = 0
@@ -232,8 +246,6 @@ function simulate!(callback, sim::Simulation; maxshots=100, maxtime=Inf)
     else
         truncator = newtruncators(pepo, stepper, truncalg)
     end
-
-    println(typeof(truncator))
 
     t0 = time()
 
@@ -260,14 +272,18 @@ function simulate!(callback, sim::Simulation; maxshots=100, maxtime=Inf)
         info.iterations += 1
 
         # User specified function for post-step processing
-        info.convergence < breaktol ? info.isconverged = true : info.isconverged = false
-
         if numiter in shotsat
             pepo isa AxialPEPO && setaxis!(pepo, 1)
             callback(sim)
         end
 
-        time() - t0 > maxtime && break
+        if time() - t0 > maxtime 
+            break
+        elseif info.convergence < breaktol
+            info.isconverged = true
+            @info "Simulation reached break tolerance $(info.convergence) < $breaktol."
+            break
+        end
     end
 
     pepo isa AxialPEPO && setaxis!(pepo, 1)

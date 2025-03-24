@@ -1,4 +1,4 @@
-function onelocalcontract(ctmrg::CornerMethodRuntime, bulk::AbstractLattice)
+function onelocalcontract(ctmrg::CornerMethodRuntime, bulk::AbstractUnitCell)
     cor = corners(ctmrg)
     edg = edges(ctmrg)
 

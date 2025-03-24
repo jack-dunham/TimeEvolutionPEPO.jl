@@ -307,9 +307,7 @@ function _fidelity(AB, Y, LR; trunc=trunc)
 end
 
 function isometries(pair, environment, bond::Bond, truncalg::Union{FET,NTU}; kwargs...)
-    return _generic_environment_isometries(
-        pair, environment, bond, truncalg; parallel=false, kwargs...
-    )
+    return _generic_environment_isometries(pair, environment, bond, truncalg; kwargs...)
 end
 function parallelisometries(
     buffer, environment, bond::Bond, truncalg::Union{FET,NTU}; kwargs...
@@ -326,7 +324,7 @@ function parallelisometries(
     )
 end
 function _generic_environment_isometries(
-    pair, environment, bond, truncalg; parallel, kwargs...
+    pair, environment, bond, truncalg; parallel=false, kwargs...
 )
     rankreduce = truncalg.rankreduce
     optalg = truncalg.optalg
@@ -349,7 +347,7 @@ end
 metric(pair::Pair, environment::Function, ::Bond) = environment(pair)
 
 function single_bond_metric_isometries!(
-    pair, environment, bond; D=bondspace(buffer, bond), doreduction, parallel, optkwargs...
+    pair, environment, bond; D, doreduction, parallel, optkwargs...
 )
     if doreduction
         if parallel
@@ -397,7 +395,7 @@ function allisometries(pepo, truncator, truncalg; kwargs...)
     yiso, yvals, _ = permutedims(transpose, axialisometries(permbuffer, ytrunc, truncalg))
 
     isometries = Isometries(xiso, yiso)
-    weights = EdgeLattice(xvals, yvals)
+    weights = UnitCellBonds(xvals, yvals)
 
     return isometries, weights
 end
@@ -488,7 +486,7 @@ function overlap(ua, va, P, Q, ub, vb; axis)
     return rv
 end
 
-function rankreduce!(lattice::AbstractLattice, bond::Bond; copy=true)
+function rankreduce!(lattice::AbstractUnitCell, bond::Bond; copy=true)
     input = lattice[bond]
 
     axis = bondaxis(bond)
@@ -643,7 +641,7 @@ function constructG(L, g, R)
     @tensoropt G[1 2; 3 4] := L[3; 3] * R[4; 4] * g[1 2; 3 4] * (L')[1; 1] * (R')[2; 2]
 end
 
-function isometryinit(metric::AbstractLattice)
+function isometryinit(metric::AbstractUnitCell)
     leftright = isometryinit.(metric)
 
     left = getindex.(leftright, 1)
@@ -717,8 +715,10 @@ function metricoptimise(left, right, metric::AbsTen{2,2}; trunc, doreduction, xi
         left0 = left
         right0 = right
     else
-        left0 = id(codomain(left))
-        right0 = id(domain(right))
+        T = scalartype(metric)
+
+        left0 = id(T, codomain(left))
+        right0 = id(T, domain(right))
     end
 
     #left0 -> u
@@ -992,8 +992,11 @@ function evenbly(
 
     iso = TruncationIsometries(metric, u * sqrt(s), s, sqrt(s) * v)
 
-    ut = (1 - randomness) * u * sqrt(s) + randomness * ITC.randnt!(similar(u))
-    vt = randomness * ITC.randnt!(similar(v)) + (1 - randomness) * sqrt(s) * v
+    ut = (1 - randomness) * u * sqrt(s) + randomness * rand!(similar(u))
+    vt = randomness * rand!(similar(v)) + (1 - randomness) * sqrt(s) * v
+
+    normalize!(ut)
+    normalize!(vt)
 
     D = domain(ut)
     η = codomain(ut)
@@ -1111,6 +1114,7 @@ function evenbly(
     maxnormalize!(s)
 
     # As v is an isometry, we can avoid inverting `sqrt(s)` be instead calculating adjoint
+    # u * v s v vt 
     l = u * sqrt(s) * v
     r = vt' * v' * sqrt(s) * v
 

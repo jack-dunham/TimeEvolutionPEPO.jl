@@ -7,7 +7,7 @@ function parallel_parallel_timestep!(pepo, truncator, stepper, kwargs...)
 
     truncx, truncy = truncator
 
-    basetensors = tensors(pepo)
+    basetensors = getaxis(pepo)
 
     renormbuff = postenv ? currentbuffer(pepo) : basetensors
 

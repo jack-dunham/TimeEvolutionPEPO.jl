@@ -212,7 +212,7 @@ end
 
 function _newstepper(
     hori::L, vert::L, method::AbstractTimeEvolution
-) where {L<:AbstractLattice}
+) where {L<:AbstractUnitCell}
     order = method.trotterorder
 
     steps = map(s -> stepper(s, method; axis=1), hori)

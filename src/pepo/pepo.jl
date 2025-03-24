@@ -1,31 +1,25 @@
-struct PEPO{G,PType<:TenAbs{4},CType} <: AbstractPEPO
-    state::Lattice{G,PType,Matrix{PType}}
-    weights::EdgeLattice{G,CType,Matrix{NTuple{2,CType}}}
+struct PEPO{G,PType<:TenAbs{4},CType} <: AbstractPEPO{G,PType}
+    state::UnitCell{G,PType,Matrix{PType}}
+    weights::UnitCellBonds{G,CType,Matrix{NTuple{2,CType}}}
 end
 
-tensors(pepo::PEPO) = pepo.state
+ITC.getdata(pepo::PEPO) = pepo.state
 
-latticetype(::PEPO{G,P}) where {G,P} = Lattice{G,P,Matrix{P}}
+latticetype(::PEPO{G,P}) where {G,P} = UnitCell{G,P,Matrix{P}}
 
 weights(pepo::PEPO) = pepo.weights
 getweight(pepo::PEPO, bond) = weights(pepo)[bond]
 
-Base.getindex(p::PEPO, bond::Bond) = tensors(p)[bond]
+# Base.getindex(p::PEPO, bond::Bond) = getaxis(p)[bond]
 
 bloch(a) = 1 / 2 * (I + sum(a * σ for (a, σ) in zip(a, PAULI)))
 
-function pepositedata(
-    a::Union{AbstractVector,NTuple{3,Number}}, Dw::Int, Ds::Int, De::Int, Dn::Int
-)
-    return pepositedata(bloch(a), Dw, Ds, De, Dn)
-end
-
-function pepositedata(m::AbstractMatrix, Dw::Int, Ds::Int, De::Int, Dn::Int)
+function pepositedata(m::AbstractMatrix, De::Int, Ds::Int, Dw::Int, Dn::Int)
     out, in = size(m)
 
-    tw = zeros(ComplexF64, Dw, out, in)
-    ts = zeros(ComplexF64, Ds, out, in)
     te = zeros(ComplexF64, De, out, in)
+    ts = zeros(ComplexF64, Ds, out, in)
+    tw = zeros(ComplexF64, Dw, out, in)
     tn = zeros(ComplexF64, Dn, out, in)
 
     tw[1, :, :] = ts[1, :, :] = te[1, :, :] = tn[1, :, :] = m
@@ -72,11 +66,11 @@ end
 #     data = @. pepositedata($Ref([0, 0, 0]), dim(east), dim(south), dim(west), dim(north))
 #     return 2 * data
 # end
-function pepodata(::ThermalState, east, south, west, north)
-    return 2 * pepositedata((0, 0, 0), dim(east), dim(south), dim(west), dim(north))
+function pepodata(::ThermalState, phys, east, south, west, north)
+    return pepositedata(I(dim(phys)), dim(east), dim(south), dim(west), dim(north))
 end
-function pepodata(rho::Tuple, east, south, west, north)
-    return pepositedata(rho, dim(east), dim(south), dim(west), dim(north))
+function pepodata(rho::Tuple, phys, east, south, west, north)
+    return pepositedata(bloch(rho), dim(east), dim(south), dim(west), dim(north))
 end
 
 dimtospace(d::Int) = ℂ^d
@@ -90,7 +84,7 @@ function PEPO(
     issymmetric=true,
     geometry::G=Square(),
 ) where {G}
-    physlat = dimtospace.(Lattice{G}(physbond, issymmetric))
+    physlat = dimtospace.(UnitCell{G}(physbond, issymmetric))
     return PEPO(a, physlat, eastbond, southbond)
 end
 function PEPO(
@@ -99,32 +93,34 @@ function PEPO(
     eastbond::AbstractMatrix,
     southbond::AbstractMatrix=eastbond;
 )
-    west = dimtospace.(circshift(eastbond, (1, 0)))
     east = dimtospace.(eastbond)
     south = dimtospace.(southbond)
+
+    west = dimtospace.(circshift(eastbond, (1, 0)))
     north = dimtospace.(circshift(southbond, (0, 1)))
 
     # Generate data 
-    data = pepodata.(a, east, south, west, north)
+    data = pepodata.(a, physbond, east, south, west, north)
 
-    tensors = @. TensorMap(
-        data, physbond * adjoint(physbond), east * south * adjoint(west) * adjoint(north)
-    )
+    tensors = broadcast(data, physbond, east, south, west, north) do arr, p, e, s, w, n
+        ten = TensorMap(arr, p * p', e * s * w' * n')
+        return ten
+    end
 
     return PEPO(tensors)
 end
 
-function PEPO(tensors::AbstractLattice{G,<:AbsTen{2,4}}) where {G}
+function PEPO(tensors::AbstractUnitCell{G,<:AbsTen{2,4}}) where {G}
     horizontal_weights = @. id(getindex(domain(tensors), 1))
     vertical_weights = @. id(getindex(domain(tensors), 2))
 
-    weights = EdgeLattice(horizontal_weights, vertical_weights)
+    weights = UnitCellBonds(horizontal_weights, vertical_weights)
 
     return PEPO(tensors, weights)
 end
 
 merge_pepobond(p::AbsTen{2,5}, dir::Symbol) = merge_pepobond(p, _DIR_TO_DOMIND[dir])
-function merge_pepobond(p::AbstractTensorMap{S,2,5}, ind::Integer) where {S}
+function merge_pepobond(p::AbsTen{2,5,S}, ind::Integer) where {S}
     dom = domain(p)
 
     new_eastbond = fuse(dom[ind] * dom[ind + 1])
@@ -149,27 +145,17 @@ function mergeinto!(p_merged, p)
     return p_merged
 end
 
-mutable struct PEPOWithBuffer{G,PType,CType,StyleS,StyleT} <: AbstractPEPO
-    const parent::PEPO{G,PType,CType}
-    const buffer::Vector{Lattice{G,PType,Matrix{PType}}}
-    const stepstyle::StyleS
-    const truncstyle::StyleT
-    state::Int
+function expandspace(p::TensorMap{T,S}, s::S) where {T,S<:IndexSpace}
+    return expandspace(p, s * s * s' * s')
 end
-
-stepstyle(pepo) = pepo.stepstyle
-truncstyle(pepo) = pepo.truncstyle
-
-expandspace(p::TensorMap{S}, s::S) where {S<:IndexSpace} = expandspace(p, s * s * s' * s')
-function expandspace(p::TensorMap{S}, s::ProductSpace{S,4}) where {S<:IndexSpace}
+function expandspace(p::TensorMap{T,S}, s::ProductSpace{S,4}) where {T,S<:IndexSpace}
     u = mapreduce((a, b) -> isometry(a', b'), ⊗, s, domain(p))
 
     return p * _transpose(u)
 end
 
 function expandspace!(pepo, space::IndexSpace)
-
-    pten = tensors(pepo)
+    pten = getaxis(pepo)
 
     broadcast!(pten, pten, Ref(space)) do p, s
         return expandspace(p, s)
@@ -183,8 +169,10 @@ function expandspace!(pepo, space::IndexSpace)
 
         println(typeof(w))
 
-        u = TensorMap((T,I) -> delta(T,I...), scalartype(w), space, c)
-        v = TensorMap((T,I) -> delta(T,I...), scalartype(w), d, space)
+        T = scalartype(w)
+
+        u = TensorMap(delta(T, dim(space), dim(c)), space, c)
+        v = TensorMap(delta(T, dim(d), dim(space)), d, space)
 
         return u * w * v
     end
@@ -196,13 +184,35 @@ function expandspace!(pepo, space::IndexSpace)
     return pepo
 end
 
-function subpepo(pepo, i1,i2; weights=false)
-    t = Lattice(tensors(pepo)[i1:i1,i2:i2])
+function subpepo(pepo, i1, i2; weights=false)
+    t = UnitCell(axisbuffer(pepo)[i1:i1, i2:i2])
 
     if weights
-        w = EdgeLattice(weights(pepo)[i1:i1,i2:i2])
-        return PEPO(t,w)
+        w = UnitCellBonds(weights(pepo)[i1:i1, i2:i2])
+        return PEPO(t, w)
     else
         return PEPO(t)
     end
+end
+
+function trivialise(pepo::PEPO)
+    newstate = broadcast(pepo.state) do symten
+        arr = convert(Array, symten)
+
+        cod = mapreduce(ComplexSpace, *, dims(codomain(symten)))
+        dom = map(ComplexSpace, dims(domain(symten)))
+
+        return TensorMap(arr, cod[1] * cod[2]', dom[1] * dom[2] * dom[3]' * dom[4]')
+    end
+
+    neww = broadcast(pepo.weights) do symten
+        arr = convert(Array, symten)
+
+        cod = mapreduce(ComplexSpace, *, dims(codomain(symten)))
+        dom = mapreduce(ComplexSpace, *, dims(domain(symten)))
+
+        return TensorMap(arr, cod, dom)
+    end
+
+    return PEPO(newstate, neww)
 end

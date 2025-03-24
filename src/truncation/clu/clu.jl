@@ -1,8 +1,8 @@
 struct NTUTensors{L,TType<:AbsTen{2,2},CType<:AbsTen{1,1}}
-    T::Lattice{L,TType,Matrix{TType}}
-    B::Lattice{L,TType,Matrix{TType}}
-    LC::Lattice{L,CType,Matrix{CType}}
-    RC::Lattice{L,CType,Matrix{CType}}
+    T::UnitCell{L,TType,Matrix{TType}}
+    B::UnitCell{L,TType,Matrix{TType}}
+    LC::UnitCell{L,CType,Matrix{CType}}
+    RC::UnitCell{L,CType,Matrix{CType}}
 end
 
 unpack(ntu::NTUTensors) = ntu.T, ntu.B, ntu.LC, ntu.RC
@@ -31,8 +31,14 @@ end
 function initialize_neighbourhood_tensors(f, network)
     el = scalartype(network)
 
-    network_top = getfield.(network, :top)
-    network_bot = getfield.(network, :bot)
+    network_top = broadcast(network) do site
+        top, _ = site
+        return top
+    end
+    network_bot = broadcast(network) do site
+        _, bot = site
+        return bot'
+    end
 
     cod_l = codomain.(circshift(adjoint.(network_bot), (0, 0)))
     cod_r = codomain.(circshift(adjoint.(network_bot), (-1, 0)))
@@ -41,10 +47,10 @@ function initialize_neighbourhood_tensors(f, network)
 
     agi = (x, y) -> adjoint(getindex(x, y))
 
-    T = @. TensorMap(f, el, agi(cod_l, 4) * agi(cod_r, 4), agi(dom_l, 4) * agi(dom_r, 4))
-    B = @. TensorMap(f, el, agi(cod_r, 2) * agi(cod_l, 2), agi(dom_r, 2) * agi(dom_l, 2))
-    LC = @. TensorMap(f, el, agi(cod_l, 3), agi(dom_l, 3))
-    RC = @. TensorMap(f, el, agi(cod_r, 1), agi(dom_r, 1))
+    T = @. TensorMap{el}(f, agi(cod_l, 4) * agi(cod_r, 4), agi(dom_l, 4) * agi(dom_r, 4))
+    B = @. TensorMap{el}(f, agi(cod_r, 2) * agi(cod_l, 2), agi(dom_r, 2) * agi(dom_l, 2))
+    LC = @. TensorMap{el}(f, agi(cod_l, 3), agi(dom_l, 3))
+    RC = @. TensorMap{el}(f, agi(cod_r, 1), agi(dom_r, 1))
 
     return NTUTensors(T, B, LC, RC)
 end
@@ -170,11 +176,11 @@ end
 # end
 
 # Function of A
-ntu_leftcap!(L, B::TensorPair) = ntu_leftcap!(L, B.top, B.bot)
-function ntu_leftcap!(L, Bt::AbsTen{2,4}, Bb::AbsTen{2,4})
+ntu_leftcap!(L, B::CompositeTensor{2}) = ntu_leftcap!(L, B[1], B[2])
+function ntu_leftcap!(L, Bt::AbsTen{2,4}, Bb::AbsTen{4,2})
     @tensoropt (
         D2 => D, D4 => D, r1u => 16 * D, r1d => 16 * D, r3 => 16 * D, k => 2, b => 2
-    ) L[r1d; r1u] = Bt[k b; r1u D2 r3 D4] * (Bb')[r1d D2 r3 D4; k b]
+    ) L[r1d; r1u] = Bt[k b; r1u D2 r3 D4] * Bb[r1d D2 r3 D4; k b]
     return L
 end
 function ntu_rightcap!(R, A::AbsTen{2,4})
@@ -182,8 +188,8 @@ function ntu_rightcap!(R, A::AbsTen{2,4})
 end
 
 # Function of B
-ntu_TL(B::ITC.TensorPair) = ntu_TL(B.top, B.bot)
-function ntu_TL(Bt::AbsTen{2,4}, Bb::AbsTen{2,4})
+ntu_TL(B::CompositeTensor{2}) = ntu_TL(B[1], B[2])
+function ntu_TL(Bt::AbsTen{2,4}, Bb::AbsTen{4,2})
     @tensoropt (
         D2u => D,
         D2d => D,
@@ -193,7 +199,7 @@ function ntu_TL(Bt::AbsTen{2,4}, Bb::AbsTen{2,4})
         r3 => 16 * D,
         k => 2,
         b => 2,
-    ) TL[r1d D2d; r1u D2u] := Bt[k b; r1u D2u r3 D4] * (Bb')[r1d D2d r3 D4; k b]
+    ) TL[r1d D2d; r1u D2u] := Bt[k b; r1u D2u r3 D4] * Bb[r1d D2d r3 D4; k b]
     return TL
 end
 function ntu_TR(A::AbsTen{2,4})
@@ -357,7 +363,6 @@ function ntu_total(pair, lattice, bond)
 end
 
 function ntu_total_infidelity(pair, lattice, bond; trunc=notrunc())
-
     QL, QR = pair
     LL, _ = lattice[prevbond(bond)]
     _, RR = lattice[nextbond(bond)]
@@ -374,8 +379,8 @@ function ntu_total_infidelity(pair, lattice, bond; trunc=notrunc())
 
     denom2 = ntu_total_join(QL, QR, LL, RR, TL, TR, BL, BR)
 
-    rv = function(A)
-        u,s,v = tsvd(A; trunc=trunc)
+    rv = function (A)
+        u, s, v = tsvd(A; trunc=trunc)
 
         numerator = ntu_total_join_svd(QL, QR, LL, RR, TL, TR, BL, BR, u, s, v)
         denom1 = ntu_total_join_both_svd(QL, QR, LL, RR, TL, TR, BL, BR, u, s, v)
@@ -387,7 +392,6 @@ function ntu_total_infidelity(pair, lattice, bond; trunc=notrunc())
 end
 
 function ntu_total_wtg(pair, lattice, bond, iso)
-
     LL, _ = lattice[prevbond(bond)]
     _, RR = lattice[nextbond(bond)]
 
@@ -552,48 +556,47 @@ end
 #     return M
 # end
 
-function ntu_total(QL, QR, LL, RR, TL, TR,  BL, BR)
-    @tensoropt M[D7 F1 ; D1 F7] :=
+function ntu_total(QL, QR, LL, RR, TL, TR, BL, BR)
+    @tensoropt M[D7 F1; D1 F7] :=
         LL[k1 b1; D3 X1 X2 X3] *
         (LL')[F3 X1 X2 X3; k1 b1] *
         TL[k2 b2; T1 D4 X4 X5] *
         (TL')[T3 F4 X4 X5; k2 b2] *
-        TR[k3 b3; X6 D8 T1 X7]*
+        TR[k3 b3; X6 D8 T1 X7] *
         (TR')[X6 F8 T3 X7; k3 b3] *
         QL[k4 b4; D1 D2 D3 D4] *
         (QL')[F1 F2 F3 F4; k4 b4] *
         QR[k5 b5; D5 D6 D7 D8] *
         (QR')[F5 F6 F7 F8; k5 b5] *
-        BL[k6 b6; T5 X8 X9 D2]*
-        (BL')[T7 X8 X9 F2; k6 b6]*
+        BL[k6 b6; T5 X8 X9 D2] *
+        (BL')[T7 X8 X9 F2; k6 b6] *
         BR[k7 b7; X10 X11 T5 D6] *
-        (BR')[ X10 X11 T7 F6; k7 b7]*
+        (BR')[X10 X11 T7 F6; k7 b7] *
         RR[k8 b8; X12 X13 D5 X14] *
-        (RR')[ X12 X13 F5 X14; k8 b8]
+        (RR')[X12 X13 F5 X14; k8 b8]
     return M
 end
 
-function ntu_total_no_opt(QL, QR, LL, RR, TL, TR,  BL, BR)
-    @tensor M[D7 F1 ; D1 F7] :=
+function ntu_total_no_opt(QL, QR, LL, RR, TL, TR, BL, BR)
+    @tensor M[D7 F1; D1 F7] :=
         LL[k1 b1; D3 X1 X2 X3] *
         (LL')[F3 X1 X2 X3; k1 b1] *
         TL[k2 b2; T1 D4 X4 X5] *
         (TL')[T3 F4 X4 X5; k2 b2] *
-        TR[k3 b3; X6 D8 T1 X7]*
+        TR[k3 b3; X6 D8 T1 X7] *
         (TR')[X6 F8 T3 X7; k3 b3] *
         QL[k4 b4; D1 D2 D3 D4] *
         (QL')[F1 F2 F3 F4; k4 b4] *
         QR[k5 b5; D5 D6 D7 D8] *
         (QR')[F5 F6 F7 F8; k5 b5] *
-        BL[k6 b6; T5 X8 X9 D2]*
-        (BL')[T7 X8 X9 F2; k6 b6]*
+        BL[k6 b6; T5 X8 X9 D2] *
+        (BL')[T7 X8 X9 F2; k6 b6] *
         BR[k7 b7; X10 X11 T5 D6] *
-        (BR')[ X10 X11 T7 F6; k7 b7]*
+        (BR')[X10 X11 T7 F6; k7 b7] *
         RR[k8 b8; X12 X13 D5 X14] *
-        (RR')[ X12 X13 F5 X14; k8 b8]
+        (RR')[X12 X13 F5 X14; k8 b8]
     return M
 end
-
 
 # function ntu_total(QL, QR, LL, RR, TL, TR,  BL, BR)
 #     @tensoropt (k1 => 2,
@@ -666,8 +669,9 @@ end
 #     return M
 # end
 
-function ntu_total_join_svd(QL, QR, LL, RR, TL, TR,  BL, BR, u, s, v)
-    @tensoropt (k1 => 2,
+function ntu_total_join_svd(QL, QR, LL, RR, TL, TR, BL, BR, u, s, v)
+    @tensoropt (
+        k1 => 2,
         b1 => 2,
         k2 => 2,
         b2 => 2,
@@ -718,28 +722,32 @@ function ntu_total_join_svd(QL, QR, LL, RR, TL, TR,  BL, BR, u, s, v)
         T3 => D,
         T5 => D,
         T7 => D,
-    ) M = LL[k1 b1; D3 X1 X2 X3] *
+    ) M =
+        LL[k1 b1; D3 X1 X2 X3] *
         (LL')[F3 X1 X2 X3; k1 b1] *
         TL[k2 b2; T1 D4 X4 X5] *
         (TL')[T3 F4 X4 X5; k2 b2] *
-        TR[k3 b3; X6 D8 T1 X7]*
+        TR[k3 b3; X6 D8 T1 X7] *
         (TR')[X6 F8 T3 X7; k3 b3] *
         QL[k4 b4; DA D2 D3 D4] *
         (QL')[F F2 F3 F4; k4 b4] *
         QR[k5 b5; D5 D6 DB D8] *
         (QR')[F5 F6 F F8; k5 b5] *
-        BL[k6 b6; T5 X8 X9 D2]*
-        (BL')[T7 X8 X9 F2; k6 b6]*
+        BL[k6 b6; T5 X8 X9 D2] *
+        (BL')[T7 X8 X9 F2; k6 b6] *
         BR[k7 b7; X10 X11 T5 D6] *
-        (BR')[ X10 X11 T7 F6; k7 b7]*
+        (BR')[X10 X11 T7 F6; k7 b7] *
         RR[k8 b8; X12 X13 D5 X14] *
-        (RR')[ X12 X13 F5 X14; k8 b8]*
-        u[DA; DX] * s[DX;DXX] * v[DXX; DB]
+        (RR')[X12 X13 F5 X14; k8 b8] *
+        u[DA; DX] *
+        s[DX; DXX] *
+        v[DXX; DB]
     return M
 end
 
-function ntu_total_join_both_svd(QL, QR, LL, RR, TL, TR,  BL, BR, u, s, v)
-    @tensoropt (k1 => 2,
+function ntu_total_join_both_svd(QL, QR, LL, RR, TL, TR, BL, BR, u, s, v)
+    @tensoropt (
+        k1 => 2,
         b1 => 2,
         k2 => 2,
         b2 => 2,
@@ -793,28 +801,34 @@ function ntu_total_join_both_svd(QL, QR, LL, RR, TL, TR,  BL, BR, u, s, v)
         T3 => D,
         T5 => D,
         T7 => D,
-    ) M = LL[k1 b1; D3 X1 X2 X3] *
+    ) M =
+        LL[k1 b1; D3 X1 X2 X3] *
         (LL')[F3 X1 X2 X3; k1 b1] *
         TL[k2 b2; T1 D4 X4 X5] *
         (TL')[T3 F4 X4 X5; k2 b2] *
-        TR[k3 b3; X6 D8 T1 X7]*
+        TR[k3 b3; X6 D8 T1 X7] *
         (TR')[X6 F8 T3 X7; k3 b3] *
         QL[k4 b4; DA D2 D3 D4] *
         (QL')[FA F2 F3 F4; k4 b4] *
         QR[k5 b5; D5 D6 DB D8] *
         (QR')[F5 F6 FB F8; k5 b5] *
-        BL[k6 b6; T5 X8 X9 D2]*
-        (BL')[T7 X8 X9 F2; k6 b6]*
+        BL[k6 b6; T5 X8 X9 D2] *
+        (BL')[T7 X8 X9 F2; k6 b6] *
         BR[k7 b7; X10 X11 T5 D6] *
-        (BR')[ X10 X11 T7 F6; k7 b7]*
+        (BR')[X10 X11 T7 F6; k7 b7] *
         RR[k8 b8; X12 X13 D5 X14] *
-        (RR')[ X12 X13 F5 X14; k8 b8]*
-        u[DA; DX] * s[DX;DXX] * v[DXX; DB]*
-        (u')[FX; FA] * (s')[FXX;FX] * (v')[FB; FXX]
+        (RR')[X12 X13 F5 X14; k8 b8] *
+        u[DA; DX] *
+        s[DX; DXX] *
+        v[DXX; DB] *
+        (u')[FX; FA] *
+        (s')[FXX; FX] *
+        (v')[FB; FXX]
     return M
 end
-function ntu_total_join(QL, QR, LL, RR, TL, TR,  BL, BR)
-    @tensoropt (k1 => 2,
+function ntu_total_join(QL, QR, LL, RR, TL, TR, BL, BR)
+    @tensoropt (
+        k1 => 2,
         b1 => 2,
         k2 => 2,
         b2 => 2,
@@ -862,22 +876,23 @@ function ntu_total_join(QL, QR, LL, RR, TL, TR,  BL, BR)
         T3 => D,
         T5 => D,
         T7 => D,
-    ) M = LL[k1 b1; D3 X1 X2 X3] *
+    ) M =
+        LL[k1 b1; D3 X1 X2 X3] *
         (LL')[F3 X1 X2 X3; k1 b1] *
         TL[k2 b2; T1 D4 X4 X5] *
         (TL')[T3 F4 X4 X5; k2 b2] *
-        TR[k3 b3; X6 D8 T1 X7]*
+        TR[k3 b3; X6 D8 T1 X7] *
         (TR')[X6 F8 T3 X7; k3 b3] *
         QL[k4 b4; D D2 D3 D4] *
         (QL')[F F2 F3 F4; k4 b4] *
         QR[k5 b5; D5 D6 D D8] *
         (QR')[F5 F6 F F8; k5 b5] *
-        BL[k6 b6; T5 X8 X9 D2]*
-        (BL')[T7 X8 X9 F2; k6 b6]*
+        BL[k6 b6; T5 X8 X9 D2] *
+        (BL')[T7 X8 X9 F2; k6 b6] *
         BR[k7 b7; X10 X11 T5 D6] *
-        (BR')[ X10 X11 T7 F6; k7 b7]*
+        (BR')[X10 X11 T7 F6; k7 b7] *
         RR[k8 b8; X12 X13 D5 X14] *
-        (RR')[ X12 X13 F5 X14; k8 b8]
+        (RR')[X12 X13 F5 X14; k8 b8]
     return M
 end
 # function ntu_total(QL, QR, ML, MR, LL, RR, MLL, MRR, TL, TR, MTL, MTR, BL, BR, MBL, MBR)

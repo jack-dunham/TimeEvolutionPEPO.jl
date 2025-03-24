@@ -1,7 +1,6 @@
 function simple_update_gauge!(
     pepo; maxiter=100, tol=1e-12, verbose=true, buffering=false, reset=false
 )
-
     reset && weights2identity!(pepo)
 
     prevweights = deepcopy(weights(pepo))
@@ -178,7 +177,6 @@ function simple_update_gauge_parallel_isometries!(pepo)
 end
 
 function simple_update_gauge_parallel_step!(pepo)
-
     isomh, isomv, newweights = simple_update_gauge_parallel_isometries!(pepo)
 
     ge = broadcast(first, isomh)
@@ -187,12 +185,10 @@ function simple_update_gauge_parallel_step!(pepo)
     gs = broadcast(first, permutedims(isomv))
     gn = broadcast(last, permutedims(circshift(isomv, (1, 0))))
 
-    isoms = Isometries(SquareLattice(broadcast(tuple, ge, gs, gw, gn)))
+    isoms = Isometries(UnitCell{Square}(broadcast(tuple, ge, gs, gw, gn)))
 
-    buff = currentbuffer(pepo)
-
-    for I in eachindex(buff)
-        dst = buff[I]
+    for I in eachindex(pepo)
+        dst = pepo[I]
         e, s, w, n = isoms[I]
 
         truncateto!(dst, copy(dst), e, s, w, n)
@@ -229,10 +225,10 @@ function truncate_bond_matrices!(pepo)
         return isoms
     end
 
-    isometries = EdgeLattice(isomh, isomv)
+    isometries = UnitCellBonds(isomh, isomv)
 
     srcpepo = currentbuffer(pepo)
-    dstpepo = tensors(pepo)
+    dstpepo = axisbuffer(pepo)
 
     foreach(dstpepo, srcpepo, isometries) do dst, src, iso
         (e, s, w, n) = iso
@@ -245,7 +241,7 @@ function truncate_bond_matrices!(pepo)
 end
 
 function truncate_bond_matrices!(dstpepo, srcpepo, isoms)
-    for bond in eachbond(tensors(dstpepo))
+    for bond in eachbond(dstpepo)
         D = bondspace(dstpepo, bond)
 
         w = weights(srcpepo)[bond]
@@ -262,9 +258,9 @@ function truncate_bond_matrices!(dstpepo, srcpepo, isoms)
         setweight!(dstpepo, ss, bond; copy=false)
     end
 
-    for I in eachindex(tensors(dstpepo))
-        dst = tensors(dstpepo)[I]
-        src = tensors(srcpepo)[I]
+    for I in eachindex(dstpepo)
+        dst = (dstpepo)[I]
+        src = (srcpepo)[I]
         e, s, w, n = isoms[I]
         truncateto!(dst, src, e, s, w, n)
     end
@@ -275,9 +271,9 @@ end
 function _current_buffer(
     pepo::PEPO{G,PType,CType}, buffer, state::Int
 ) where {G,PType,CType}
-    T = Lattice{G,PType,CType}
+    T = UnitCell{G,PType,CType}
 
-    rv = iszero(state) ? tensors(pepo) : buffer[state]
+    rv = iszero(state) ? axisbuffer(pepo) : buffer[state]
 
     return rv
 end
@@ -292,7 +288,7 @@ function truncate!(::Axial, ::Axial, pepo, isometries, weights)
     srcbuff = buffers[state]
 
     if state == 1
-        dstbuff = tensors(pepo)
+        dstbuff = axisbuffer(pepo)
     elseif state == 3
         dstbuff = buffers[2]
     end
@@ -313,7 +309,7 @@ function truncate!(::Global, ::Global, pepo, isometries, weights)
     @assert pepo.state == 1
 
     src = only(pepo.buffer)
-    dst = tensors(pepo)
+    dst = axisbuffer(pepo)
 
     foreach(dstbuff, srcbuff, isometries) do dst, src, iso
         e, s, w, n = iso
@@ -338,7 +334,7 @@ function truncate!(::Global, ::Axial, pepo, isometries, weights)
 end
 
 function _truncate_semi_parallel!(
-    pepo, isometries, weights::Lattice, buffer1, buffer2, state
+    pepo, isometries, weights::UnitCell, buffer1, buffer2, state
 )
     uiso, viso = unpack(isometries)
 
@@ -355,7 +351,7 @@ function _truncate_semi_parallel!(
         # Truncated along the x-axis
 
         src = buffer2
-        dst = tensors(pepo)
+        dst = axisbuffer(pepo)
 
         axis = 2
 
@@ -394,15 +390,14 @@ end
 function evolve(pepo::PEPO, stepper::FullStepper)
     state = pepo.state
 
-    evolved = broadcast(tensors(pepo), tensors(stepper)) do p, t
+    evolved = broadcast(pepo, stepper) do p, t
         D1, D2, D3, D4 = domain(p)
         η1, η2, η3, η4 = domain(t)
 
         T = promote_type(eltype(p), eltype(t))
 
-        tensor = TensorMap(
+        tensor = TensorMap{T}(
             undef,
-            T,
             codomain(p),
             fuse(D1 * η1) * fuse(D2 * η2) * fuse(D3 * η3)' * fuse(D4 * η4)',
         )
@@ -410,8 +405,8 @@ function evolve(pepo::PEPO, stepper::FullStepper)
         return tensor
     end
 
-    src = tensors(pepo)
-    apply_four_bond_stepper!(evolved, src, stepper)
+    # src = axisbuffer(pepo)
+    apply_four_bond_stepper!(evolved, pepo, stepper)
 
     return PEPO(evolved)
 end
@@ -419,8 +414,8 @@ end
 function evolve(pepo::AbstractPEPO, stepper::FullStepper)
     state = pepo.state
 
-    ten = tensors(pepo)
-    ste = tensors(stepper)
+    ten = pepo
+    ste = stepper
 
     rv = broadcast(ten, ste) do site, op
         d1, d2, d3, d4 = domain(site)
@@ -458,7 +453,7 @@ end
 #     return rv
 # end
 function localevolve(pair::Pair, stepper::FullStepper, bond)
-    ops = tensors(stepper)[bond]
+    ops = axisbuffer(stepper)[bond]
 
     rvpair = apply_four_bond_stepper_locally(pair, ops)
 
@@ -484,7 +479,7 @@ function _splitv(op, η)
 end
 
 function evolve(pair::Pair, stepper::FullStepper, isoms, bond)
-    opspair = tensors(stepper)[bond]
+    opspair = stepper[bond]
 
     isomspair = isoms[bond]
 
@@ -543,85 +538,6 @@ function pepo_contract_test(out, p, op, cs, cw, cn)
     return out
 end
 
-# Be default, we don't need any additional buffers
-constructbuffers(pepo, steps, truncstyle) = latticetype(pepo)[]
-
-# Be default, we don't need any additional buffers
-function constructbuffers(pepo::PEPO, steps::Vector{<:TwoBondStepper}, _)
-    xind = findfirst(s -> bondaxis(s) == 1, steps)
-    yind = findfirst(s -> bondaxis(s) == 2, steps)
-
-    buffer0 = tensors(pepo)
-
-    buffer1 = construct_axis_buffer(buffer0, steps[xind])
-    buffer2 = permutetranpose(buffer0)
-    buffer3 = construct_axis_buffer(buffer2, steps[yind])
-
-    return [buffer1, buffer2, buffer3]
-end
-
-function construct_axis_buffer(lattice::Lattice, map::TwoBondStepper)
-    evolved = broadcast(lattice, tensors(map)) do p, t
-        D1, D2, D3, D4 = domain(p)
-
-        east = domain(t)[1]
-        west = domain(t)[2]
-
-        T = promote_type(eltype(p), eltype(t))
-
-        tensor = TensorMap(
-            undef, T, codomain(p), fuse(D1 * east) * D2 * fuse(D3 * west)' * D4
-        )
-
-        return tensor
-    end
-
-    return evolved
-end
-
-function construct_axis_buffer(lattice::Lattice, map::FullStepper)
-    evolved = broadcast(lattice, tensors(map)) do p, t
-        D1, D2, D3, D4 = domain(p)
-        η1, η2, η3, η4 = domain(t)
-
-        T = promote_type(eltype(p), eltype(t))
-
-        tensor = TensorMap(
-            undef,
-            T,
-            codomain(p),
-            fuse(D1 * η1) * fuse(D2 * η2) * fuse(D3 * η3)' * fuse(D4 * η4)',
-        )
-
-        return tensor
-    end
-
-    return evolved
-end
-
-function constructbuffers(pepo, steps::Vector{<:FullStepper{<:Any,<:TensorMap}}, truncstyle)
-    buffers = latticetype(pepo)[]
-
-    buffer0 = tensors(pepo)
-
-    buffer1 = construct_axis_buffer(buffer0, steps[begin])
-    push!(buffers, buffer1)
-
-    if truncstyle isa Axial
-        buffer2 = broadcast(permutedims(buffer0), permutedims(buffer1)) do dst, src
-            d1 = domain(dst)[1]
-            d2 = domain(src)[2]
-            d3 = domain(dst)[3]
-            d4 = domain(src)[4]
-            return similar(src, codomain(src), d2 * d1 * d4 * d3)
-        end
-
-        push!(buffers, buffer2)
-    end
-
-    return buffers
-end
-
 function stitchisometries(A, dst::ProductSpace{S,4}, src::ProductSpace{S,4}) where {S}
     D1, D2, D3, D4 = src
     d1, d2, d3, d4 = dst
@@ -675,10 +591,10 @@ function stitchisometries(dst::TenAbs{4}, src::TenAbs{4})
     return stitchisometries(storagetype(dst), domain(dst), domain(src))
 end
 
-function stitchisometries(template::AbstractLattice, src::AbstractLattice)
+function stitchisometries(template::AbstractUnitCell, src::AbstractUnitCell)
     return map(stitchisometries, template, src)
 end
-function stitchisometries(template::PermuteTranspose, src::AbstractLattice)
+function stitchisometries(template::PermuteTranspose, src::AbstractUnitCell)
     isoms = map(PermutedDimsArray(template.parent, (2, 1)), src) do out, in
         dstdom = permute(domain(out), template.perm)
         srcdom = domain(src)

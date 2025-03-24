@@ -58,8 +58,8 @@ unwrap(m::Union{InReverse,OnAxis}) = unwrap(m.model)
 #     return broadcastmodel(G, o.model, space, method; kwargs...)
 # end
 
-onlattice(::Type{G}, v::Vector) where {G} = map(Lattice{G}, v)
-onlattice(::Type{G}, v) where {G} = Lattice{G}(v)
+onlattice(::Type{G}, v::Vector) where {G} = map(UnitCell{G}, v)
+onlattice(::Type{G}, v) where {G} = UnitCell{G}(v)
 
 # Default
 function broadcastmodel(::Type, model, physical, method; kwargs...)

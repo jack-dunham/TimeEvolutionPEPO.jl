@@ -1,39 +1,11 @@
-# function timestep!(pepo, truncator::SimpleUpdateState, stepper, ::Sequential, ::Sequential; kwargs...)
-#     sequential_update_step!(pepo, truncator, stepper; kwargs...)
-# end
-
 newtruncators(::AxialPEPO, _, ::SU) = (SimpleUpdateState(), SimpleUpdateState())
-
-function axial_trotter_step!(pepo, truncator, stepper; truncalg, kwargs...)
-    axis = bondaxis(stepper)
-
-    axistrunc = truncator[axis]
-
-    axisbuffer = currentbuffer(pepo)
-
-    if !ispostenv(pepo)
-        renormalize!(truncator, currentbuffer(pepo))
-    end
-
-    sequential_update_step!(pepo, axistrunc, stepper; truncalg=truncalg, kwargs...)
-
-    # This does nothing if `stepstyle isa Sequential` as truncation has already occured 
-    # for all bonds
-    truncate!(pepo)
-
-    return pepo
-end
 
 function timestep!(pepo::PEPO, truncator, stepper::LocalStepper, truncalg::SU; kwargs...)
 
     # Evolve and then truncate each bond in sequence
-    axis = stepper.axis
+    size(pepo) < (2, 2) && throw(ArgumentError(""))
 
-    buffer = currentbuffer(pepo)
-
-    size(buffer) < (2, 2) && throw(ArgumentError(""))
-
-    infidelity = similar(buffer)
+    infidelity = similar(ITC.getdata(pepo))
 
     allbonds = bonds(pepo, stepper.axis)
 
@@ -102,7 +74,7 @@ function isometries(pair::Pair, pepo::AbstractPEPO, bond::Bond, truncalg::SU)
     return isometries(pair, weights(pepo), bond, truncalg; D=bondspace(pepo, bond))
 end
 function isometries(
-    pair::Pair, weights::EdgeLattice, bond::Bond, truncalg::SU; D, axial=false
+    pair::Pair, weights::UnitCellBonds, bond::Bond, truncalg::SU; D, axial=false
 )
     trunc = truncspace(D)
 
@@ -270,7 +242,7 @@ function vert_weights(uten::T, vten::T, U, V; axial) where {T<:AbsTen{2,5}}
 end
 
 function absorb_adjacent_weights!(
-    pair::Pair{T}, weights::EdgeLattice, bond::Bond; inverse=false, axial=false
+    pair::Pair{T}, weights::UnitCellBonds, bond::Bond; inverse=false, axial=false
 ) where {T<:AbsTen{2}}
     uten, vten = pair
 
@@ -302,7 +274,7 @@ end
 
 function absorb_axial_weights!(
     site::AbsTen{2,4},
-    weights::EdgeLattice{G},
+    weights::UnitCellBonds{G},
     ind::CartesianIndex{2};
     inverse=false,
     axis=1,

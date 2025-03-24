@@ -1,44 +1,18 @@
-abstract type AbstractPEPO end
+abstract type AbstractPEPO{G,PType<:TenAbs{4}} <: AbstractUnitCell{G,PType,Matrix{PType}} end
 
-ischeckerboard(pepo::AbstractPEPO) = ischeckerboard(tensors(pepo))
-physicalspace(pepo::AbstractPEPO) = getindex.(codomain.(tensors(pepo)), 1)
-uniqueindices(pepo::AbstractPEPO) = uniqueindices(tensors(pepo))
-
-Base.size(pepo::AbstractPEPO) = size(tensors(pepo))
-
-currentbuffer(pepo::AbstractPEPO) = tensors(pepo)
+ischeckerboard(pepo::AbstractPEPO) = ischeckerboard(getaxis(pepo))
+physicalspace(pepo::AbstractPEPO) = getindex.(codomain.(pepo), 1)
 
 function TensorKit.truncspace(pepo::AbstractPEPO, bond::Bond)
     D = bondspace(pepo, bond)
     return truncspace(D)
 end
 
-quicknormalize!(pepo::AbstractPEPO) = normalize!.(tensors(pepo))
-
-TensorKit.scalartype(pepo::AbstractPEPO) = scalartype(tensors(pepo))
+quicknormalize!(pepo::AbstractPEPO) = normalize!.(pepo)
 
 function setweight!(pepo::AbstractPEPO, value, bond::Bond; kwargs...)
     setweight!(weights(pepo), value, bond; kwargs...)
     return pepo
-end
-
-bonds(pepo::AbstractPEPO, args...) = bonds(tensors(pepo), args...)
-
-function changeaxis(pepo::AbstractPEPO)
-    pepo_permuted = broadcast(tensors(pepo)) do tensor
-        pten = permute(tensor, ((1, 2), (4, 3, 6, 5)); copy=true)
-        return pten
-    end
-    return PEPO(permutedims(pepo_permuted), changeaxis(weights(pepo)))
-end
-
-function changeaxis!(pepo_permuted::AbstractPEPO, pepo::AbstractPEPO)
-    broadcast(tensors(pepo_permuted), permutedims(tensors(pepo))) do pdst, psrc
-        permute!(pdst, psrc, ((1, 2), (4, 3, 6, 5)))
-    end
-    # New line below
-    changeaxis!(weights(pepo_permuted), weights(pepo))
-    return pepo_permuted
 end
 
 function permutetranspose!(dstlattice, srclattice)
@@ -58,27 +32,13 @@ function permutetranspose(lattice)
     return rv
 end
 
-function permuteweights!(dstpepo, srcpepo)
-    w1 = getweight(dstpepo)
-    w2 = getweight(srcpepo)
-
-    changeaxis!(w1, w2)
-
-    return dstpepo
-end
-
-bondspace(pepo::AbstractPEPO, bond; kwargs...) = bondspace(tensors(pepo), bond; kwargs...)
-function bondspace(
-    lat::AbstractLattice{G,<:AbsTen{2,4}}, bond; axis=bondaxis(bond)
-) where {G}
+function bondspace(lat::AbstractPEPO, bond; axis=bondaxis(bond))
     @assert axis in (1, 2)
     return domain.(lat, axis)[first(bond)]
 end
 function weights2identity!(pepo::AbstractPEPO)
-    tensors = currentbuffer(pepo)
-
-    DH = domain.(tensors, 1)
-    DV = domain.(tensors, 2)
+    DH = domain.(pepo, 1)
+    DV = domain.(pepo, 2)
 
     w = weights(pepo)
 
@@ -91,10 +51,4 @@ function weights2identity!(pepo::AbstractPEPO)
     return pepo
 end
 
-Base.getindex(pepo::AbstractPEPO, bond::Bond) = currentbuffer(pepo)[bond]
-function Base.setindex!(pepo::AbstractPEPO, value, bond::Bond) 
-    setindex!(currentbuffer(pepo), value, bond)
-    return pepo
-end
-
-hermitianize!(pepo::AbstractPEPO) = hermitianize!.(tensors(pepo))
+hermitianize!(pepo::AbstractPEPO) = hermitianize!.(pepo)
