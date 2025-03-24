@@ -42,8 +42,7 @@ function MPO(A::T, B::T, C::T, D::T) where {T}
 end
 
 function MPO(eqn::LindbladEquation)
-
-    isempty(eqn.linops) ? thermal  = true : thermal = false
+    isempty(eqn.linops) ? thermal = true : thermal = false
 
     Id = Matrix{ComplexF64}(I, 2, 2)
 
@@ -62,7 +61,6 @@ function MPO(eqn::LindbladEquation)
     i = 1
 
     for term in eqn.twolocal
-
         X, Y = term.term
         a = term.coeff
 
@@ -76,7 +74,6 @@ function MPO(eqn::LindbladEquation)
     end
 
     for term in eqn.longrange
-
         X, Y = term.term
         alam = term.coeff
 
@@ -98,7 +95,7 @@ function MPO(eqn::LindbladEquation)
         # Absorb coefficient
         H = Matrix{ComplexF64}(term)
 
-        D[1,1] += -im / 2 * (kron(H, one(H)) - kron(one(H), transpose(H)))
+        D[1, 1] += -im / 2 * (kron(H, one(H)) - kron(one(H), transpose(H)))
     end
 
     foreach(eqn.linops) do term
@@ -106,7 +103,7 @@ function MPO(eqn::LindbladEquation)
         L = Matrix{ComplexF64}(term)
 
         anticomm = kron(L' * L, one(L)) + kron(one(L), transpose(L' * L))
-        D[1,1] += 1 / 2 * (kron(L, transpose(L')) - 1 / 2 * anticomm)
+        D[1, 1] += 1 / 2 * (kron(L, transpose(L')) - 1 / 2 * anticomm)
     end
 
     return MPO(A, B, C, D)
@@ -261,7 +258,6 @@ function curly(mpo, args...)
 end
 
 function lazypower(H::MPO, row, col)
-
     terms = (H[r, c] for (r, c) in zip(row, col))
 
     rv = kron(1, terms...)
@@ -270,15 +266,13 @@ function lazypower(H::MPO, row, col)
 end
 
 function testlazypower(H, N)
+    X, Y, Z = PAULI
 
-    X,Y,Z = PAULI
+    C1 = H[1, 2][1, 1]
+    C2 = H[1, 2][1, 1]
 
-    C1 = H[1,2][1,1]
-    C2 = H[1,2][1,1]
-
-    @assert lazypower(H, [1,1], [1,2]) == H[1,2]
-    @assert lazypower(H, [1,1], [3,1]) == H[1,3]
-
+    @assert lazypower(H, [1, 1], [1, 2]) == H[1, 2]
+    @assert lazypower(H, [1, 1], [3, 1]) == H[1, 3]
 end
 
 function insertat(level::Vector, pos::Integer, val)
@@ -305,103 +299,177 @@ function secondordermpo(H)
     i += 1
 
     for i in 1:chi
-        rv[1, i] = C[1,i]
+        rv[1, i] = C[1, i]
     end
 
     ##
     rv[1, 1] = Id
 
-    rv[1, 2] = C[1,1]
-    rv[1, 3] = C[1,2]
+    rv[1, 2] = C[1, 1]
+    rv[1, 3] = C[1, 2]
 
-    rv[1, 4] = D[1,1]
-    
-    rv[1, 5] = C[1,1]
-    rv[1, 6] = C[1,2]
+    rv[1, 4] = D[1, 1]
 
-    rv[1, 7] = C[1,1] * C[1,1]
-    rv[1, 8] = C[1,1] * C[1,2]
-    rv[1, 9] = C[1,2] * C[1,1]
-    rv[1, 10] = C[1,2] * C[1,2]
+    rv[1, 5] = C[1, 1]
+    rv[1, 6] = C[1, 2]
+
+    rv[1, 7] = C[1, 1] * C[1, 1]
+    rv[1, 8] = C[1, 1] * C[1, 2]
+    rv[1, 9] = C[1, 2] * C[1, 1]
+    rv[1, 10] = C[1, 2] * C[1, 2]
 
     #(2,3)
-    rv[1, 11] = C[1,1] * D[1,1]
-    rv[1, 12] = C[1,2] * D[1,1]
+    rv[1, 11] = C[1, 1] * D[1, 1]
+    rv[1, 12] = C[1, 2] * D[1, 1]
 
-    rv[1, 13] = D[1,1]
+    rv[1, 13] = D[1, 1]
 
-    rv[1, 14] = D[1,1] * C[1,1]
-    rv[1, 15] = D[1,1] * C[1,2]
+    rv[1, 14] = D[1, 1] * C[1, 1]
+    rv[1, 15] = D[1, 1] * C[1, 2]
 
-    rv[1, 16] = D[1,1] * D[1,1]
+    rv[1, 16] = D[1, 1] * D[1, 1]
     ##
 
-    rv[2, 2] = A[1,1]
-    rv[2, 3] = A[1,2]
+    rv[2, 2] = A[1, 1]
+    rv[2, 3] = A[1, 2]
 
-    rv[2, 4] = B[1,1]
+    rv[2, 4] = B[1, 1]
 
-    rv[2, 7] = C[1,1] * A[1,1]
-    rv[2, 8] = C[1,1] * A[1,2]
-    rv[2, 9] = C[1,2] * A[1,1]
-    rv[2, 10] = C[1,2] * A[1,2]
+    rv[2, 7] = C[1, 1] * A[1, 1]
+    rv[2, 8] = C[1, 1] * A[1, 2]
+    rv[2, 9] = C[1, 2] * A[1, 1]
+    rv[2, 10] = C[1, 2] * A[1, 2]
 
-    rv[2, 11] = C[1,1] * B[1,1]
-    rv[2, 12] = C[1,2] * B[1,1]
+    rv[2, 11] = C[1, 1] * B[1, 1]
+    rv[2, 12] = C[1, 2] * B[1, 1]
 
-    rv[2, 14] = D[1,1] * A[1,1]
-    rv[2, 15] = D[1,1] * A[1,2]
+    rv[2, 14] = D[1, 1] * A[1, 1]
+    rv[2, 15] = D[1, 1] * A[1, 2]
 
-    rv[2, 16] = D[1,1] * B[1,1]
+    rv[2, 16] = D[1, 1] * B[1, 1]
 
     # 
-    rv[3, 2] = A[2,1]
-    rv[3, 3] = A[2,2]
+    rv[3, 2] = A[2, 1]
+    rv[3, 3] = A[2, 2]
 
-    rv[3, 4] = B[2,1]
+    rv[3, 4] = B[2, 1]
 
-    rv[3, 7] = C[1,1] * A[2,1]
-    rv[3, 8] = C[1,1] * A[2,2]
-    rv[3, 9] = C[1,2] * A[2,1]
-    rv[3, 10] = C[1,2] * A[2,2]
+    rv[3, 7] = C[1, 1] * A[2, 1]
+    rv[3, 8] = C[1, 1] * A[2, 2]
+    rv[3, 9] = C[1, 2] * A[2, 1]
+    rv[3, 10] = C[1, 2] * A[2, 2]
 
-    rv[3, 11] = C[1,1] * B[2,1]
-    rv[3, 12] = C[1,2] * B[2,1]
+    rv[3, 11] = C[1, 1] * B[2, 1]
+    rv[3, 12] = C[1, 2] * B[2, 1]
 
-    rv[3, 14] = D[1,1] * A[2,1]
-    rv[3, 15] = D[1,1] * A[2,2]
+    rv[3, 14] = D[1, 1] * A[2, 1]
+    rv[3, 15] = D[1, 1] * A[2, 2]
 
-    rv[3, 16] = D[1,1] * B[2,1]
+    rv[3, 16] = D[1, 1] * B[2, 1]
     #
-    rv[4, 11] = C[1,1]
-    rv[4, 12] = C[1,2]
+    rv[4, 11] = C[1, 1]
+    rv[4, 12] = C[1, 2]
 
-    rv[4, 16] = D[1,1]
+    rv[4, 16] = D[1, 1]
     #
     rv[5, 1] = Id
 
-    rv[5, 2] = C[1,1]
-    rv[5, 3] = C[1,2]
+    rv[5, 2] = C[1, 1]
+    rv[5, 3] = C[1, 2]
 
-    rv[5, 4] = D[1,1]
-    
-    rv[5, 5] = C[1,1]
-    rv[5, 6] = C[1,2]
+    rv[5, 4] = D[1, 1]
 
-    rv[5, 7] = C[1,1] * C[1,1]
-    rv[5, 8] = C[1,1] * C[1,2]
-    rv[5, 9] = C[1,2] * C[1,1]
-    rv[5, 10] = C[1,2] * C[1,2]
+    rv[5, 5] = C[1, 1]
+    rv[5, 6] = C[1, 2]
+
+    rv[5, 7] = C[1, 1] * C[1, 1]
+    rv[5, 8] = C[1, 1] * C[1, 2]
+    rv[5, 9] = C[1, 2] * C[1, 1]
+    rv[5, 10] = C[1, 2] * C[1, 2]
 
     #(2,3)
-    rv[5, 11] = C[1,1] * D[1,1]
-    rv[5, 12] = C[1,2] * D[1,1]
+    rv[5, 11] = C[1, 1] * D[1, 1]
+    rv[5, 12] = C[1, 2] * D[1, 1]
 
-    rv[5, 13] = D[1,1]
+    rv[5, 13] = D[1, 1]
 
-    rv[5, 14] = D[1,1] * C[1,1]
-    rv[5, 15] = D[1,1] * C[1,2]
+    rv[5, 14] = D[1, 1] * C[1, 1]
+    rv[5, 15] = D[1, 1] * C[1, 2]
 
-    rv[5, 16] = D[1,1] * D[1,1]
+    return rv[5, 16] = D[1, 1] * D[1, 1]
+end
 
+function symmetryicmpo(h::TensorMap{T,S,2,2}) where {T,S}
+    U, s, V = tsvd(h, (1, 3), (2, 4))
+
+    C = U * sqrt(s)  # 0 -> eta
+    B = sqrt(s) * V  # eta -> 0
+
+    η = dim(domain(s))
+
+    dst = zeros(T, 2, 2, η + 2, η + 2)
+
+    dst[:, :, 1, 2:(end - 1)] .= convert(Array, C)
+    dst[:, :, 2:(end - 1), 1] .= permutedims(convert(Array, B), (2, 3, 1))
+
+    dst[1, 1, 1, 1] = 1
+    dst[2, 2, 1, 1] = 1
+
+    dst[1, 1, η, η] = 1
+    dst[2, 2, η, η] = 1
+
+    sp = oneunit(S) ⊕ domain(C, 1) ⊕ oneunit(S)
+
+    tdst = TensorMap(dst, codomain(h, 1) * domain(h, 1)', sp' * sp)
+
+    return dst == convert(Array, tdst)
+end
+
+function bhm(; natom=1, nfluc=1, U, V, t)
+    # Define the charge sectors.
+    charges = (-nfluc):1:nfluc
+
+    # Construct the U(1) symmetric vector space.
+    s = U1Space(q => 1 for q in charges)
+
+    # Get the charge sectors; TensorKit.jl defines a particular order of the basis states
+    # so we must respect this. This vector tells us that order.
+    sectors = blocksectors(s)
+
+    # The dimension of the local vector space.
+    d = dim(s)
+
+    # Initialise some empty matrices.
+    ladderop = zeros(ComplexF64, d, d)
+    numberop = zeros(ComplexF64, d, d)
+
+    for q in charges[1:end]
+        # Get the position in the basis of the states with charge b and k
+        b = findfirst(isequal(U1Irrep(q)), sectors)
+        k = findfirst(isequal(U1Irrep(q - 1)), sectors)
+
+        # We can't annihilate below the cut-off, so that matrix element remains set to 0.
+        if q > -nfluc
+            ladderop[k, b] = sqrt(q + natom)
+        end
+
+        numberop[b, b] = q + natom
+    end
+
+    # Just for convenience.
+    a = ladderop
+    n = numberop
+
+    id = one(n)
+
+    # Two local terms...
+    eqn = V * ham(n, n) + -t * ham(a', a) + -t * ham(a, a') + U * ham(n * (n - id))
+
+    # Define the Hamiltonian as a tensor map. See above for reasoning on the 1/4.
+    # h = TensorMap(tl + 1 / 4 * ol, s * s, s * s)
+
+    # As our ladder and number operators have an unusual basis ordering, we also return 
+    # these for convenience.
+
+    return eqn, s, a, n
 end
