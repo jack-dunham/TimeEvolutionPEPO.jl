@@ -187,6 +187,11 @@ end
 
 showheader(::Type{<:NTU}) = "Neighbourhood tensor update (NTU)"
 
+@kwdef mutable struct SVDU{G<:Union{NoGauge,MCF}} <: AbstractTruncationScheme
+    gauge::G = NoGauge()
+    ξ::Float64 = Inf
+end
+
 @kwdef mutable struct SU{G<:Union{NoGauge,MCF}} <: AbstractTruncationScheme
     gauge::G = NoGauge()
     ξ::Float64 = Inf
@@ -211,7 +216,7 @@ function newtruncators(pepo::PEPO, _, truncalg::Union{FET,NTU})
     xenv = newtruncators(pepo, truncalg)
     return xenv, xenv
 end
-function newtruncators(::PEPO, _, truncalg::SU)
+function newtruncators(::PEPO, _, truncalg::Union{SU,SVDU})
     xenv = SimpleUpdateState()
     return xenv, xenv
 end

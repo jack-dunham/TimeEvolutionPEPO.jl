@@ -1,6 +1,7 @@
 newtruncators(::AxialPEPO, _, ::SU) = (SimpleUpdateState(), SimpleUpdateState())
+newtruncators(::AxialPEPO, _, ::SVDU) = (SimpleUpdateState(), SimpleUpdateState())
 
-function timestep!(pepo::PEPO, truncator, stepper::LocalStepper, truncalg::SU; kwargs...)
+function timestep!(pepo::PEPO, truncator, stepper::LocalStepper, truncalg::Union{SU,SVDU}; kwargs...)
 
     # Evolve and then truncate each bond in sequence
     size(pepo) < (2, 2) && throw(ArgumentError(""))
@@ -52,6 +53,8 @@ function timestep!(pepo::PEPO, truncator, stepper::LocalStepper, truncalg::SU; k
         popfirst!(bondcols)
     end
 
+    # quicknormalize!(pepo)
+    # hermitianize!(pepo)
     # simple_update_gauge!(pepo; reset=true, verbose=false)
     #
     return pepo, infidelity
