@@ -3,13 +3,13 @@ struct LocalOp{N} <: AbstractSingleTerm
     CAB::NTuple{N,Matrix{ComplexF64}}
     function LocalOp(a, CAB::NTuple{N}) where {N}
         c = prod(op -> norm(op, Inf), CAB)
-        new{N}(a * c, map(op -> normalize(op, Inf), CAB))
+        return new{N}(a * c, map(op -> normalize(op, Inf), CAB))
     end
 end
 
-terms(t::LocalOp{1}) = ()
+terms(::LocalOp{1}) = ()
 
-oneterms(t::AbstractTerm) = LocalOp{1}[]
+oneterms(::AbstractTerm) = LocalOp{1}[]
 oneterms(t::LocalOp{1}) = LocalOp{1}[t]
 
 function Base.hash(term::LocalOp, h::UInt)
@@ -55,7 +55,7 @@ Return a Hamiltonian containing the local axial term C⋅A₁⋅A₂⋅…⋅B w
 `B = last(CAB)`, `A₁ = CAB[2]`, `A₂ = CAB[3]`, etc.
 """
 LocalOp(CAB::NTuple{N,AbstractMatrix}) where {N} = LocalOp(1.0, CAB)
-LocalOp(D::NTuple{1, AbstractMatrix}) = LocalOp(1.0, D)
+LocalOp(D::NTuple{1,AbstractMatrix}) = LocalOp(1.0, D)
 
 term_to_matrix(A::LocalOp) = A.a * foldl(kron, A.CAB)
 term_to_matrix(A::LocalOp{1}) = A.a * only(A.CAB)
@@ -89,15 +89,12 @@ function vectorise(::Type{LocalOp{2}})
 end
 
 function thermalvectorise(::Type{LocalOp{2}})
-    return H -> - 0.5 * (kron(H, one(H)) + kron(one(H), transpose(H)))
+    return H -> -0.5 * (kron(H, one(H)) + kron(one(H), transpose(H)))
 end
 
 # We need both local terms that have support on two sites, and therefore need to divide
 # by two to avoid double counting in the brickwork pattern
 twolocal(f) = H -> 1 / 2 * (f(kron(one(H), H)) + f(kron(H, one(H))))
-
-
-
 
 struct J1J2Op
     a::Float64
@@ -105,4 +102,3 @@ struct J1J2Op
     B::Matrix{ComplexF64}
     k::Float64
 end
-

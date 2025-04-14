@@ -24,9 +24,9 @@ struct GaussOp <: AbstractAxialTerm
         if any(t -> t0.C != t.C || t0.B != t.B, terms)
             throw(
                 ArgumentError(
-                "mismatched C or B operators found when constructing `GaussOp`: " *
-                "all respective C and B operators must be the same every term"
-                )
+                    "mismatched C or B operators found when constructing `GaussOp`: " *
+                    "all respective C and B operators must be the same every term",
+                ),
             )
         end
         return new(a, μ, terms)
@@ -36,7 +36,7 @@ end
 terms(g::GaussOp) = g.terms
 isexpandable(term::GaussOp) = false
 
-GaussOp(a,μ,H::AbstractTerm) = GaussOp(a,μ,terms(H))
+GaussOp(a, μ, H::AbstractTerm) = GaussOp(a, μ, terms(H))
 function GaussOp(C, B, μ::Number, A=one(C); N=50, force=false, ngmax=4, gtol=1e-10)
     f = r -> exp(-μ * r^2)
     errf = (m, l) -> maximum(abs.((x -> sum(@. m * l^x)).(1:N) - f.(1:N)))
@@ -69,7 +69,6 @@ function GaussOp(C, B, μ::Number, A=one(C); N=50, force=false, ngmax=4, gtol=1e
 
     return GaussOp(1.0, μ, terms)
 end
-
 
 (op::GaussOp)(r::Int) = mapreduce(op -> op.a * op.λ^(abs(r)), +, op.terms.terms)
 
@@ -108,9 +107,9 @@ struct GaussOp2d <: AbstractRadialTerm
         if gx.C != gy.C || gx.B != gx.B
             throw(
                 ArgumentError(
-                "mismatched C or B operators found when constructing `GaussOp2d`: " *
-                "respective C and B operators must be for most axial `GaussOp` approximations"
-                )
+                    "mismatched C or B operators found when constructing `GaussOp2d`: " *
+                    "respective C and B operators must be for most axial `GaussOp` approximations",
+                ),
             )
         end
         return new(a, gx, gy, expand)
@@ -161,13 +160,11 @@ function GaussOp2d(C, B, μx::Number, μy::Number, A=one(C); expand=false, kwarg
 end
 
 function Base.show(io::IO, ::MIME"text/plain", term::GaussOp2d)
-
     gx = term.gx
     gy = term.gy
 
     nx = length(terms(gx))
     ny = length(terms(gy))
-
 
     print(io, "$((nx,ny))-term GuassOp2d approximation to μ = $((gx.μ,gy.μ))")
     return nothing

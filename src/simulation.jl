@@ -39,7 +39,7 @@ struct Simulation{E<:AbstractTimeEvolution,P<:AbstractPEPO,L<:AbstractTimeSteppe
         stepper::TrotterDecomposition{L},
         truncators::Tuple{T,T},
         initialstate::P,
-    ) where {E, P, L, M, T}
+    ) where {E,P,L,M,T}
         return new{E,P,L,M,T}(info, method, model, state, stepper, truncators, initialstate)
     end
     function Simulation(
@@ -50,7 +50,7 @@ struct Simulation{E<:AbstractTimeEvolution,P<:AbstractPEPO,L<:AbstractTimeSteppe
         stepper::TrotterDecomposition{L},
         truncators::Tuple{T,T},
         ::Nothing,
-    ) where {E, P, L, M, T}
+    ) where {E,P,L,M,T}
         return new{E,P,L,M,T}(info, method, model, state)
     end
 end
@@ -159,7 +159,9 @@ function Simulation(
 
     G = promote_geometry_type(physical, virtual, vertical_virtual)
 
-    stepper, physicalspace = newstepper(UnitCell{G}([physical;;]), model, method; timestep=timestep, order=order)
+    stepper, physicalspace = newstepper(
+        UnitCell{G}([physical;;]), model, method; timestep=timestep, order=order
+    )
 
     pepo = PEPO(rho0, physical, virtual, vertical_virtual)
 
@@ -178,9 +180,10 @@ function Simulation(
     return sim
 end
 
-function Simulation(model, pepo::PEPO, method::AbstractTimeEvolution, info=SimulationInfo(); storeall=true)
-
-    stepper,_ = newstepper(physicalspace(pepo), model, method)
+function Simulation(
+    model, pepo::PEPO, method::AbstractTimeEvolution, info=SimulationInfo(); storeall=true
+)
+    stepper, _ = newstepper(physicalspace(pepo), model, method)
 
     state = newevolution(pepo, stepper, method)
 
@@ -192,7 +195,6 @@ function Simulation(model, pepo::PEPO, method::AbstractTimeEvolution, info=Simul
 
     return sim
 end
-
 
 function initenvironment(network, alg::AbstractBoundaryAlgorithm; kwargs...)
     return ITC.initialize(alg, network; kwargs...)
@@ -268,9 +270,7 @@ function simulate!(
     timestep = sim.stepper.timestep
 
     while numiter < numsteps
-
         for (i, step) in enumerate(stepper)
-
             if eltype(truncator) <: AbstractVector
                 trunc = getindex.(truncator, i)
             else
@@ -295,11 +295,11 @@ function simulate!(
             callback(sim)
         end
 
-        if time() - t0 > maxtime 
+        if time() - t0 > maxtime
             break
         elseif info.convergence < breaktol
             info.converged = true
-            info.finished= true
+            info.finished = true
             @info "Simulation reached break tolerance $(info.convergence) < $breaktol."
             break
         end
@@ -318,22 +318,17 @@ end
 Return `sim` with the time step mutated to `timestep`.
 """
 function updatetimestep!(sim::Simulation, timestep::Float64)
-
     space = physicalspace(sim)
 
     head, body, tail = newstepper(
-        space,
-        sim.model,
-        sim.method;
-        order=trotterorder(sim),
-        timestep=timestep
+        space, sim.model, sim.method; order=trotterorder(sim), timestep=timestep
     )
 
-    trotter.head = head
-    trotter.body = body
-    trotter.tail = tail
+    sim.stepper.head = head
+    sim.stepper.body = body
+    sim.stepper.tail = tail
 
-    trotter.timestep = timestep
+    sim.stepper.timestep = timestep
 
     return sim
 end
@@ -341,10 +336,9 @@ end
 function dampinghook!(sim::Simulation, xi, output)
     alg = VUMPS(; tol=1e-10, maxiter=50, bonddim=16, verbose=true)
 
-    X,Y,Z = PAULI
+    X, Y, Z = PAULI
 
     if sim.info.convergence < 1e-6
-
         pepo = TimeEvolutionPEPO.quantumstate(sim)
         dm = DensityMatrix(pepo, alg)
 
@@ -382,11 +376,10 @@ function measurehook!(sim::Simulation, A=PAULI[1]; env=nothing)
     # return corr
 end
 
-
 function measurehook!(output::Vector, sim, args...)
 
     # init
-    
+
     # alg = CTMRG(; tol=1e-8, maxiter=200, bonddim=16, verbose=true)
     # alg = VUMPS(; tol=1e-10, maxiter=200, bonddim=20, verbose=true)
     alg = CTMRG(; tol=1e-10, maxiter=100, bonddim=16, verbose=true, randinit=true)
@@ -418,7 +411,7 @@ function correlatorhook!(output)
         try
             xi = PEPOKit.correlationlength(dm)
             push!(output, xi)
-        catch e 
+        catch e
             push!(output, NaN)
         end
     end
@@ -426,14 +419,13 @@ function correlatorhook!(output)
 end
 
 function fullcorrelatorhook!(output)
-    f = sim -> begin
-        ds,es = PEPOKit.correlationlength(
-            D -> VUMPS(bonddim=D), 
-            PEPOKit.quantumstate(sim), 
-            10:1:20
-        )
-        push!(output, (ds,es))
-    end
+    f =
+        sim -> begin
+            ds, es = PEPOKit.correlationlength(
+                D -> VUMPS(; bonddim=D), PEPOKit.quantumstate(sim), 10:1:20
+            )
+            push!(output, (ds, es))
+        end
     return f
 end
 
@@ -511,5 +503,3 @@ function test_p2s(op, mpo, us, vw, vn)
         vn[n, n1, n2]
     return out
 end
-
-
