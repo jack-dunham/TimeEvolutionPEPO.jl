@@ -39,7 +39,7 @@ function timestep!(pepo::PEPO, truncator, stepper::LocalStepper, truncalg::Union
             for col in bondcols
                 thisbond = popfirst!(col)
 
-                pepo.state[thisbond] = mapreduce(copy, =>, newpair)
+                pepo.data[thisbond] = mapreduce(copy, =>, newpair)
                 setweight!(pepo, newweight, thisbond; copy=false)
 
                 # If not a checkerboard lattice, only update the first column

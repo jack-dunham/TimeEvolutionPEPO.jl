@@ -271,3 +271,70 @@ function fsmpepo!(tensor::AbstractArray{<:Number,8}, rules, t::Real; extend=true
 
     return tensor
 end
+
+# function fsmpepo_symmetric!(tensor::AbstractArray{<:Number,8}, rules, t::Real; extend=true)
+#     physdim = map(ind -> size(tensor, ind), (1, 2, 3, 4))
+#
+#     incr! = (ind, rhs) -> begin
+#         bondind = CartesianIndex(ind)
+#
+#         rhsdata = reshape(rhs, physdim)
+#
+#         for physind in CartesianIndices(rhsdata)
+#             tensor[physind, bondind] += rhsdata[physind]
+#         end
+#
+#         return tensor
+#     end
+#
+#     rule_types = (:A, :B, :C, :D)
+#
+#     if !extend
+#         for type in rule_types
+#             if type === :A
+#                 pref = 1
+#             elseif type in (:B, :C)
+#                 pref = sqrt(t)
+#             elseif type === D
+#                 pref = t
+#             end
+#             for (ind, rule) in getproperty(rules, type)
+#                 incr!(ind, pref * rule)
+#             end
+#         end
+#     else
+#         for (type1, type2) in Iterators.product(rule_types, rule_types)
+#             dict1 = getproperty(rules, type1)
+#             dict2 = getproperty(rules, type2)
+#
+#             for (kv1, kv2) in Iterators.product(dict1, dict2)
+#                 ind1, rule1 = kv1
+#                 ind2, rule2 = kv2
+#
+#                 any(@. !isone(ind1) && !isone(ind2)) && continue
+#
+#                 ind = ind1 .* ind2
+#
+#                 if type1 in (:A, :C)
+#                     if type2 === :A
+#                         pref = ind1 == (1, 1, 1, 1) && ind2 == (1, 1, 1, 1) ? 1 : 1 / 2
+#                     elseif type2 in (:B, :C)
+#                         pref = sqrt(t / 2)
+#                     elseif type2 === :D
+#                         pref = t / 2
+#                     end
+#                 elseif type1 in (:B, :D)
+#                     if type2 in (:A, :C)
+#                         pref = t / 2
+#                     elseif type2 in (:B, :D)
+#                         pref = t^2 / factorial(2)
+#                     end
+#                 end
+#
+#                 incr!(ind, pref * rule1 * rule2)
+#             end
+#         end
+#     end
+#
+#     return tensor
+# end

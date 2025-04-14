@@ -610,7 +610,7 @@ function iterative_simple_update_prototype!(
         # mergeinto!(dst, spten)
     end
 
-    xi < Inf && simple_update_gauge_parallel!(pepo!; tol=1e-10)
+    # xi < Inf && simple_update_gauge_parallel!(pepo!; tol=1e-10)
 
     # for (i, p) in enumerate(tensors(pepo!))
     #     # copy!(p, 0.5 * (p + permutedom(p, (2,1,4,3))))
