@@ -312,7 +312,7 @@ function tebdtensor(
     end
 
     if !isnothing(model.dissipator)
-        lop += vectorise(model.dissipator)
+        lop += vectorise(model.dissipator, 2)
     end
 
     L = exp(dt / 2 * lop)
@@ -457,7 +457,7 @@ function tebdtensor(model::Ising, p::IndexSpace, method::AbstractTEBD, dt; kwarg
 
     # Local operators
     lop += sum(D; init=zero(lop)) do linop
-        return localvectorise(linop) / 2
+        return 0.5 * vectorise(linop, 1)
     end
 
     lop = reshape(exp(dt * lop), dims(space))

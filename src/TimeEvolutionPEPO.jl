@@ -54,12 +54,11 @@ export EVB, DZM, WTG, MCF, NoGauge
 
 export dynamicalmpo, MPO
 
-export Model, Hamiltonian, Liouvillian, Dissipator, TrotterLayer
+export Hamiltonian, Liouvillian, Dissipator, TrotterLayer, Model
 
 export isaxial, isexpandable, dissipator
 
-export LocalOp, ExpOp, PowOp, GaussOp, GaussOp2d
-export localop, expop, powop, powop2d, gaussop, gaussop2d
+export LocalOp, ExpOp, GaussOp, GaussOp2d, PowOp, PowOp2d
 
 export DensityMatrix
 export trace, partialtrace
@@ -111,11 +110,19 @@ include("truncation/simpleupdate.jl")
 
 ## MODEL AND EQUATION
 include("model/abstractterm.jl")
+# Load these in this order
 include("model/terms/localop.jl")
 include("model/terms/linop.jl")
 include("model/terms/expop.jl")
+include("model/terms/gaussop.jl")
 include("model/terms/powop.jl")
 include("model/terms/nnnop.jl")
+# Load these in this order
+include("model/hamiltonian.jl")
+include("model/liouvillian.jl")
+include("model/ising.jl")
+include("model/trotterlayer.jl")
+include("model/model.jl")
 
 include("model/equation.jl")
 include("model/mpo.jl")

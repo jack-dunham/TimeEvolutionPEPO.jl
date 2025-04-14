@@ -1,17 +1,41 @@
+struct LocalOp{N} <: AbstractSingleTerm
+    a::Float64
+    CAB::NTuple{N,Matrix{ComplexF64}}
+    function LocalOp(a, CAB::NTuple{N}) where {N}
+        c = prod(op -> norm(op, Inf), CAB)
+        new{N}(a * c, map(op -> normalize(op, Inf), CAB))
+    end
+end
+
+terms(t::LocalOp{1}) = ()
+
+oneterms(t::AbstractTerm) = LocalOp{1}[]
+oneterms(t::LocalOp{1}) = LocalOp{1}[t]
+
+function Base.hash(term::LocalOp, h::UInt)
+    for op in term.CAB
+        h = hash(op, h)
+    end
+    h = hash(term.a, h)
+    return hash(typeof(term), h)
+end
+
+Base.:(==)(l1::LocalOp, l2::LocalOp) = hash(l1) == hash(l2)
+Base.:(≈)(l1::LocalOp{N}, l2::LocalOp{N}) where {N} = all(l1.CAB .≈ l2.CAB) && l1.a ≈ l2.a
 
 """
     $(FUNCTIONNAME)(D::AbstractMatrix)
 
 Return a Hamiltonian containing the one-local term `D`.
 """
-localop(D::AbstractMatrix) = localop((D,))
+LocalOp(D::AbstractMatrix) = LocalOp((D,))
 """
     $(FUNCTIONNAME)(C::AbstractMatrix, B::AbstractMatrix, [A=one(C)]; l::Int=0)
 
 Return a Hamiltonian containing the local axial term C⋅A⋅…⋅A⋅B where `l` defines the number
 of A operators. The default `l=0` defines a nearest-neighbour term, for example.
 """
-function localop(C, B, A=one(C); l::Int=0)
+function LocalOp(C, B, A=one(C); l::Int=0)
     terms = Memory{Matrix{ComplexF64}}(undef, l + 2)
 
     terms[begin] = C
@@ -22,7 +46,7 @@ function localop(C, B, A=one(C); l::Int=0)
 
     terms[end] = B
 
-    return localop(Tuple(terms))
+    return LocalOp(Tuple(terms))
 end
 """
     $(FUNCTIONNAME)(CAB::Tuple)
@@ -30,8 +54,8 @@ end
 Return a Hamiltonian containing the local axial term C⋅A₁⋅A₂⋅…⋅B where `C = first(CAB)`,
 `B = last(CAB)`, `A₁ = CAB[2]`, `A₂ = CAB[3]`, etc.
 """
-localop(CAB::NTuple{N,AbstractMatrix}) where {N} = LocalOp(1.0, CAB)
-localop(D::NTuple{1, AbstractMatrix}) = LocalOp(1.0, D)
+LocalOp(CAB::NTuple{N,AbstractMatrix}) where {N} = LocalOp(1.0, CAB)
+LocalOp(D::NTuple{1, AbstractMatrix}) = LocalOp(1.0, D)
 
 term_to_matrix(A::LocalOp) = A.a * foldl(kron, A.CAB)
 term_to_matrix(A::LocalOp{1}) = A.a * only(A.CAB)

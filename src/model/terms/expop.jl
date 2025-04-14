@@ -41,7 +41,7 @@ Return a Hamiltonian containing the exponentially-decaying non-local axial terms
 λʳ⋅C⋅A⋅...⋅A⋅B for all `r in 1,2,...`. Note, this function checks that `|λ|< 1` as otherwise 
 the interaction strength diverges in the thermodynamic limit.
 """
-expop(C, B, λ, A=one(C)) = Hamiltonian((ExpOp(1.0, C, B, λ, A),))
+ExpOp(C, B, λ, A=one(C)) = ExpOp(1.0, C, B, λ, A)
 
 """
     $(FUNCTIONNAME)(C::AbstractMatrix, B::AbstractMatrix, λ::Float64, [A = one(C)]
@@ -50,4 +50,4 @@ Return a Hamiltonian containing the exponentially-decaying non-local radial term
 λˣλʸ⋅C⋅A⋅...⋅A⋅B for all `x,y in 1,2,...`. Note, this function checks that `|λ|< 1` as 
 otherwise the interaction strength diverges in the thermodynamic limit. 
 """
-expop2d(C, B, λ, A=one(C)) = Hamiltonian((ExpOp2d(1.0, C, B, λ, A),))
+ExpOp2d(C, B, λ, A=one(C)) = ExpOp2d(1.0, C, B, λ, A)

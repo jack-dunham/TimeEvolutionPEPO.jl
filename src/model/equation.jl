@@ -98,7 +98,7 @@ function tebdtensor(
         # data += 1 / 2 * sum(vecf, dissipator(model); init=zero(data))
         D = dissipator(model)
         if length(D) > 0
-            data += vecf(D)
+            data += vectorise(D, 2)
         end
     end
 

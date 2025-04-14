@@ -1103,7 +1103,7 @@ function test_ising_extrap(; hx=0.0, D=5, numsteps=400)
     s = ComplexSpace(2)
     S = ComplexSpace(D)
 
-    H = -1.0 * localop(Z,Z) + hx * localop(X)
+    H = -1.0 * LocalOp(Z,Z) + hx * LocalOp(X)
     model = Model(H)
 
     alg = VUMPS(; bonddim=16, maxiter=200, tol=1e-10)
@@ -1181,11 +1181,11 @@ function testquantum(; xi=Inf, D)
 
     βc = 1 / 1.2737
 
-    h = 2.5 * localop(X)
+    h = 2.5 * LocalOp(X)
 
-    # model = Model(-1.0 * localop(Z,Z) + 2.5 * localop(X))
-    model = Model(PEPOKit.Ising(-1.0, Z, [2.5 * localop(X)]))
-    # model = Model([0.5 * h, -1.0 * localop(Z,Z), 0.5 * h])
+    # model = Model(-1.0 * LocalOp(Z,Z) + 2.5 * LocalOp(X))
+    model = Model(PEPOKit.Ising(-1.0, Z, [2.5 * LocalOp(X)]))
+    # model = Model([0.5 * h, -1.0 * LocalOp(Z,Z), 0.5 * h])
 
     truncalg = PEPOKit.SU(ξ = xi)
     # truncalg = PEPOKit.NTU(ξ = xi, optalg=DZM(check=false))
@@ -1242,10 +1242,10 @@ function extrapquantum(; D)
 
     βc = 1 / 1.2737
 
-    h = 2.5 * localop(X)
+    h = 2.5 * LocalOp(X)
 
-    model = Model(-1.0 * localop(Z,Z) + 2.5 * localop(X))
-    # model = Model([0.5 * h, -1.0 * localop(Z,Z), 0.5 * h])
+    model = Model(-1.0 * LocalOp(Z,Z) + 2.5 * LocalOp(X))
+    # model = Model([0.5 * h, -1.0 * LocalOp(Z,Z), 0.5 * h])
 
     # truncalg = PEPOKit.NTU(ξ = xi)
 
