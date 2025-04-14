@@ -47,9 +47,11 @@ function Base.setindex!(
     axis = currentaxis(pepo)
 
     # Transpose bond if on axis 2.
-    bond = axis == 2 ? transpose(bond) : bond
+    # bond = axis == 2 ? transpose(bond) : bond
 
     setindex!(getaxis(pepo, axis), value, bond)
 
     return pepo
 end
+
+expandspace(pepo::AxialPEPO, space) = AxialPEPO(expandspace(pepo.parent, space))

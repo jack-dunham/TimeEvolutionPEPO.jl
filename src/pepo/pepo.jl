@@ -1,9 +1,58 @@
+"""
+$(TYPEDEF)
+
+Concrete type representing a projected-entangled pair operator in the symmetric gauge with
+with associated bond weights accessible with the `weights` function.
+
+See also: [`AbstractPEPO`](@ref), [`ThermalState`](@ref), and [`weights`](@ref)
+
+## Fields
+
+$(FIELDS)
+
+## Constructors
+
+The following constructors can also be called with `PEPO{G} where {G<:AbstractUnitCellGeometry}`
+to dictate the unit-cell geometry of the output `PEPO` object. This will error if any of the 
+input arguments specify a geometry the conflicts with `G`.
+
+    PEPO(
+        init::Union{T, AbstractMatrix{T}}, 
+        phys::Union{S, AbstractMatrix{S}}, 
+        east::Union{S, AbstractMatrix{S}},  
+        [south::Union{S, AbstractMatrix{S}} = east]
+    ) where {T, S<:Union{Int, IndexSpace}}
+
+The type `T` can be one of the following:
+
+- `NTuple{3, Float64}`: a spin-1/2 Bloch-vector
+- `ThermalState`: the infinite temperature thermal density matrix
+- `Matrix{<:Number}`: a density matrix
+- `Array{6, <:Number}`: a tensor defining the pepo tensor for each lattice site
+
+Similarly, `phys`, `east` and `south` can be of type `Union{S, AbstractMatrix{S}` where
+`S<:Union{Int, IndexSpace}`. The size of the unitcell of the resulting `PEPO` object is 
+determined via `promote_shape` automatically through an internal call to `broadcast`.
+
+    PEPO(data::Union{T,AbstractMatrix{T}}) where {T<:TensorMap}
+
+Construct a `PEPO` with with each tensor given by `data`.
+
+"""
 struct PEPO{G,PType<:TenAbs{4},CType} <: AbstractPEPO{G,PType}
-    state::UnitCell{G,PType,Matrix{PType}}
+    """
+    The unit-cell of tensors defining the projected entangled pair operator with bond weights
+    absorbed. 
+    """
+    data::UnitCell{G,PType,Matrix{PType}}
+    """
+    Bond weights on each virtual bond. Note, the `sqrt` of each weight are assumed to be pre
+    absorbed in to the tensors in `data`.
+    """
     weights::UnitCellBonds{G,CType,Matrix{NTuple{2,CType}}}
 end
 
-ITC.getdata(pepo::PEPO) = pepo.state
+ITC.getdata(pepo::PEPO) = pepo.data
 
 latticetype(::PEPO{G,P}) where {G,P} = UnitCell{G,P,Matrix{P}}
 
@@ -29,80 +78,50 @@ function pepositedata(m::AbstractMatrix, De::Int, Ds::Int, Dw::Int, Dn::Int)
 
     return p
 end
+
+"""
+$(TYPEDEF)
+
+Singleton type used to initialise a `PEPO` to the infinite temperature thermal density.
+matrix
+
+See also: [`PEPO`](@ref).
+"""
 struct ThermalState end
 
-function PEPO(
-    a,
-    physbond::S,
-    eastbond::S,
-    southbond::S=eastbond;
-    cellsize=Tuple{Int,Int},
-    issymmetric=true,
-) where {S}
-    i1, i2 = cellsize
-    return PEPO(
-        a,
-        fill(physbond, (i1, i2)),
-        fill(eastbond, (i1, i2)),
-        fill(southbond, (i1, i1));
-        issymmetric=issymmetric,
-    )
-end
-
-# function pepodata(
-#     a::Union{AbstractVecOrMat{<:Number},NTuple{3,Number}}, east, south, west, north
-# )
-#     data = @. pepositedata($Ref(a), dim(east), dim(south), dim(west), dim(north))
-#     return data
-# end
-# function pepodata(
-#     a::AbstractMatrix{T}, east, south, west, north
-# ) where {T<:Union{AbstractVecOrMat,NTuple{3,Number}}}
-#     data = @. pepositedata(a, dim(east), dim(south), dim(west), dim(north))
-#     return data
-# end
-#
-# function pepodata(::ThermalState, east, south, west, north)
-#     data = @. pepositedata($Ref([0, 0, 0]), dim(east), dim(south), dim(west), dim(north))
-#     return 2 * data
-# end
 function pepodata(::ThermalState, phys, east, south, west, north)
     return pepositedata(I(dim(phys)), dim(east), dim(south), dim(west), dim(north))
 end
 function pepodata(rho::Tuple, phys, east, south, west, north)
     return pepositedata(bloch(rho), dim(east), dim(south), dim(west), dim(north))
 end
+function pepodata(rho::Matrix{<:Number}, phys, east, south, west, north)
+    return pepositedata(bloch(rho), dim(east), dim(south), dim(west), dim(north))
+end
 
-dimtospace(d::Int) = ℂ^d
-dimtospace(s::IndexSpace) = s
+dim2space(d::Int) = ℂ^d
+dim2space(s::IndexSpace) = s
 
+# Construct using a Bloch vector or as a thermal state
 function PEPO(
-    a,
-    physbond::AbstractMatrix,
-    eastbond::AbstractMatrix,
-    southbond::AbstractMatrix=eastbond;
-    issymmetric=true,
-    geometry::G=Square(),
-) where {G}
-    physlat = dimtospace.(UnitCell{G}(physbond, issymmetric))
-    return PEPO(a, physlat, eastbond, southbond)
+    init::Union{Tuple, ThermalState, Matrix{<:Number}, Array{6, <:Number}}, 
+    east,
+    south=east
+)
+
+    initmat = Matrix{typeof(init)}(undef, 1, 1)
+    initmat[1,1] = init
+
+    return PEPO(initmat, phys, east, south)
 end
 function PEPO(
-    a::AbstractMatrix,
-    physbond::AbstractMatrix,
-    eastbond::AbstractMatrix,
-    southbond::AbstractMatrix=eastbond;
+    init::AbstractMatrix{<:Union{Tuple, ThermalState, Matrix{ComplexF64}}},
+    phys,
+    east,
+    south=east,
 )
-    east = dimtospace.(eastbond)
-    south = dimtospace.(southbond)
-
-    west = dimtospace.(circshift(eastbond, (1, 0)))
-    north = dimtospace.(circshift(southbond, (0, 1)))
-
-    # Generate data 
-    data = pepodata.(a, physbond, east, south, west, north)
-
-    tensors = broadcast(data, physbond, east, south, west, north) do arr, p, e, s, w, n
+    tensors = broadcast(init, pepospace(phys, east, south)...) do a, p, e, s, w, n
+        arr = pepodata(a, p, e, s, w, n)
         ten = TensorMap(arr, p * p', e * s * w' * n')
         return ten
     end
@@ -110,6 +129,42 @@ function PEPO(
     return PEPO(tensors)
 end
 
+# Construct using an array
+function PEPO(
+    init::AbstractMatrix{Array{6, ComplexF64}},
+    phys,
+    east,
+    south=east
+)
+    tensors = broadcast(init, pepospace(phys, east, south)...) do a, p, e, s, w, n
+        ten = TensorMap(init, p * p', e * s * w' * n')
+        return ten
+    end
+
+    return PEPO(tensors)
+end
+
+# Construct using a function passed to `TensorMap`
+PEPO(args...) = PEPO{Square}(args...)
+function PEPO{G}(f::Union{Function, UndefInitializer}, s, h, v = h) where {G}
+    PEPO{G}(f, ComplexF64, s, h, v)
+end
+function PEPO{G}(f::Function, T::Type{<:Number}, s, h, v = h) where {G}
+    tensors = broadcast(pepospace(s, h, v)...) do p,e,s,w,n
+        return TensorMap(f, T, p * p', e * s * w' * n')
+    end
+    return PEPO(UnitCell{G}(tensors))
+end
+function PEPO{G}(f::UndefInitializer, T::Type{<:Number}, s, h, v = h) where {G}
+    tensors = broadcast(pepospace(s, h, v)...) do p,e,s,w,n
+        return TensorMap{T}(f, p * p', e * s * w' * n')
+    end
+    return PEPO(UnitCell{G}(tensors))
+end
+
+function PEPO{G}(data::Union{AbsTen{2,4}, AbstractMatrix{<:AbsTen{2,4}}}) where {G}
+    return PEPO(UnitCell{G}([data;;]))
+end
 function PEPO(tensors::AbstractUnitCell{G,<:AbsTen{2,4}}) where {G}
     horizontal_weights = @. id(getindex(domain(tensors), 1))
     vertical_weights = @. id(getindex(domain(tensors), 2))
@@ -117,6 +172,25 @@ function PEPO(tensors::AbstractUnitCell{G,<:AbsTen{2,4}}) where {G}
     weights = UnitCellBonds(horizontal_weights, vertical_weights)
 
     return PEPO(tensors, weights)
+end
+
+function pepospace(s, h, v) 
+    spaces = map(uc -> dim2space.(uc), _pepospace(s, h, v))
+    if !allequal(eltype, spaces)
+        @error "Cannot construct PEPO with different space types on different bonds"
+    end
+    return spaces
+end
+function _pepospace(s, h, v)
+
+    phys = [s;;]
+
+    east = [h;;]
+    south = [v;;]
+    west = circshift([h;;], (1, 0))
+    north = circshift([v;;],(0, 1))
+
+    return phys, east, south, west, north
 end
 
 merge_pepobond(p::AbsTen{2,5}, dir::Symbol) = merge_pepobond(p, _DIR_TO_DOMIND[dir])
@@ -154,16 +228,19 @@ function expandspace(p::TensorMap{T,S}, s::ProductSpace{S,4}) where {T,S<:IndexS
     return p * _transpose(u)
 end
 
-function expandspace!(pepo, space::IndexSpace)
-    pten = getaxis(pepo)
+"""
+    $(FUNCTIONNAME)(pepo::AbstractPEPO, space::IndexSpace)
 
-    broadcast!(pten, pten, Ref(space)) do p, s
+Promote the virtual bond spaces of `pepo` to `space`. This function can be used to increase
+the bond dimension of `pepo`. 
+"""
+function expandspace(pepo::PEPO, space::IndexSpace)
+
+    new_pepo = broadcast(pepo, Ref(space)) do p, s
         return expandspace(p, s)
     end
 
-    wten = weights(pepo)
-
-    wtennew = broadcast(wten) do w
+    new_bond_weights = broadcast(weights(pepo)) do w
         c = codomain(w)
         d = domain(w)
 
@@ -178,13 +255,20 @@ function expandspace!(pepo, space::IndexSpace)
     end
 
     for bond in eachbond(pepo)
-        setweight!(pepo, wtennew[bond], bond; copy=false)
+        setweight!(pepo, new_bond_weights[bond], bond; copy=false)
     end
 
-    return pepo
+    return PEPO(new_pepo, new_bond_weights)
 end
 
-function subpepo(pepo, i1, i2; weights=false)
+"""
+    $(FUNCTIONNAME)(pepo::PEPO, x, y; weights=false) -> PEPO
+
+Return a PEPO over the smaller unitcell specified by indices `x` and `y`. If `weights=true`,
+the PEPO is constructed with the weights of the chosen lattice sites, otherwise they are
+initilised to identities. Arguments `x` and `y` can be of type `Union{Int, UnitRange{Int}, Colon}`.
+"""
+function subpepo(pepo::PEPO, i1::Int, i2::Int; weights=false)
     t = UnitCell(axisbuffer(pepo)[i1:i1, i2:i2])
 
     if weights
@@ -194,8 +278,24 @@ function subpepo(pepo, i1, i2; weights=false)
         return PEPO(t)
     end
 end
+function subpepo(pepo::PEPO, i1, i2; kwargs...)
+    # There is probably a smarter way...
+    indc(i::Int) = i:i
+    indc(i::Union{Colon,UnitRange}) = i
 
-function trivialise(pepo::PEPO)
+    return subpepo(pepo, indc(i1), indc(i2); kwargs...)
+end
+
+"""
+    $(FUNCTIONNAME)(pepo)
+
+Remove the symmetric structure of the underlying tensors in `pepo`. If `pepo` is already
+trivial, that is `spacetype(pepo)<:ComplexSpace`, then this function acts as the identity.
+"""
+function unsymmetrise(pepo::PEPO{G, <:AbstractTensorMap{T,<:ComplexSpace}}) where {G, T}
+    return pepo
+end
+function unsymmetrise(pepo::PEPO)
     newstate = broadcast(pepo.state) do symten
         arr = convert(Array, symten)
 
