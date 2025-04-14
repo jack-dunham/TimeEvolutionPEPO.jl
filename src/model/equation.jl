@@ -1,109 +1,56 @@
-abstract type AbstractLindbladEquation end
+# function tebdtensor(
+#     model::LindbladEquation, p1::IndexSpace, p2::IndexSpace, dt; compresstol=eps()
+# )
+#
+#     # ket1 * ket2 * bra1 * bra2
+#     spacecod = p1 * p2 * p1' * p2'
+#     spacedom = p1 * p2 * p1' * p2'
+#
+#     data = zeros(ComplexF64, dim(spacecod), dim(spacedom))
+#     symdata = Array{ComplexF64}(undef, dims(spacecod * spacedom))
+#
+#     if isempty(model.linops)
+#         vecf = thermalvectorise
+#         dt = dt / 2
+#     else
+#         vecf = vectorise
+#         data += 1 / 2 * sum(vecf, model.linops; init=zero(data))
+#     end
+#
+#     # We divide by half again for local terms as in 2D we effectively apply these twice,
+#     data += 1 / 2 * sum(vecf, model.onelocal; init=zero(data))
+#
+#     data += sum(vecf, model.twolocal; init=zero(data))
+#
+#     copyto!(symdata, exp(dt * data))
+#
+#     tensor = TensorMap(symdata, spacecod, spacedom)
+#
+#     # move site one to codomain and site two to domain
+#     tensor = permute(tensor, (1, 3, 5, 7), (2, 4, 6, 8))
+#
+#     u, s, v, _ = tsvd(tensor; trunc=truncbelow(compresstol))
+#
+#     return u * sqrt(s), _transpose(sqrt(s) * v)
+# end
 
-Base.zero(eqn::AbstractLindbladEquation) = zero(typeof(eqn))
-
-Base.:+(B::AbstractTerm, eqn::AbstractLindbladEquation) = +(eqn, B)
-
-function Base.:+(eqn::AbstractLindbladEquation, B::AbstractTerm)
-    eqnout = zero(eqn)
-    eqnout = axpy!(1, eqn, eqnout)
-    eqnout = push!!(eqnout, B)
-    return eqnout
+function construct(model, space, method)
+    for t in terms(model)
+        if !(t isa LocalOp{2})
+            throw(ArgumentError("term of type $(typeof(t)) incompatible with TEBD"))
+        end
+    end
+    return dt -> exact_tebd_time_stepper(model, space ,dt)
 end
 
-function Base.:+(eqn1::AbstractLindbladEquation, eqn2::AbstractLindbladEquation)
-    eqnout = zero(eqn1)
-    eqnout = axpy!(1, eqn1, eqnout)
-    eqnout = axpy!(1, eqn2, eqnout)
-    return eqnout
-end
+function construct(model, physical, method::AbstractTEBD; axis, kwargs...)
 
-struct ZeroLindbladEquation <: AbstractLindbladEquation end
-
-Base.zero(::Type{<:AbstractLindbladEquation}) = ZeroLindbladEquation()
-
-function LinearAlgebra.axpy!(
-    ::Number, ::ZeroLindbladEquation, eqn2::AbstractLindbladEquation
-)
-    return eqn2
-end
-
-struct LindbladEquation <: AbstractLindbladEquation
-    onelocal::Vector{HamiltonianTerm{1}}
-    twolocal::Vector{HamiltonianTerm{2}}
-    longrange::Vector{LongRangeTerm}
-    linops::Vector{LindbladTerm}
-    physicaldim::Int
-end
-
-stepper_type(::Type{<:LindbladEquation}, ::Type) = LocalStepper
-stepper_type(::Type{<:LindbladEquation}, ::Type{<:DMPO}) = AxialStepper
-
-function tebdtensor(model::LindbladEquation, p1::IndexSpace, p2::IndexSpace, dt; compresstol=eps())
-
-
-    # ket1 * ket2 * bra1 * bra2
-    spacecod = p1 * p2 * p1' * p2'
-    spacedom = p1 * p2 * p1' * p2'
-
-    data = zeros(ComplexF64, dim(spacecod), dim(spacedom))
-    symdata = zeros(ComplexF64, dims(spacecod * spacedom))
-
-    if isempty(model.linops)
-        vecf = thermalvectorise
-        dt = dt / 2
-    else
-        vecf = vectorise
-        data += 1 / 2 * sum(vecf, model.linops; init=zero(data))
+    for t in terms(model)
+        if !(t isa LocalOp{2})
+            throw(ArgumentError("term of type $(typeof(t)) incompatible with TEBD"))
+        end
     end
 
-    # We divide by half again for local terms as in 2D we effectively apply these twice
-    data += 1 / 2 * sum(vecf, model.onelocal; init=zero(data))
-
-    data += sum(vecf, model.twolocal; init=zero(data))
-
-    copyto!(symdata, exp(dt * data))
-
-    tensor = TensorMap(symdata, spacecod, spacedom)
-
-    # move site one to codomain and site two to domain
-    tensor = permute(tensor, (1, 3, 5, 7), (2, 4, 6, 8))
-
-    u, s, v, err = tsvd(tensor; trunc=truncbelow(compresstol))
-
-    return u * sqrt(s), _transpose(sqrt(s) * v)
-end
-
-function broadcastmodel(model::OnAxis)
-    axis = model.axis
-    return broadcast
-end
-
-function (model::LindbladEquation)(physical, method::AbstractDMPO; kwargs...)
-    rv =
-        timestep -> begin
-            mpo = MPO(model)
-
-            data = dynamicalmpo(
-                mpo,
-                timestep,
-                method.order;
-                method.extend,
-                method.compress,
-                method.approx,
-            )
-
-            tensor = dmpotensor(data, physical)
-
-            return tensor
-        end
-
-    return rv
-end
-
-function broadcastmodel(
-    ::Type{<:LindbladEquation}, model, physical, method::AbstractTEBD; axis, kwargs...
-)
     model = unwrap(model)
 
     rv =
@@ -123,11 +70,8 @@ function broadcastmodel(
             lat = broadcast(tuple, first.(uvs), circshift(last.(uvs), incr))
 
             if method isa AxialTEBD
-
-
-                lat = broadcast(lat) do (u,v)
-                    @tensoropt out[ok ob ik ib; e w] :=
-                        u[ok ob x y; e] * v[x y ik ib; w]
+                lat = broadcast(lat) do (u, v)
+                    @tensoropt out[ok ob ik ib; e w] := u[ok ob x y; e] * v[x y ik ib; w]
                     return out
                 end
             end
@@ -137,86 +81,222 @@ function broadcastmodel(
 
     return rv
 end
-LindbladEquation(p::Int) = LindbladEquation([], [], [], [], p::Int)
-
-function Base.show(io::IO, ::MIME"text/plain", eqn::LindbladEquation)
-    d = physicaldim(eqn)
-
-    n1 = length(eqn.onelocal)
-    n2 = length(eqn.twolocal)
-
-    nl = length(eqn.longrange)
-
-    nd = length(eqn.linops)
-
-    println(io, "LindbladEquation with d = $d containing:")
-    println(io, "  $n1 local terms")
-    println(io, "  $n2 nearest-neighbour terms")
-    println(io, "  $nl long-range terms")
-    return print(io, "  $nd lindblad operators")
-end
-
-physicaldim(eqn::LindbladEquation) = eqn.physicaldim
-
-function physicalspace(S::Type{<:IndexSpace}, eqn::LindbladEquation)
-    d = eqn.physicaldim
-    return ⊕(oneunit(S)^d...)
-end
-
-function push!!(::ZeroLindbladEquation, term::AbstractTerm)
-    outeqn = LindbladEquation(physicaldim(term)[1])
-    push!!(outeqn, term)
-    return outeqn
-end
-
-function push!!(L::LindbladEquation, A::AbstractTerm)
-    ld = physicaldim(L)
-    ad = physicaldim(A)
-    if ld == ad[1]
-        push!(L, A)
-        return L
-    else
-        throw(
-            DimensionMismatch(
-                "cannot add term of dimension $ad to lindblad equation of dimension $ld"
-            ),
-        )
-    end
-end
-
-Base.push!(L::LindbladEquation, A::HamiltonianTerm{1}) = push!(L.onelocal, A)
-Base.push!(L::LindbladEquation, A::HamiltonianTerm{2}) = push!(L.twolocal, A)
-Base.push!(L::LindbladEquation, A::LongRangeTerm) = push!(L.longrange, A)
-Base.push!(L::LindbladEquation, A::LindbladTerm) = push!(L.linops, A)
-
-## MATHS
-
-function Base.:+(A::AbstractTerm, B::AbstractTerm)
-    eqn = push!!(zero(LindbladEquation), A)
-    eqn = push!!(eqn, B)
-    return eqn
-end
-
-Base.:*(eqn::LindbladEquation, a::Number) = *(a, eqn)
-function Base.:*(a::Number, eqn::LindbladEquation)
-    eqnout = zero(eqn)
-    axpy!(a, eqn, eqnout)
-    return eqnout
-end
-
-function LinearAlgebra.axpy!(
-    a::Number, eqn1::LindbladEquation, eqn2::AbstractLindbladEquation
+function tebdtensor(
+    model::AbstractTerm, p1::IndexSpace, p2::IndexSpace, dt; compresstol=eps()
 )
-    for name in (:onelocal, :twolocal, :longrange, :linops)
-        for term in getfield(eqn1, name)
-            eqn2 = push!!(eqn2, a * term)
+    # ket1 * ket2 * bra1 * bra2
+    spacecod = p1 * p2 * p1' * p2'
+    spacedom = p1 * p2 * p1' * p2'
+
+    data = zeros(ComplexF64, dim(spacecod), dim(spacedom))
+    symdata = Array{ComplexF64}(undef, dims(spacecod * spacedom))
+
+    if model isa Hamiltonian
+        vecf = thermalvectorise
+    elseif model isa Liouvillian
+        vecf = vectorise
+        # data += 1 / 2 * sum(vecf, dissipator(model); init=zero(data))
+        D = dissipator(model)
+        if length(D) > 0
+            data += vecf(D)
         end
     end
-    return eqn2
+
+    # We divide by half again for local terms as in 2D we effectively apply these twice,
+    if length(oneterms(model)) > 0 
+        data += sum(vecf, oneterms(model); init=zero(data))
+    end
+
+    if length(terms(model)) > 0 
+        data += sum(vecf, terms(model))
+    end
+
+    copyto!(symdata, exp(dt * data))
+
+    tensor = TensorMap(symdata, spacecod, spacedom)
+
+    # move site one to codomain and site two to domain
+    tensor = permute(tensor, (1, 3, 5, 7), (2, 4, 6, 8))
+
+    trunc = length(model) > 0  ? truncbelow(compresstol) : truncdim(1)
+    u, s, v, err = tsvd(tensor; trunc=trunc)
+
+    @info "" err η = dim(domain(s))
+
+    return u * sqrt(s), _transpose(sqrt(s) * v)
 end
 
-function Base.:(==)(t1::T, t2::T) where {T<:LindbladEquation}
-    return all(name -> getfield(t1, name) == getfield(t2, name), fieldnames(T))
+function broadcastmodel(model::OnAxis)
+    axis = model.axis
+    return broadcast
 end
 
-##
+# function (model::LindbladEquation)(physical, method::AbstractDMPO; kwargs...)
+#     rv =
+#         timestep -> begin
+#             mpo = MPO(model)
+#
+#             data = dynamicalmpo(
+#                 mpo,
+#                 timestep,
+#                 method.order;
+#                 method.extend,
+#                 method.compress,
+#                 method.approx,
+#             )
+#
+#             tensor = dmpotensor(data, physical)
+#
+#             return tensor
+#         end
+#
+#     return rv
+# end
+
+# function broadcastmodel(
+#     ::Type{<:LindbladEquation}, model, physical, method::AbstractTEBD; axis, kwargs...
+# )
+#     model = unwrap(model)
+#
+#     rv =
+#         timestep -> begin
+#             if axis == 1
+#                 incr = (1, 0)
+#             elseif axis == 2
+#                 incr = (0, 1)
+#             end
+#
+#             p1p2 = broadcast(tuple, physical, circshift(physical, .-incr))
+#
+#             uvs = broadcast(p1p2, model) do (p1, p2), modeli
+#                 return tebdtensor(modeli, p1, p2, timestep; compresstol=method.compresstol)
+#             end
+#
+#             lat = broadcast(tuple, first.(uvs), circshift(last.(uvs), incr))
+#
+#             if method isa AxialTEBD
+#                 lat = broadcast(lat) do (u, v)
+#                     @tensoropt out[ok ob ik ib; e w] := u[ok ob x y; e] * v[x y ik ib; w]
+#                     return out
+#                 end
+#             end
+#
+#             return lat
+#         end
+#
+#     return rv
+# end
+# LindbladEquation(p::Int) = LindbladEquation([], [], [], [], p::Int)
+
+function broadcastmodel(
+    ::Type{<:Union{Hamiltonian, Liouvillian, Ising}}, model, physical, method::AbstractTEBD; axis, inreverse, kwargs...
+)
+    model = unwrap(model)
+
+    rv =
+        timestep -> begin
+            if axis == 1
+                incr = (1, 0)
+            elseif axis == 2
+                incr = (0, 1)
+            end
+
+            p1p2 = broadcast(tuple, physical, circshift(physical, .-incr))
+
+            uvs = broadcast(p1p2, model) do (p1, p2), modeli
+                return tebdtensor(modeli, p1, p2, timestep; compresstol=method.compresstol)
+            end
+
+            lat = broadcast(tuple, first.(uvs), circshift(last.(uvs), incr))
+
+            if method isa Union{AxialTEBD,GlobalTEBD}
+                lat = broadcast(lat) do (u, v)
+                    if inreverse
+                        @tensoropt out[ok ob ik ib; e w] := v[ok ob x y; w] * u[x y ik ib; e]
+                    else
+                        @tensoropt out[ok ob ik ib; e w] := u[ok ob x y; e] * v[x y ik ib; w]
+                    end
+                    return out
+                end
+            end
+
+            return lat
+        end
+
+    return rv
+end
+
+function broadcastmodel(::Type{<:Hamiltonian}, model, physical, method::TEPEPSO; kwargs...)
+    # kw = paramkwargs(model)
+
+    #TODO, let TrotterLayer be hamiltonain or liouvvilian
+
+    rv =
+        timestep -> begin
+
+            tensors = broadcast(model, physical) do liouvillian, space
+                Ls = dissipator(liouvillian)
+                h0 = oneterms(liouvillian)
+                H = terms(liouvillian)
+
+                h12 = only(terms(liouvillian))
+
+                ms = map(t -> t.a, terms(h12.gx))
+                λs = map(t -> t.λ, terms(h12.gx))
+
+                return fsmpowop(h12.C, 
+                                h12.B,
+                                h0,
+                                Ls,
+                                space,
+                                timestep,
+                                h12.a,
+                                ms,
+                                λs,
+                                ;
+                                J = 1.0,
+                                extend = method.extend,
+                                )
+            end
+        end
+
+    return rv
+end
+
+function (model::Union{Hamiltonian,Liouvillian})(physical, method::DMPO; kwargs...)
+    rv =
+        timestep -> begin
+            mpo = MPO(model)
+
+            data = dynamicalmpo(
+                mpo,
+                timestep,
+                method.order;
+                method.extend,
+                method.compress,
+                method.approx,
+            )
+
+            tensor = dmpotensor(data, physical)
+
+            return tensor
+        end
+    return rv
+end
+
+# function Base.show(io::IO, ::MIME"text/plain", eqn::LindbladEquation)
+#     d = physicaldim(eqn)
+#
+#     n1 = length(eqn.onelocal)
+#     n2 = length(eqn.twolocal)
+#
+#     nl = length(eqn.longrange)
+#
+#     nd = length(eqn.linops)
+#
+#     println(io, "LindbladEquation with d = $d containing:")
+#     println(io, "  $n1 local terms")
+#     println(io, "  $n2 nearest-neighbour terms")
+#     println(io, "  $nl long-range terms")
+#     return print(io, "  $nd lindblad operators")
+# end

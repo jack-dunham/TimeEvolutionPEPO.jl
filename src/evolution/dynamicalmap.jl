@@ -57,7 +57,79 @@ function onvector(t)
     return v
 end
 
-function trotterise(physical, steps, method)
+function trotterlayers(model::Hamiltonian, theterms)
+
+    for term in theterms
+        if isexpandable(term)
+            model += sum(trotterlayers(model, terms(term)))
+        else
+            model += TrotterLayer(zero(model) + term)
+        end
+    end
+
+    return model
+end
+
+function trotterlayers(model::Hamiltonian)
+
+    rv = Hamiltonian((), oneterms(model))
+
+    return trotterlayers(rv, model)
+end
+
+# Obtain the trotter layers from the Liouvillian
+function trotterlayers(model::Liouvillian) 
+    ham = trotterlayers(model.hamiltonian)
+    return Liouvillian(ham, model.linops)
+end
+
+# function trotterlayers(model::Liouvillian) 
+#
+#     H = Hamiltonian((), onelocalterms(model), false)
+#
+#     L = Liouvillian(H, linops(model), false)
+#
+#     return trotterlayers(L, model.hamiltonian)
+# end
+
+function distributelocal(layers, localops, ::Nothing)
+    numl = length(layers)
+
+    @debug "distributing local operators:" numlayers = numl numlocal = length(localops)
+
+    if !isempty(localops)
+        layers = map(step -> step + 1 / numl * sum(localops), layers)
+    end
+
+    return layers
+end
+
+function distributelocal(layers, localops, linops)
+
+    distributelocal(layers, localops, nothing)
+
+    numl = length(layers)
+
+    foreach(layer -> addlinops(layer, sqrt(1 / numl) .* linops), layers)
+
+    return layers
+end
+
+function _trotterise(physical, layers, method, localops, linops)
+
+    # @warn length(localops)
+
+    steps = distributelocal(layers, localops, linops)
+
+    trotterlist = _trotterise(physical, steps, method)
+
+    return trotterlist
+end
+
+function _trotterise(physical, steps, method)
+
+    @debug "Trotterising over $(length(steps)) layers"
+
     trotterlist = map(steps) do modelstep
         G = promote_geometry_type(physical, modelstep)
 
@@ -77,33 +149,122 @@ function trotterise(physical, steps, method)
     return trotterlist
 end
 
+function trotterise(physical, model, method::Union{GlobalTEBD, GlobalDMPO})
+
+    steps = combineaxial(model.layers)
+
+    trotterlist = _trotterise(physical, steps, method)
+
+    return trotterlist
+end
+
+function trotterise(physical, model, method::Union{TEBD, AxialTEBD, DMPO})
+
+    @debug "seperating..."
+    steps = seperateaxis(model.layers)
+
+    trotterlist = _trotterise(physical, steps, method)
+
+    return trotterlist
+end
+
+function trotterise(physical, model, method::TEPEPSO)
+
+    # oneloc = oneterms(model)
+
+    trotterlist = _trotterise(physical, model.layers, method)
+
+    return trotterlist
+end
+
+# Given a sequence of trotter-layers, combine consequtive layers if on different axis
+function combineaxial(steps)
+
+    steps = [steps...]
+
+    rv = Combine[]
+
+    while !isempty(steps)
+        op = popfirst!(steps)
+
+        if op.axis != 0
+            if !isempty(steps) && op.axis != steps[begin]
+                # If on different axis, then they can be combined
+                opnext = popfirst!(steps)
+                push!(rv, Combine(op, opnext))
+            else
+                # Otherwise they cannot be so combine with identity
+                opid = TrotterLayer(zero.(op.data), mod(op.axis + 1, 1:2))
+                push!(rv, Combine(op, opid))
+            end
+        else
+            push!(rv, Combine(changeaxis(op, 1), changeaxis(op,2)))
+        end
+    end
+    return rv
+end
+
+# Given a sequence of trotter-layers, extract them into axial components
+function seperateaxis(steps)
+    if any(p -> p.axis !=  0, steps)
+        # Symmetry broken 
+        rv = TrotterLayer[]
+        for op in steps
+            if op.axis != 0
+                push!(rv, op)
+            else
+                append!(rv, [changeaxis(op, 1; a = 0.5), changeaxis(op, 2; a = 0.5)])
+            end
+        end
+    else
+        rvx = TrotterLayer[]
+        rvy = TrotterLayer[]
+
+        for op in steps
+            push!(rvx, changeaxis(op,1; a = 0.5))
+            push!(rvy, changeaxis(op,2; a = 0.5))
+        end
+
+        rv = vcat(rvx,rvy)
+    end
+
+    return rv
+end
+
+
 # TODO this is hacky and convoluted and needs more thought
-function newstepper(physical, model, method)
+function newstepper(physical, model, method; timestep, order)
+    # model = Model(model)
     order = method.trotterorder
 
     # Apply wrappers etc as needed and makes sure everything is on matrices
-    steps = processmodel(model, method)
+
+    # steps = processmodel(model, method)
+
+    # steps = trotterlayers(model)
+    steps = model
 
     trotterlist = trotterise(physical, steps, method)
 
-    tau = method.timestep
+    tau = timestep
 
-    # if length(trotterlist) == 1 
-    #     # No trotterisation required if we have made it this far with only one operator
-    #     # in the list
-    #     theop = only(only(trotterlist)(tau))
-    #
-    #     physicalspace = broadcast((p, _) -> p, physical, CartesianIndices(size(theop)))
-    #
-    #     T = typeof(theop)
-    #
-    #     return TrotterDecomposition(T[], [theop], T[]), physicalspace
-    # end
+    if length(trotterlist) == 1 && method isa TEPEPSO
+        # No trotterisation required if we have made it this far with only one operator 
+        # using TEPEPSO
+        # in the list
+        theop = only(only(trotterlist)(tau))
 
-    if method.trotterorder == 1
+        physicalspace = broadcast((p, _) -> p, physical, CartesianIndices(size(theop)))
+
+        T = typeof(theop)
+
+        return TrotterDecomposition(T[], [theop], T[]), physicalspace
+    end
+
+    if order == 1
         @info "First-order trotter decomposition..."
         body = mapreduce(op -> op(tau), vcat, trotterlist)
-    elseif method.trotterorder == 2
+    elseif order == 2
         @info "Second-order trotter decomposition..."
         body = mapreduce(op -> op(tau / 2), vcat, trotterlist)
         reversed = reverse(trotterise(physical, map(InReverse, steps), method))
@@ -121,6 +282,65 @@ function newstepper(physical, model, method)
     return oplist, physicalspace
 end
 
+# function newstepper(physical, model::Liouvillian, method::TEBD)
+#     order = method.trotterorder
+#
+#     # Apply wrappers etc as needed and makes sure everything is on matrices
+#     # steps = processmodel(model, method)
+#
+#     newmodel = zero(model, tied=model.tied)
+#
+#     # Scale all non-tied local terms to distribute evenly among other terms.
+#
+#     s = count_num_not_one_local(model)
+#
+#     model = onelocalscale(s, model)
+#
+#     for term in model
+#         if term isa OnAxis
+#             newmodel += term + localops
+#         else
+#             newmodel += OnAxis(term, 1) + 1/2 * localops
+#             newmodel += OnAxis(term, 2) + 1/2 * localops
+#         end
+#     end
+#
+#     trotterlist = trotterise(physical, newmodel, method)
+#
+#     tau = method.timestep
+#
+#     # if length(trotterlist) == 1 
+#     #     # No trotterisation required if we have made it this far with only one operator
+#     #     # in the list
+#     #     theop = only(only(trotterlist)(tau))
+#     #
+#     #     physicalspace = broadcast((p, _) -> p, physical, CartesianIndices(size(theop)))
+#     #
+#     #     T = typeof(theop)
+#     #
+#     #     return TrotterDecomposition(T[], [theop], T[]), physicalspace
+#     # end
+#
+#     if method.trotterorder == 1
+#         @info "First-order trotter decomposition..."
+#         body = mapreduce(op -> op(tau), vcat, trotterlist)
+#     elseif method.trotterorder == 2
+#         @info "Second-order trotter decomposition..."
+#         body = mapreduce(op -> op(tau / 2), vcat, trotterlist)
+#         reversed = reverse(trotterise(physical, map(InReverse, steps), method))
+#         append!(body, mapreduce(op -> op(tau / 2), vcat, reversed))
+#     end
+#
+#     T = eltype(body)
+#
+#     oplist = TrotterDecomposition(T[], body, T[])
+#
+#     physicalspace = broadcast((p, _) -> p, physical, CartesianIndices(size(oplist)))
+#
+#     @info "...of $(length(body)) operators"
+#
+#     return oplist, physicalspace
+# end
 # function construct_stepper_list(physical, model, method)
 #
 #     if !(eltype(model)<:AbstractMatrix)

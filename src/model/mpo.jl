@@ -41,12 +41,19 @@ function MPO(A::T, B::T, C::T, D::T) where {T}
     return MPO(A, B, C, D, data)
 end
 
-function MPO(eqn::LindbladEquation)
-    isempty(eqn.linops) ? thermal = true : thermal = false
+function MPO(eqn::Union{Hamiltonian, Liouvillian})
+
+    if eqn isa Hamiltonian
+        c1 = c2 = -1/2
+    elseif eqn isa Liouvillian
+        c1 = -im
+        c2 = im
+    end
 
     Id = Matrix{ComplexF64}(I, 2, 2)
 
-    chi = 2 * (length(eqn.twolocal) + length(eqn.longrange))
+    chi = 2 * length(eqn)
+
     T = BlockMatrix
     A = T(undef, chi, chi)
     B = T(undef, chi, 1)
@@ -60,56 +67,57 @@ function MPO(eqn::LindbladEquation)
 
     i = 1
 
-    for term in eqn.twolocal
-        X, Y = term.term
-        a = term.coeff
+    for h in terms(eqn)
 
-        C[1, i] = -a * im * kron(X, Id)
-        C[1, i + 1] = a * im * kron(Id, transpose(X))
+        a1 = c1 * h.a
+        a2 = c2 * h.a
 
-        B[i, 1] = kron(Y, Id) # ket
-        B[i + 1, 1] = kron(Id, transpose(Y)) # bra
+        if h isa ExpOp
+            a1 *= h.λ
+            a2 *= h.λ
 
-        i += 2
-    end
+            A[i, i] = h.λ * kron(Id, Id)
+            A[i + 1, i + 1] = h.λ * kron(Id, Id)
 
-    for term in eqn.longrange
-        X, Y = term.term
-        alam = term.coeff
+        elseif h isa LocalOp{2}
+            @debug "Adding 2-local term" h.a
+            nothing
+        else
+            throw(ArgumentError("incompatible term of type $(typeof(h)) for method DMPO"))
+        end
 
-        C[1, i] = -alam * term.decay * im * kron(X, Id)
-        C[1, i + 1] = alam * term.decay * im * kron(Id, transpose(X))
+        @debug a1 a2
 
-        B[i, 1] = kron(Y, Id)
-        B[i + 1, 1] = kron(Id, transpose(Y))
 
-        A[i, i] = term.decay * kron(Id, Id)
-        A[i + 1, i + 1] = term.decay * kron(Id, Id)
+        C[1, i] = a1 * kron(h.C, Id)
+        C[1, i + 1] = a2 * kron(Id, transpose(h.C))
+
+        B[i, 1] = kron(h.B, Id) # ket
+        B[i + 1, 1] = kron(Id, transpose(h.B)) # bra
 
         i += 2
     end
 
     # LOCAL TERMS (divide each by 1/2 on assumption of two-dimensional simulation)
 
-    foreach(eqn.onelocal) do term
+    D[1,1] += sum(oneterms(eqn); init=zero(D[1,1])) do term
         # Absorb coefficient
+        @debug "Adding local term" term.a
         H = Matrix{ComplexF64}(term)
-
-        D[1, 1] += -im / 2 * (kron(H, one(H)) - kron(one(H), transpose(H)))
+        return c1 * kron(H, one(H)) + c2 * kron(one(H), transpose(H))
     end
 
-    foreach(eqn.linops) do term
-        # Absorb coefficient
-        L = Matrix{ComplexF64}(term)
-
-        anticomm = kron(L' * L, one(L)) + kron(one(L), transpose(L' * L))
-        D[1, 1] += 1 / 2 * (kron(L, transpose(L')) - 1 / 2 * anticomm)
+    if eqn isa Liouvillian
+        foreach(dissipator(eqn)) do L
+            anticomm = kron(L' * L, one(L)) + kron(one(L), transpose(L' * L))
+            D[1, 1] += 1 / 2 * (kron(L, transpose(L')) - 1 / 2 * anticomm)
+        end
     end
 
     return MPO(A, B, C, D)
 end
 
-function dynamicalmpo(eqn::LindbladEquation, dt::Number, order::Integer; kwargs...)
+function dynamicalmpo(eqn::Model, dt::Number, order::Integer; kwargs...)
     return dynamicalmpo(MPO(eqn), dt, order; kwargs...)
 end
 

@@ -22,35 +22,6 @@ struct OnAxis{M}
     OnAxis(m::AbstractMatrix, axis) = new{typeof(m)}(m, axis)
 end
 
-struct Combine{M}
-    model::NTuple{2,Vector{M}}
-end
-
-function (model::Combine)(G, physical, method, dt; inreverse=false, kwargs...)
-    @info "Combining..."
-
-    # Swap the order of the axis
-    termtuple = inreverse ? reverse(model.model) : model.model
-
-    rv = mapreduce(vcat, termtuple...) do t1, t2
-        tvec1 = broadcastmodel(G, t1, physical, method; kwargs...)(dt)
-        tvec2 = broadcastmodel(G, t2, physical, method; kwargs...)(dt)
-
-        rv = map(tvec1, tvec2) do tlat1, tlat2
-            rv = broadcast(tlat1, tlat2) do ten1, ten2
-                @tensoropt out[ok ob ik ib; e s w n] :=
-                    ten2[ok ob x y; e w] * ten1[x y ik ib; s n]
-                return out
-            end
-            return rv
-        end
-
-        return rv
-    end
-
-    return rv
-end
-
 unwrap(model) = model
 unwrap(m::Union{InReverse,OnAxis}) = unwrap(m.model)
 
@@ -65,6 +36,7 @@ onlattice(::Type{G}, v) where {G} = UnitCell{G}(v)
 function broadcastmodel(::Type, model, physical, method; kwargs...)
     rv = dt -> begin
         lattice = broadcast(physical, unwrap(model)) do space, func
+            @debug "" func
             return func(space, method; kwargs...)(dt)
         end
         return onvector(lattice)
@@ -80,22 +52,9 @@ function broadcastmodel(
     return x -> onlattice(G, rv(x))
 end
 function broadcastmodel(
-    G::Type{<:ITC.AbstractUnitCellGeometry}, model::Combine, physical, method; kwargs...
-)
-    return dt -> onlattice(G, model(G, physical, method, dt; kwargs...))
-end
-function broadcastmodel(
     G::Type{<:ITC.AbstractUnitCellGeometry}, model::InReverse, physical, method; kwargs...
 )
     return broadcastmodel(G, model.model, physical, method; inreverse=true, kwargs...)
-end
-function broadcastmodel(
-    G::Type{<:ITC.AbstractUnitCellGeometry}, model::OnAxis, physical, method; kwargs...
-)
-
-    return broadcastmodel(
-        G, model.model, physical, method; axis=model.axis, inreverse=true, kwargs...
-    )
 end
 
 function applykwargs(S::Type, ::Any)
@@ -104,23 +63,10 @@ function applykwargs(S::Type, ::Any)
     end
     return rv
 end
-
-function applykwargs(S::Type, o::OnAxis)
-    function rv(lat; kwargs...)
-        return S(lat; axis=o.axis, kwargs...)
-    end
-    return rv
-end
 function applykwargs(S::Type, r::InReverse)
     axisf = applykwargs(S, r.model)
     return function rv(lat; kwargs...)
         return axisf(lat; inreverse=true, kwargs...)
-    end
-    return rv
-end
-function applykwargs(S::Type, ::Combine)
-    function rv(lat; kwargs...)
-        return S(lat; kwargs...)
     end
     return rv
 end

@@ -15,6 +15,8 @@ using OptimKit
 using VectorInterface
 using ChainRulesCore
 using SparseArrayKit
+using Accessors
+using DocStringExtensions
 
 const ITC = InfiniteTensorContractions
 const PEPOKit = TimeEvolutionPEPO
@@ -22,10 +24,11 @@ const PEPOKit = TimeEvolutionPEPO
 import InfiniteTensorContractions: AbsTen
 import InfiniteTensorContractions: TenAbs
 
+
 export PEPOKit
 
-## ITC exports
-export Square
+## Essential ITC reexports
+export UnitCell, Square, SquareSymmetric
 export VUMPS, CTMRG
 #
 
@@ -33,29 +36,34 @@ export delta
 
 export cj, conjugate
 
-export σ0, σ1, σ2, σ3, σp, σm, PAULI, LADDER
+export PAULI, LADDER
 
 # PEPO
+export UnitCellBonds
 export ThermalState
-export AbstractPEPO, PEPO, UnitCellBonds
+
+export AbstractPEPO, PEPO, expandspace, subpepo, unsymmetrise, weights
 export Bond
 
 export TEBD, DMPO
 export LocalUpdate, GlobalUpdate
 export SU, NTU, FET, VGU
-export Simulation, simulate!, simulate
+export Simulation, simulate!, simulate, quantumstate
 
 export EVB, DZM, WTG, MCF, NoGauge
 
 export dynamicalmpo, MPO
 
-export LindbladEquation, HamiltonianTerm, LongRangeTerm, LindbladTerm
+export Model, Hamiltonian, Liouvillian, Dissipator, TrotterLayer
 
-export DensityMatrix, ReducedDensityMatrix
+export isaxial, isexpandable, dissipator
+
+export LocalOp, ExpOp, PowOp, GaussOp, GaussOp2d
+export localop, expop, powop, powop2d, gaussop, gaussop2d
+
+export DensityMatrix
 export trace, partialtrace
-export expval, negativity, correlator
-
-export ham, lin
+export expval, negativity, correlator, correlationlength
 
 include("utils.jl")
 include("tensorkitutils.jl")
@@ -96,7 +104,6 @@ include("truncation/isometries.jl")
 include("truncation/iterative.jl")
 
 include("evolution/abstractevolution.jl")
-include("evolution/dynamicalmap.jl")
 include("evolution/timeevolution.jl")
 include("evolution/timestep.jl")
 
@@ -104,9 +111,12 @@ include("truncation/simpleupdate.jl")
 
 ## MODEL AND EQUATION
 include("model/abstractterm.jl")
-include("model/hamiltonianterm.jl")
-include("model/longrangeterm.jl")
-include("model/lindbladterm.jl")
+include("model/terms/localop.jl")
+include("model/terms/linop.jl")
+include("model/terms/expop.jl")
+include("model/terms/powop.jl")
+include("model/terms/nnnop.jl")
+
 include("model/equation.jl")
 include("model/mpo.jl")
 include("model/pepso.jl")
@@ -114,6 +124,8 @@ include("model/pepso.jl")
 include("model/heisenberg.jl")
 include("model/longrangeheisenberg.jl")
 include("model/axialheisenberg.jl")
+
+include("evolution/dynamicalmap.jl")
 
 include("simulation.jl")
 include("densitymatrix.jl")

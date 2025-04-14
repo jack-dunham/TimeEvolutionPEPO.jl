@@ -1,11 +1,11 @@
-struct LongRangeHeisenberg <: AbstractLindbladEquation
+struct LongRangeHeisenberg <: AbstractModel
     Jx::Float64
     Jy::Float64
     Jz::Float64
     ax::Float64
     ay::Float64
     az::Float64
-    L::Vector{LindbladTerm}
+    L::Dissipator
     nk::Int
     N::Int
 end
@@ -17,7 +17,7 @@ struct AxialLongRangeHeisenberg <: AbstractModel
     ax::Float64
     ay::Float64
     az::Float64
-    L::Vector{LindbladTerm}
+    L::Dissipator
 end
 
 struct PowerLawTerm
@@ -243,7 +243,7 @@ function fsmlongrange(
 
     data = zeros(ComplexF64, di, di', di', di, hstr, vstr, hstr, vstr)
 
-    fsmpepo!(data, rules, dt; extend=extend)
+    fsmpdpo!(data, rules, dt; extend=extend)
 
     return TensorMap(data, d * d' * d' * d, Dx * Dy * Dx' * Dy')
 end
@@ -1038,6 +1038,81 @@ function fsmaxial(
 
     return TensorMap(data, d * d' * d' * d, Dx * Dy * Dx' * Dy')
 end
+
+
+function fsmj1j2(C, B, a, k, space, dt; extend=true, L = LADDER[1])
+    # Need two levels per term
+    T = Dict{NTuple{4,Int},Matrix{ComplexF64}}
+    rules = (A=T(), B=T(), C=T(), D=T())
+
+    D = kron(L, transpose(L')) - 1 / 2 * (kron(L' * L, one(L)) + kron(one(L), transpose(L' * L)))
+
+    X,_,Z = PAULI
+
+
+    Id2 = one(D)
+    # D += -im * 0.5 * (kron(Z, one(Z)) - kron(one(Z), transpose(Z)))
+
+    rules.A[1, 1, 1, 1] = one(D)
+    rules.D[1, 1, 1, 1] = D
+
+    i = 1
+
+    f1 = O -> kron(O, one(O))
+    f2 = O -> kron(one(O), transpose(O))
+
+    if isempty(L)
+        ts = (-1/2, -1/2)
+    else
+        ts = (-im, im)
+    end
+
+    ts = (-im, im)
+
+    for (ti,f) in zip(ts, (f1,f2))
+        t = sqrt(0.5 * ti * a)
+        # t = 1 * ti * im * a
+
+        c = i + 1
+        u = i + 2
+
+        rules.C[c, 1, 1, 1] = t * f(C)
+        rules.C[1, c, 1, 1] = t * f(C)
+
+        rules.C[1, 1, u, 1] = t * f(C)
+        rules.C[1, 1, 1, u] = t * f(C)
+
+
+        rules.B[1, 1, c, 1] = t * f(B)
+        rules.B[1, 1, 1, c] = t * f(B)
+
+        rules.B[u, 1, 1, 1] = t * f(B)
+        rules.B[1, u, 1, 1] = t * f(B)
+
+        rules.A[u, u, 1, 1] = k/(40 * a) * Id2
+        rules.A[1, 1, c, c] = k/(40 * a) * Id2
+
+        rules.A[u, 1, 1, c] = k/(40 * a) * Id2
+        rules.A[1, u, c, 1] = k/(40 * a) * Id2
+
+        i += 2
+    end
+
+    @info "TNO bond dimension: $((i,i))"
+
+    d = space
+    di = dim(d)
+
+    data = zeros(ComplexF64, di, di, di, di, i, i, i, i)
+
+    fsmpepo!(data, rules, dt; extend=extend)
+
+    D = reduce(oplus, fill(oneunit(d), i))
+
+    return TensorMap(data, d * d' * d' * d, D * D * D' * D')
+
+end
+
 function twodapprox(alpha, n, ngmax=2; V=1.0, N=50, T=ComplexF64, gtol=1e-10, force=false)
     wks, lam = approx_as_sum_of_exp(T, alpha / 2, n; N=N, V=V)
 
@@ -1150,4 +1225,32 @@ function generalised_approx_as_sum_of_exp(f, n; N=10, T=ComplexF64)
 
     # return k -> (A * sol)[k]
     return sol, Λ
+end
+
+
+function mfj1j2(Jz,K)
+    sx = 0
+    sy = 0
+
+    dt = 0.025
+    t = 0
+
+    X = Float64[0.0]
+    Y = Float64[0.0]
+
+    for _ in 1:300
+
+        t += dt
+
+        dsx = -2 * Jz *  exp(-1/2 * t) * (1 + K) * sy - (sx + 1)
+        dsy = +2 * Jz *  exp(-1/2 * t) * (1 + K) * sx - 1/2 * sy
+
+        sx += dsx * dt
+        sy += dsy * dt
+
+        push!(X, sx)
+        push!(Y, sy)
+    end
+
+    return X,Y
 end

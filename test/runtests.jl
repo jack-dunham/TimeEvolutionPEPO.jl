@@ -4,14 +4,7 @@ using KrylovKit
 using LinearAlgebra
 using Test
 using Combinatorics
+using ReTestItems
 
-@testset verbose = true "All tests" begin
-    if isempty(ARGS)
-        include("model.jl")
-        include("truncation.jl")
-    else
-        for file in ARGS
-            include("$(file).jl")
-        end
-    end
-end
+runtests(TimeEvolutionPEPO)
+

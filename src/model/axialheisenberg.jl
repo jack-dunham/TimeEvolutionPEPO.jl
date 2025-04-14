@@ -1,4 +1,4 @@
-struct AxialHeisenberg <: AbstractLindbladEquation
+struct AxialHeisenberg <: AbstractModel
     hx::Float64
     hy::Float64
     hz::Float64
@@ -8,13 +8,13 @@ struct AxialHeisenberg <: AbstractLindbladEquation
     Kx::Float64
     Ky::Float64
     Kz::Float64
-    L::Vector{LindbladTerm}
+    L::Dissipator
 end
 
-struct AxialIsing <: AbstractLindbladEquation
+struct AxialIsing <: AbstractModel
     J::Float64
     K::Float64
-    L::Vector{LindbladTerm}
+    L::Dissipator
 end
 
 Base.broadcastable(o::AxialHeisenberg) = Ref(o)

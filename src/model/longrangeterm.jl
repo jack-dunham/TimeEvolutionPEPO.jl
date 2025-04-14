@@ -1,4 +1,4 @@
-struct LongRangeTerm <: AbstractTerm{2}
+struct LongRangeTerm <: AbstractTerm
     term::NTuple{2,Matrix{ComplexF64}}
     decay::ComplexF64
     coeff::ComplexF64
@@ -8,4 +8,4 @@ end
 scaleterm(a, A::LongRangeTerm) = LongRangeTerm(A.term, A.decay, a * A.coeff)
 
 # ham(A, λ, B) = LongRangeTerm((A, B), λ)
-ham(A, λ, B) = newterm(LongRangeTerm, (A,B), λ, 1)
+# ham(A, λ, B) = newterm(LongRangeTerm, (A,B), λ, 1)

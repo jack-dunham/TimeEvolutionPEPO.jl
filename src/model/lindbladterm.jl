@@ -1,4 +1,4 @@
-struct LindbladTerm <: AbstractTerm{1}
+struct LindbladTerm <: AbstractTerm
     term::NTuple{1,Matrix{ComplexF64}}
     coeff::ComplexF64
     LindbladTerm(term::NTuple{1,Matrix{ComplexF64}}, c) = new(term, c)
@@ -6,9 +6,10 @@ end
 
 scaleterm(a, A::LindbladTerm) = LindbladTerm(A.term, a * A.coeff)
 
-(A::Type{<:AbstractArray})(term::LindbladTerm) = term_to_matrix(A, term)
+(A::Type{<:AbstractMatrix})(term::LindbladTerm) = term_to_matrix(A, term)
 
-lin(L) = newterm(LindbladTerm, (L,), 1)
+# lin(L) = newterm(LindbladTerm, (L,), 1)
+lin(L) = LindbladTerm((L,), 1.0)
 
 function vectorise(::Type{<:LindbladTerm})
     anticomm = L -> kron(L' * L, one(L)) + kron(one(L), transpose(L' * L))
