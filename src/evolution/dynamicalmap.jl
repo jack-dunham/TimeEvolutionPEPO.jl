@@ -1,17 +1,24 @@
-struct TrotterDecomposition{T}
+mutable struct TrotterDecomposition{T}
     head::Vector{T}
     body::Vector{T}
     tail::Vector{T}
+    timestep::Float64
+    const order::Integer
 end
 
 Base.eltype(::TrotterDecomposition{T}) where {T} = T
 
+function TrotterDecomposition(head, body, tail; timestep, order)
+    return TrotterDecomposition(head, body, tail, timestep, order)
+end
+
+initialize(trotter::TrotterDecomposition) = sch.head
+finalize(trotter::TrotterDecomposition) = sch.body
+
 Base.iterate(sch::TrotterDecomposition, state=1) = iterate(sch.body, state)
 
-Base.size(t::TrotterDecomposition) = length(t)
-function Base.length(t::TrotterDecomposition)
-    return maximum(size, Iterators.flatten((t.head, t.body, t.tail)))
-end
+Base.size(t::TrotterDecomposition) = (length(t),)
+Base.length(t::TrotterDecomposition) = length(t.body)
 
 # function construct_stepper_list(physical, model, method)
 #     model = Iterators.flatten(model)
@@ -235,7 +242,6 @@ end
 # TODO this is hacky and convoluted and needs more thought
 function newstepper(physical, model, method; timestep, order)
     # model = Model(model)
-    order = method.trotterorder
 
     # Apply wrappers etc as needed and makes sure everything is on matrices
 
@@ -258,7 +264,7 @@ function newstepper(physical, model, method; timestep, order)
 
         T = typeof(theop)
 
-        return TrotterDecomposition(T[], [theop], T[]), physicalspace
+        return TrotterDecomposition(T[], [theop], T[]; timestep=timestep, order=order), physicalspace
     end
 
     if order == 1
@@ -273,7 +279,7 @@ function newstepper(physical, model, method; timestep, order)
 
     T = eltype(body)
 
-    oplist = TrotterDecomposition(T[], body, T[])
+    oplist = TrotterDecomposition(T[], body, T[];timestep=timestep, order=order)
 
     physicalspace = broadcast((p, _) -> p, physical, CartesianIndices(size(oplist)))
 

@@ -575,8 +575,6 @@ Base.parent(dmpo::AbstractDMPO) = getfield(dmpo, :parent)
     compress::Bool = true
     extend::Bool = true
     order::Int = 1
-    timestep::Float64 = 0.01
-    trotterorder::Int = 1
     truncalg::TAlg = SU()
     verbose::Bool = true
 end
@@ -610,9 +608,6 @@ end
 
 @kwdef mutable struct TEBD{TAlg<:AbstractTruncationScheme} <: AbstractTEBD
     compresstol::Float64 = eps()
-    trotterlevel::Symbol = :max
-    timestep::Float64 = 0.01
-    trotterorder::Int = 1
     truncalg::TAlg = SU()
     verbose::Bool = true
 end
@@ -638,8 +633,6 @@ GlobalTEBD(; kwargs...) = GlobalTEBD(TEBD(; kwargs...))
 UpdateStyle(::Type{<:GlobalTEBD}) = IsGlobal()
 
 @kwdef struct TETNO{TAlg,Style} <: AbstractTimeEvolution
-    timestep::Float64 = 0.1
-    trotterorder::Int = 1
     truncalg::TAlg = SU()
     truncstyle::Style = SemiParallel()
     verbose::Bool = true
@@ -650,8 +643,6 @@ truncstyle(method::TETNO) = method.truncstyle
 showheader(::Type{<:TETNO}) = "Time-evolving tensor network operator (TETNO)"
 
 @kwdef struct TEPEPSO{TAlg} <: AbstractTimeEvolution
-    timestep::Float64 = 0.1
-    trotterorder::Int = 1
     truncalg::TAlg = IterativeSU()
     verbose::Bool = true
     extend::Bool = true
