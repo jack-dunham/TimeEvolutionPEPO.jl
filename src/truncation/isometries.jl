@@ -148,7 +148,7 @@ function autodiffoptimise(
     ut = u * sqrt(s2)
     vt = sqrt(s2) * v
 
-    x0 = ITC.randnt!(similar(ut * vt))
+    x0 = ITC.randn!(similar(ut * vt))
 
     D = dim(codomain(s2))
 
@@ -223,7 +223,7 @@ function autodiffoptimise(left, right, metric::AbsTen{2,2}; trunc, rankreduce, x
 
     f1old = Inf
 
-    x0 = ITC.randnt!(similar(ut * vt))
+    x0 = ITC.randn!(similar(ut * vt))
 
     D = dim(codomain(s2))
 
@@ -346,6 +346,21 @@ end
 
 metric(pair::Pair, environment::Function, ::Bond) = environment(pair)
 
+function metric_isometries_from_simple_update!(
+    initpair, initiso, environment, bond; D, optkwargs...
+)
+
+    (u0, v0) = initiso
+    pair = initpair
+
+    truncmetric = metric(pair, environment, bond)
+
+    iso, infid = metricoptimise(
+        u0, v0, truncmetric; trunc=truncspace(D), doreduction=true, optkwargs...
+    )
+    return (iso.u, iso.v), iso.s, infid
+end
+
 function single_bond_metric_isometries!(
     pair, environment, bond; D, doreduction, parallel, optkwargs...
 )
@@ -353,7 +368,7 @@ function single_bond_metric_isometries!(
         if parallel
             pair, (u0, v0) = rankreduce(pair)
         else
-            _, (u0, v0) = rankreduce!(pair)
+            pair, (u0, v0) = rankreduce!(pair)
         end
     end
 
@@ -537,6 +552,10 @@ function updatetensors(pair, weights, truncalg::SU, bond)
     absorb_adjacent_weights!(newpair, weights, bond; inverse=true)
     return newpair, s
 end
+function updatetensors(pair, weights, truncalg::SVDU, bond)
+    newpair, s = simple_update_tensors(pair; axis=bondaxis(bond), xi=truncalg.ξ)
+    return newpair, s
+end
 
 function simple_update_tensors(pair::Pair{T}; axis, xi=Inf) where {T<:AbsTen{2,5}}
     uten, vten = pair
@@ -575,6 +594,46 @@ function simple_update_tensors(pair::Pair{T}; axis, xi=Inf) where {T<:AbsTen{2,5
     end
 
     return unew => vnew, s
+end
+
+function simple_update_tensors(pair::Pair{T}; axis, xi=Inf) where {T<:AbsTen{2,4}}
+    uten, vten = pair
+
+    if axis == 1
+        D = domain(uten)[3]
+
+        Q1, R = leftorth(uten, (1, 2, 4, 5, 6), (3,))
+        L, Q2 = rightorth(vten, (5,), (1, 2, 3, 4, 6))
+    elseif axis == 2
+        D = domain(uten)[4]
+
+        Q1, R = leftorth(uten, (1, 2, 3, 6), (4,))
+        L, Q2 = rightorth(vten, (6,), (1, 2, 3, 4, 5))
+    end
+
+    u, s, v, err1 = tsvd!(R * L;)# trunc=truncdim(dim(D)))
+    # u, s, v, err2 = tsvd!(R * L; trunc=truncspace(D))
+
+    # println(err2)
+
+    maxnormalize!(s)
+
+    (u, v), s = applyweight(u => v, s, Inf; verbose=false)
+
+
+    # Q1p = Q1 * u
+    # Q2p = v * Q2
+
+    if axis == 1
+        unew = permute(Q1, (1, 2), (6, 3, 4, 5))
+        vnew = permute(Q2, (2, 3), (4, 5, 1, 6))
+
+    elseif axis == 2
+        unew = permute(Q1, (1, 2), (3, 6, 4, 5))
+        vnew = permute(Q2, (2, 3), (4, 5, 6, 1))
+    end
+
+    return unew => vnew, u => v
 end
 
 function _leftrankreduce(p::AbsTen{2,4}, ind)
@@ -797,6 +856,7 @@ end
 
 function dzmtsvd!(cf, iso, u0, v0, min=Inf; trunc, check=false)
     u, s, v = safetsvd!(u0 * v0; trunc=trunc)
+    maxnormalize!(s)
 
     if check
         min = dzmcheck!(cf, iso, u, s, v, min)
@@ -827,7 +887,6 @@ end
 # safetsvd!(m; trunc=notrunc()) = tsvd!(m; trunc=trunc)
 
 function dzmcheck!(cf, iso, u, s, v, min)
-    maxnormalize!(s)
 
     uu = u * sqrt(s)
     vv = sqrt(s) * v
@@ -855,8 +914,8 @@ function dziarmaga(
     trunc,
     EAT=true,
     maxiter=100,
-    isotol=1e-6,
-    check=true,
+    isotol=1e-8,
+    check=false,
     randomness=0.0,
     verbose=true,
 )
@@ -872,10 +931,21 @@ function dziarmaga(
 
     # Initialize the initial best guess to that of simple-update.
     u, s, v = safetsvd!(ui * vi; trunc=trunc)
-    # u, s, v = tsvd!(ui * vi; trunc=trunc)
+
+    maxnormalize!(s)
 
     iso = TruncationIsometries(metric, u * sqrt(s), s, sqrt(s) * v)
+
     minif = cf(iso.u, iso.v)
+    u, s, v, minif = dzmtsvd!(cf, iso, ui, vi, minif; trunc=trunc, check=check)
+
+    if dim(codomain(u)) == dim(domain(u)) && dim(codomain(v)) == dim(domain(v))
+        @info "No need to optimise. Skipping..."
+        return iso
+    end
+    # u, s, v = tsvd!(ui * vi; trunc=trunc)
+
+    @warn "From simple update:" minif
 
     # Perform EAT if we want to.
     if EAT
@@ -896,8 +966,8 @@ function dziarmaga(
     # u = (1 - randomness) * u * sqrt(s) + randomness * ITC.randnt!(similar(u))
     # v = randomness * ITC.randnt!(similar(v)) + (1 - randomness) * sqrt(s) * v
 
-    u = (1 - randomness) * u + randomness * ITC.randnt!(similar(u))
-    v = randomness * ITC.randnt!(similar(v)) + (1 - randomness) * v
+    # u = (1 - randomness) * u + randomness * ITC.randn!(similar(u))
+    # v = randomness * ITC.randn!(similar(v)) + (1 - randomness) * v
 
     while counter < maxiter && ϵ ≥ isotol
         s_old = s
@@ -989,6 +1059,7 @@ function evenbly(
     S = spacetype(metric)
 
     u, s, v = tsvd(u0 * v0; trunc=trunc)
+
 
     iso = TruncationIsometries(metric, u * sqrt(s), s, sqrt(s) * v)
 

@@ -10,7 +10,7 @@ end
     verbose::Bool = false
     pinvtol::Float64 = sqrt(eps())
     isotol::Float64 = 1e-8
-    randomness::Float64 = 1e-3
+    randomness::Float64 = 0.0
     gauge::G = WTG()
 end
 
