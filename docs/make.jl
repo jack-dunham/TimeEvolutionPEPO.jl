@@ -1,5 +1,5 @@
 using Documenter
-using PEPOKit
+using TimeEvolutionPEPO
 
 makedocs(sitename="TimeEvolutionPEPO.jl")
 
