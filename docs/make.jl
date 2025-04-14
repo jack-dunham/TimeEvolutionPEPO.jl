@@ -5,6 +5,7 @@ makedocs(
     sitename="TimeEvolutionPEPO.jl",
     pages = [
         "Home"=>"index.md",
+        "Manual" => ["man/tutorial.md"],
         "Library" => [
            "lib/models.md",
            "lib/observables.md",

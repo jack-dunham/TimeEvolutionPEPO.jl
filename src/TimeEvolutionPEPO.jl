@@ -58,6 +58,7 @@ export Hamiltonian, Liouvillian, Dissipator, TrotterLayer, Model
 
 export isaxial, isexpandable, dissipator
 
+export AbstractTerm, AbstractSingleTerm, AbstractSumOfTerms
 export LocalOp, ExpOp, GaussOp, GaussOp2d, PowOp, PowOp2d
 
 export DensityMatrix

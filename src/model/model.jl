@@ -1,5 +1,8 @@
 abstract type AbstractModel end
 
+"""
+$(TYPEDEF)
+"""
 struct Model{HL<:Union{Hamiltonian,Liouvillian,Ising}} <: AbstractModel
     layers::Vector{TrotterLayer{HL}}
     function Model{T}(terms::Vector) where {T}

@@ -5,9 +5,9 @@ Concrete type representing a single trotter layer in a trotter decomposition.
 
 ## Fields
 
--`data::Matrix{T}`: Each element of `data` defines the operator(s) applied to the
+- `data::Matrix{T}`: Each element of `data` defines the operator(s) applied to the
     corresponding lattice site.
--`axis::Int=0`: If `axis=0`, then this layer generates two layers for each axis in the
+- `axis::Int=0`: If `axis=0`, then this layer generates two layers for each axis in the
     Trotter decomposition when `isaxial(T)==true` is axial, otherwise `axis` defines the
     axis which the operators should be applied across. If `isradial(T)==true` then `axis`
     has no meaning and should be set equal to `0`.

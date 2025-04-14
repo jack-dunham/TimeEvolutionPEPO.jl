@@ -3,12 +3,12 @@ $(TYPEDEF)
 
 Concrete type representing an approximation to Gaussian decay profile term as a sum of
 exponential functions, that is,`ExpOp`.
-```
+```math
 a e^{-\\mu r^2} C_{i} A_{i + 1} \\cdots B_{i + r} \\approx a \\sum_{k = 1}^{k_{\\max}} \\lambda_{k}^{r} C_{i} A_{i + 1} \\cdots B_{i + r}
 ```
 where ``k_{\\max}`` is `length(terms)` (see below).
 
-## Fields
+## Fields
 
 $(TYPEDFIELDS)
 """
@@ -83,6 +83,22 @@ function Base.getproperty(g::GaussOp, name::Symbol)
     end
 end
 
+"""
+$(TYPEDEF)
+
+Concrete type representing an approximation to a two-dimensional Gaussian decay profile 
+term as a product of approximate one-dimensional Gaussians as `GaussOp` objects.
+exponential functions, that is,`ExpOp`.
+```math
+a e^{-\\mu (x^2 + y^2)} C_{i,j} B_{i+x,j+y} \\approx a e^{-\\mu_{x} x^2 } e^{-\\mu_{y} y^2} C_{i,j} B_{i+x,j+y} 
+```
+
+## Fields
+
+$(TYPEDFIELDS)
+
+See also: [`GaussOp`](@ref), [`ExpOp`](@ref), and [`PowOp`](@ref).
+"""
 struct GaussOp2d <: AbstractRadialTerm
     a::ComplexF64
     gx::GaussOp

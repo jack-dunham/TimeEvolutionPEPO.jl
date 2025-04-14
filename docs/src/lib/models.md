@@ -6,12 +6,12 @@ CurrentModule = TimeEvolutionPEPO
 ## Single terms
 
 ```@docs
-localop
-expop
-powop
-powop2d
-gaussop
-gaussop2d
+LocalOp
+ExpOp
+PowOp
+PowOp2d
+GaussOp
+GaussOp2d
 ```
 
 ## Models and sums of terms
