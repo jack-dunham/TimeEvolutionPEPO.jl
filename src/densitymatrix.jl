@@ -1,8 +1,10 @@
 """
-    struct DensityMatrix{P<:AbstractLattice, T<:InfiniteContraction}
+$(TYPEDEF)
 
 Concrete type representing a *normalized* density matrix with associated trace environment 
 of type `T`.
+
+See also: [`trace`](@ref), and [`partialtrace`](@ref).
 """
 struct DensityMatrix{P<:AbstractUnitCell,T<:RenormalizationProblem}
     data::P
@@ -14,18 +16,20 @@ struct DensityMatrix{P<:AbstractUnitCell,T<:RenormalizationProblem}
         # tracenormalize!(data, env)
 
         trval = trace(data, env)
+        @debug "" trace = trval
 
         if all(trval .≈ zero(scalartype(trval)))
             @warn "state cannot be normalized" trace = trval
         else
-            broadcast(data, trval) do t, n
-                rmul!(t, 1 / n)
-            end
+            @. rmul!(data, 1 / trval)
         end
 
         return new{P,T}(data, env)
     end
 end
+TensorKit.spacetype(::Type{<:DensityMatrix{UC}}) where {UC} = spacetype(eltype(UC))
+TensorKit.scalartype(::Type{<:DensityMatrix{UC}}) where {UC} = scalartype(eltype(UC))
+
 function Base.show(io::IO, rho::DensityMatrix)
     if get(io, :compact, false)
         summary(rho)
@@ -78,6 +82,12 @@ function DensityMatrix(tensors::AbstractUnitCell, alg::AbstractBoundaryAlgorithm
     return DensityMatrix(tensors, env)
 end
 
+"""
+$(TYPEDSIGNATURES)
+
+Renormalize the environment associated to `rho`, and use the result to normalize the density
+matric to unit trace.
+"""
 function ITC.renormalize!(rho::DensityMatrix)
     tensors = rho.data
     env = rho.environment
@@ -183,30 +193,78 @@ LinearAlgebra.ishermitian(rho::ReducedDensityMatrix) = ishermitian(rho.data)
 """
     expval(rho::ReducedDensityMatrix, ops::Vararg{T, N}; inds=NTuple{N}(1:N))
 
-Calculate the expectation value of the local operators `ops` applied to the indices
-`inds` respectively. The keyword `inds` defaults to the first `N` indices for `N` local
-operators.
+Calculate the expectation value of product of local operators `ops` applied to the indices
+`inds` respectively. The keyword `inds` defaults to applying all `ops` to the first indices
+of `rho` consecutively.
 """
 function expval(
-    rho::ReducedDensityMatrix{T,S,N}, ops::Vararg{A,M}; inds=NTuple{M}(1:M)
-) where {S,T,A,N,M}
+    rho::TensorMap{<:Number,<:IndexSpace,N,N}, ops::Vararg{<:Matrix,M}; inds=NTuple{N,Int}(1:N)
+) where {N,M}
     pdim = dims(codomain(rho))
 
-    inds = map(x -> tensorind(rho, x), inds)
-
-    j = 1
-    matrices = map(1:N) do i
-        mat = zeros(ComplexF64, pdim[i], pdim[i])
-        if i ∈ inds
-            mat += ops[j]
-            j += 1
-        else
-            mat += I
-        end
-        return mat
+    # Sanity check things
+    if !allunique(inds)
+        throw(ArgumentError("all indices must be unqiue"))
+    elseif maximum(inds) > N
+        throw(ArgumentError("index out of range"))
     end
 
-    return expval(rho, matrices...)
+    ops = eltype(ops)[ops...]
+
+    j = 1
+    # Loop through every index,
+    matrices = map(1:N) do i
+
+        # Is this an index we are applying an operator to?
+        if !(i ∈ inds) || isempty(ops)
+            # If not, then it will be a 1-local identity
+            p = pdim[i]
+            return Matrix{T}(I, p, p)
+        end
+        
+        # If so, get the next matrix in the queue
+
+        op = popfirst!(ops)
+
+        d1, d2 = size(op)
+
+        # Check if it is square
+        if d1 != d2
+            throw(ArgumentError("matrix not square"))
+        else
+            d = d1 = d2
+        end
+
+        # The local space dimension for this index
+        pi = pdim[i]
+
+        count = 1
+        # If this is true, the op must straddle more than one lattice site
+        while pi < d
+            # Check if next index is specific in inds
+            if count ∈ inds
+                pi *= pdim[i + count]
+            else
+                throw(
+                    ArgumentError(
+                        "cannot apply $d-dimensional matrix between sites $i and $count as sites are not adjacent"
+                    )
+                )
+            end
+            count += 1
+        end
+
+        @assert d == pi
+
+        # Iterate the index queue
+        i += count
+
+        return op
+    end
+
+    observable = TensorMap(reduce(⊗, matrices), space(rho))
+
+    return tr(observable * rho)
 end
 function expval(
     rho::ReducedDensityMatrix{T,S,N}, a::Vararg{Matrix{ComplexF64},N}
@@ -233,7 +291,8 @@ end
 """
     negativity(rho::ReducedDensityMatrix{S,2}) -> Number
 
-Calculate the entanglement negativity of bipartite `rho`.
+Calculate the entanglement negativity of bipartite `rho` represented as a `TensorMap` with
+`codomain(rho) == domain(rho)`.
 """
 function negativity(t)
     pt = partialtranspose(t, 1)
@@ -255,7 +314,7 @@ function correlator(rho::DensityMatrix, A1, i1, A2, i2)
 end
 
 """
-    trace(rho::DensityMatrix) -> AbstractLattice
+$(TYPEDSIGNATURES)
 
 Calculate the full trace density of the density matrix `rho` for each site in the unit cell.
 Note, if `rho` is constructed properly, then `trace(rho) .≈ one(scalartype(rho))`.
@@ -279,17 +338,21 @@ function trace(network::AbstractUnitCell, contractor, ind)
 
     return trval
 end
-"""
-    partialtrace(rho::DensityMatrix, inds...) -> ReducedDensityMatrix
 
-Calculate the partial trace of `rho` returning a `ReducedDensityMatrix` object. Indices in
-`inds` define those sites that well remain *untraced*. Site indices in `inds` are mapped
+"""
+$(TYPEDSIGNATURES)
+
+Calculate the partial trace of `rho` returning a `TensorMap`. Indices in
+`inds` define those sites that remain *untraced*. Site indices in `inds` are mapped
 to tensor indices in the same order as in `inds`.
 """
-partialtrace(rho::DensityMatrix, inds::Vararg) =
-    partialtrace(rho.data, rho.environment, inds...)
-
+function partialtrace(rho::DensityMatrix, inds::Vararg{T,N}) where {T<:Union{Dims{2},CartesianIndex{2}},N}
+    return partialtrace(rho.data, rho.environment, inds...)
+end
 function partialtrace(network::AbstractUnitCell, trace, inds::Vararg{T,N}) where {T,N}
+
+    RT = tensormaptype(spacetype(eltype(network)), N, N, scalartype(eltype(network)))
+
     if length(inds) == 0
         throw(ArgumentError("you must provide at least one site to remain untraced"))
     end
@@ -304,7 +367,7 @@ function partialtrace(network::AbstractUnitCell, trace, inds::Vararg{T,N}) where
 
     rho = permute(sortedrho, (TupleTools.invperm(p), N .+ TupleTools.invperm(p)))
 
-    return rho
+    return rho::RT
 end
 
 function _partialtrace(
@@ -818,11 +881,14 @@ function testCFconv(; D=4)
 end
 
 function transferspectrum(dm::DensityMatrix, n=3)
-    mps = dm.environment.runtime.mps
+    return transferspectrum(dm.data, dm.environment.runtime, n)
+end
+function transferspectrum(bulk, rt::VUMPSRuntime, n::Int=3)
+    mps = rt.mps
 
     AL, _, _, _ = ITC.unpack(mps)
 
-    bulk = contractphysical.(dm.data)
+    bulk = contractphysical.(bulk)
 
     tms = ITC.TransferMatrix.(AL[:, 1], bulk[:, 1], AL[:, 2])
 
@@ -840,14 +906,47 @@ function transferspectrum(dm::DensityMatrix, n=3)
 
     return xis[1:n]
 end
+function transferspectrum(bulk, ctmrg::CornerMethodRuntime, n::Int)
+    return transferspectrum(bulk, edges(ctmrg), n::Int)
+end
+function transferspectrum(bulk, edges::Edges, n::Int=3)
+    T1, _, T3, _ = edges
+
+    y = 1
+
+    ES = map(axes(bulk, 1)) do x
+
+        t1 = T1[x, y - 1]
+        t3 = T3[x, y + 1]
+
+        M = contractphysical(bulk[x,y])
+
+        @tensor E[lt w lb; rt e rb] := t1[n; rt lt] * M[e s w n] * t3[s; lb rb]
+
+        d1 = dim(codomain(E))
+        d2 = dim(domain(E))
+
+        return reshape(convert(Array, E),d1,d2)
+    end
+
+    E0 = pop!(ES)
+
+    while !isempty(ES)
+        E = pop!(ES)
+        E0 = E * E0
+    end
+
+    vals,_,_ = eigsolve(E0, E0[1,:], n, :LM)
+
+    return vals / vals[1]
+end
+
 function _correlationlength(dm::DensityMatrix)
     xis = transferspectrum(dm, 4)
 
     eps1 = -log(abs(xis[2]))
     ind = isapprox(abs(xis[2]), abs(xis[3])) ? 4 : 3
     eps2 = -log(abs(xis[ind]))
-
-    display(xis)
 
     return eps1, eps2
 end
@@ -866,8 +965,9 @@ C(r) ∝ exp(-r/ξ), the correlation length ξ quantifies the characteristic dis
 which quantum correlations persist.
 """
 function correlationlength(dm::DensityMatrix)
+    unit_cell_length = size(dm.data, 1)
     eps1, _ = _correlationlength(dm)
-    return 1 / eps1
+    return unit_cell_length / eps1
 end
 
 function correlationlength(f, qs, chis=8:1:16)
@@ -983,13 +1083,15 @@ function testising(; D=2)
 end
 
 function test_ising_extrap(; hx=0.0, D=5, numsteps=400)
+    X,_,Z = PAULI
+    
     if hx == 0.0
         βc = log(1 + sqrt(2)) / 2
     elseif hx == 2.5
         βc = 1 / 1.2737
     end
 
-    xis = [exp10(i) for i in 3:0.1:7]
+    xis = [exp10(i) for i in 5:0.1:7]
 
     push!(xis, Inf)
 
@@ -1001,8 +1103,8 @@ function test_ising_extrap(; hx=0.0, D=5, numsteps=400)
     s = ComplexSpace(2)
     S = ComplexSpace(D)
 
-    H = Heisenberg(; Jz=-1.0, hx=hx)
-    model = [OnAxis(H, 1), OnAxis(H, 2)]
+    H = -1.0 * localop(Z,Z) + hx * localop(X)
+    model = Model(H)
 
     alg = VUMPS(; bonddim=16, maxiter=200, tol=1e-10)
 
@@ -1015,7 +1117,7 @@ function test_ising_extrap(; hx=0.0, D=5, numsteps=400)
 
         dm = DensityMatrix(quantumstate(sim), alg)
 
-        rdm = ReducedDensityMatrix(dm, (1, 1))
+        rdm = partialtrace(dm, (1, 1))
         Z = abs(expval(rdm, PAULI[3]))
 
         L = correlationlength(dm)
@@ -1025,4 +1127,161 @@ function test_ising_extrap(; hx=0.0, D=5, numsteps=400)
     end
 
     return xis, Zs, Ls
+end
+
+function alltestbias(; D=5)
+
+    # xis = [1e4,2e4,4e4,8e4]
+    # Xis = collect(200:50.0:700)
+    # xis = [exp10(i) for i in 3:0.5:4]
+
+    Hs = [0.002, 0.001, 0.0005]
+    Zs = Vector{Float64}[]
+    Ls = Vector{Float64}[]
+    Ts = Vector{Float64}[]
+    # Ds = [5,6,7]
+
+    foreach(hz) do hz
+        zs, ls, ts = testquantum(; xi=Inf, D=D, hz = hz)
+
+        push!(Zs, zs)
+        push!(Ls, ls)
+        push!(Ts, ts)
+    end
+
+    return Xis, Zs, Ls, Ts
+end
+
+function alltestquantum(; D=5)
+
+    Xis = [exp10(i) for i in 4:0.2:5]
+    Ds = [6,7,8]
+
+    Zs = Vector{Float64}[]
+    Ls = Vector{Float64}[]
+    Ts = Vector{Float64}[]
+    # Ds = [5,6,7]
+
+    # foreach(Xis) do xi
+    foreach(Ds) do D
+        zs, ls, ts = testquantum(; xi=Inf, D=D)
+
+        push!(Zs, zs)
+        push!(Ls, ls)
+        push!(Ts, ts)
+    end
+
+    return Xis, Zs, Ls, Ts
+end
+
+function testquantum(; xi=Inf, D)
+    X,_,Z = PAULI
+
+    rho = fill(ThermalState(), 2, 2)
+
+    βc = 1 / 1.2737
+
+    h = 2.5 * localop(X)
+
+    # model = Model(-1.0 * localop(Z,Z) + 2.5 * localop(X))
+    model = Model(PEPOKit.Ising(-1.0, Z, [2.5 * localop(X)]))
+    # model = Model([0.5 * h, -1.0 * localop(Z,Z), 0.5 * h])
+
+    truncalg = PEPOKit.SU(ξ = xi)
+    # truncalg = PEPOKit.NTU(ξ = xi, optalg=DZM(check=false))
+
+    # Need 400 iterations total
+    method = TEBD(timestep = 0.02βc /8 , truncalg=truncalg)
+
+    # alg = CTMRG(; bonddim=25, maxiter=200, tol=1e-8, randinit=false)
+    alg = VUMPS(; bonddim=16, maxiter=200, tol=1e-8)
+
+    s = ComplexSpace(2)
+    S = ComplexSpace(D)
+
+    output = Float64[]
+
+    sim = Simulation(model, rho, S; physical=s, method=method)
+
+    t0 = 0
+
+    # Observables
+    Zs = Float64[]
+    Ls = Float64[]
+    Ts = Float64[]
+
+    # simulate!(identity, sim, 80)
+    simulate!(identity, sim, 300)
+
+    simulate!(sim, 200; maxshots=50) do sim
+
+        dm = DensityMatrix(quantumstate(sim), alg)
+        rdm = partialtrace(dm, (1, 1))
+
+        M = abs(expval(rdm, Z))
+
+        push!(Zs, M)
+
+        try 
+            L = correlationlength(dm)
+            push!(Ls, L)
+        catch _
+            push!(Ls, NaN)
+        end
+
+        push!(Ts, 1 / (t0 + sim.info.iterations * method.timestep))
+    end
+
+    return Zs, Ls, Ts
+end
+
+function extrapquantum(; D)
+    X,_,Z = PAULI
+
+    rho = fill(ThermalState(), 2, 2)
+
+    βc = 1 / 1.2737
+
+    h = 2.5 * localop(X)
+
+    model = Model(-1.0 * localop(Z,Z) + 2.5 * localop(X))
+    # model = Model([0.5 * h, -1.0 * localop(Z,Z), 0.5 * h])
+
+    # truncalg = PEPOKit.NTU(ξ = xi)
+
+    # Need 400 iterations total
+
+    # alg = CTMRG(; bonddim=16, maxiter=200, tol=1e-8, randinit=false)
+    alg = VUMPS(; bonddim=32, maxiter=200, tol=1e-10)
+
+    s = ComplexSpace(2)
+    S = ComplexSpace(D)
+
+    output = Float64[]
+
+
+    # Observables
+    Zs = Float64[]
+    Ls = Float64[]
+
+    Xs = [exp10(i) for i in 4:0.1:5]
+    for xi in Xs
+
+        truncalg = PEPOKit.SU(ξ = xi)
+        method = TEBD(timestep = (0.02 * βc) / 4, truncalg=truncalg)
+
+        sim = Simulation(model, rho, S; physical=s, method=method)
+        simulate!(identity, sim, 200)
+
+        dm = DensityMatrix(quantumstate(sim), alg)
+        rdm = ReducedDensityMatrix(dm, (1, 1))
+
+        M = abs(expval(rdm, Z))
+        L = correlationlength(dm)
+
+        push!(Zs, M)
+        push!(Ls, L)
+    end
+
+    return Xs, Zs, Ls
 end
