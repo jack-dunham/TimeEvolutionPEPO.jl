@@ -86,7 +86,7 @@ function timestep!(
 
     # Evolve and then truncate each bond in sequence
     if pepo.currentaxis != axis
-        setaxis!(pepo, stepper.axis)
+        setaxis!(pepo, axis)
     end
 
     infidelity = 0
@@ -106,9 +106,26 @@ function timestep!(
         # Evolved the pair of tensors connected by `bond`, leaving the original pair
         # unmutated.
         pair = evolvemerge(pepo, stepper, bond)
-        env = environment!(pepo, truncator[axis], bond)
 
-        (u, v), s, _ = isometries(pair, env, bond, truncalg; D=D)
+
+        if truncalg.rankreduce
+            init_weights = environment!(pepo.parent, SimpleUpdateState(), bond)
+            if axis == 2
+                init_weights = permutedims(init_weights)
+            end
+
+            pair, initiso = updatetensors(pair, init_weights, SU(), bond)
+
+            env = environment!(pepo, truncator[axis], bond)
+            (u, v), s, _ = metric_isometries_from_simple_update!(
+                pair, initiso, env, bond;
+                D=D, optalg=truncalg.optalg, xi=truncalg.ξ
+            )
+
+        else
+            env = environment!(pepo, truncator[axis], bond)
+            (u, v), s, _ = isometries(pair, env, bond, truncalg; D=D)
+        end
 
         oldA, oldB = pepo[bond]
 
@@ -163,7 +180,7 @@ function timestep!(
 
     # Evolve and then truncate each bond in sequence
     if pepo.currentaxis != axis
-        setaxis!(pepo, stepper.axis)
+        setaxis!(pepo, axis)
     end
 
     infidelity = similar(ITC.getdata(pepo))
@@ -172,7 +189,7 @@ function timestep!(
 
     evpepo = evolve(pepo, stepper)
 
-    axial = false
+    axial = true
 
     if !axial
         if 1 in size(evpepo)
@@ -326,7 +343,7 @@ function _timestep!(pepo::AxialPEPO, truncator, stepper, truncalg; kwargs...)
 
         realbond = axis == 2 ? transpose(bond) : bond
 
-        setweight!(pepo, s, realbond; copy=false)
+setweight!(pepo, s, realbond; copy=false)
 
         return (u, v)
     end
