@@ -4,20 +4,15 @@ $(TYPEDEF)
 Concrete type representing an approximation to Gaussian decay profile term as a sum of
 exponential functions, that is,`ExpOp`.
 ```math
-a e^{-\\mu r^2} C_{i} A_{i + 1} \\cdots B_{i + r} \\approx a \\sum_{k = 1}^{k_{\\max}} \\lambda_{k}^{r} C_{i} A_{i + 1} \\cdots B_{i + r}
+\\sum_{i = -\\infty}^{\\infty} \\sum_{r = 1}^{\\infty} a e^{-\\mu r^2} C_{i} A_{i + 1} \\cdots B_{i + r} 
+\\approx
+\\sum_{i = -\\infty}^{\\infty} \\sum_{r = 1}^{\\infty} a \\sum_{k = 1}^{k_{\\max}} \\lambda_{k}^{r} C_{i} A_{i + 1} \\cdots B_{i + r}
 ```
-where ``k_{\\max}`` is `length(terms)` (see below).
-
-## Fields
-
-$(TYPEDFIELDS)
+where ``k_{\\max}`` is the number of terms in approximation.
 """
 struct GaussOp <: AbstractAxialTerm
-    "See above."
     a::ComplexF64
-    "See above."
     μ::ComplexF64
-    "The `ExpOp` terms approximating the Gaussian."
     terms::Tuple{Vararg{ExpOp}}
     function GaussOp(a, μ, terms)
         t0 = first(terms)
@@ -37,7 +32,28 @@ terms(g::GaussOp) = g.terms
 isexpandable(term::GaussOp) = false
 
 GaussOp(a, μ, H::AbstractTerm) = GaussOp(a, μ, terms(H))
-function GaussOp(C, B, μ::Number, A=one(C); N=50, force=false, ngmax=4, gtol=1e-10)
+
+"""
+    $(FUNCTIONNAME)(C::AbstractMatrix, B::AbstractMatrix, μ::Number, [A = one(C)]; kwargs...)
+
+Construct an axial term with interaction strength decaying approximately as a Gaussian.
+The keyword arguments listed below control the approximation.
+
+## Keywords
+ - `N::Int=50`: The interval the approximation should be defined on.
+ - `kmax::Int=4`: The namximum number of exponentially-decaying functions appearing in the 
+    weighted sum.
+ - `gtol::Float64=1e-10`: Break tolerance for considering succesive approximations with 
+    respect to the exact decay profile.
+ - `force::Bool=false`: Force an approximation of exactly `kmax` terms.
+"""
+function GaussOp(
+    C::AbstractMatrix,
+    B::AbstractMatrix,
+    μ::Number,
+    A::AbstractMatrix=one(C)
+    ;
+    N::Int=50, force::Bool=false, ngmax::Int=4, gtol::Float64=1e-10)
     f = r -> exp(-μ * r^2)
     errf = (m, l) -> maximum(abs.((x -> sum(@. m * l^x)).(1:N) - f.(1:N)))
 
@@ -87,15 +103,11 @@ $(TYPEDEF)
 
 Concrete type representing an approximation to a two-dimensional Gaussian decay profile 
 term as a product of approximate one-dimensional Gaussians as `GaussOp` objects.
-exponential functions, that is,`ExpOp`.
 ```math
-a e^{-\\mu (x^2 + y^2)} C_{i,j} B_{i+x,j+y} \\approx a e^{-\\mu_{x} x^2 } e^{-\\mu_{y} y^2} C_{i,j} B_{i+x,j+y} 
+\\sum_{i,j = -\\infty}^{\\infty} \\sum_{x,y = 1}^{\\infty} a e^{-\\mu (x^2 + y^2)} C_{i,j} B_{i+x,j+y} 
+\\approx 
+\\sum_{i,j= -\\infty}^{\\infty} \\sum_{x,y = 1}^{\\infty} a e^{-\\mu_{x} x^2 } e^{-\\mu_{y} y^2} C_{i,j} B_{i+x,j+y} 
 ```
-
-## Fields
-
-$(TYPEDFIELDS)
-
 See also: [`GaussOp`](@ref), [`ExpOp`](@ref), and [`PowOp`](@ref).
 """
 struct GaussOp2d <: AbstractRadialTerm
@@ -152,6 +164,22 @@ function Base.getproperty(g::GaussOp2d, name::Symbol)
     end
 end
 
+"""
+    $(FUNCTIONNAME)(C::AbstractMatrix, B::AbstractMatrix, μx::Number, [μy = μx, A = one(C)]; kwargs...)
+
+Construct a radial term with interaction strength decaying approximately as a Gaussian.
+The keyword arguments `kwargs` are passed directly to the equivalant `GaussOp` 
+constructor and are listed below. Currently indentical paramaters must be used for each 
+directional approximation.
+
+## Keywords
+ - `N::Int=50`: The interval the approximation should be defined on.
+ - `kmax::Int=4`: The namximum number of exponentially-decaying functions appearing in the 
+    weighted sum.
+ - `gtol::Float64=1e-10`: Break tolerance for considering succesive approximations with 
+    respect to the exact decay profile.
+ - `force::Bool=false`: Force an approximation of exactly `kmax` terms.
+"""
 GaussOp2d(C, B, μx::Number, A=one(C); kwargs...) = GaussOp2d(C, B, μx, μx, A; kwargs...)
 function GaussOp2d(C, B, μx::Number, μy::Number, A=one(C); expand=false, kwargs...)
     gx = GaussOp(C, B, μx, A; kwargs...)

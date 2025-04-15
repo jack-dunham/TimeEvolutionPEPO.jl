@@ -7,6 +7,9 @@ CurrentModule = TimeEvolutionPEPO
 
 ```@docs
 LocalOp
+LocalOp(D::AbstractMatrix)
+LocalOp(C,B,A; l)
+LocalOp(CAB)
 ExpOp
 PowOp
 PowOp2d
