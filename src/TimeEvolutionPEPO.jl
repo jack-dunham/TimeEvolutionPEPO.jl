@@ -24,7 +24,6 @@ const PEPOKit = TimeEvolutionPEPO
 import InfiniteTensorContractions: AbsTen
 import InfiniteTensorContractions: TenAbs
 
-
 export PEPOKit
 
 ## Essential ITC reexports
@@ -48,7 +47,7 @@ export Bond
 export TEBD, DMPO
 export LocalUpdate, GlobalUpdate
 export SU, NTU, FET, VGU
-export Simulation, simulate!, simulate, quantumstate
+export Simulation, simulate!, quantumstate
 
 export EVB, DZM, WTG, MCF, NoGauge
 
@@ -59,6 +58,7 @@ export Hamiltonian, Liouvillian, Dissipator, TrotterLayer, Model
 export isaxial, isexpandable, dissipator
 
 export AbstractTerm, AbstractSingleTerm, AbstractSumOfTerms
+export AbstractAxialTerm, AbstractRadialTerm, AbstractManhattanTerm
 export LocalOp, ExpOp, GaussOp, GaussOp2d, PowOp, PowOp2d
 
 export DensityMatrix
