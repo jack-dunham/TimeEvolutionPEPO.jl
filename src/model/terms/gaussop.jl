@@ -51,9 +51,12 @@ function GaussOp(
     C::AbstractMatrix,
     B::AbstractMatrix,
     μ::Number,
-    A::AbstractMatrix=one(C)
-    ;
-    N::Int=50, force::Bool=false, ngmax::Int=4, gtol::Float64=1e-10)
+    A::AbstractMatrix=one(C);
+    N::Int=50,
+    force::Bool=false,
+    ngmax::Int=4,
+    gtol::Float64=1e-10,
+)
     f = r -> exp(-μ * r^2)
     errf = (m, l) -> maximum(abs.((x -> sum(@. m * l^x)).(1:N) - f.(1:N)))
 
