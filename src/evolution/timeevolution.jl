@@ -231,7 +231,7 @@ function timestep!(
 end
 
 function timestep!(
-    pepo::AxialPEPO, truncator, stepper::AxialStepper, truncalg::NTU; kwargs...
+    pepo::AxialPEPO, truncator, stepper::AxialStepper, truncalg::Union{FET,NTU}; kwargs...
 )
     axis = stepper.axis
 
@@ -259,9 +259,11 @@ function timestep!(
 
         (u, v), s, _ = isometries(pair, env, bond, truncalg; D=D, parallel=true)
 
+        println(s)
+
         setweight!(pepo, s, bond; copy=false)
 
-        isomu[first(bond)] = u
+        isomu[first(bond)] = u 
         isomv[last(bond)] = v
 
         # return u => v

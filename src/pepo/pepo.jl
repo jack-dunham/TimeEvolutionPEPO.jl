@@ -105,6 +105,7 @@ dim2space(s::IndexSpace) = s
 # Construct using a Bloch vector or as a thermal state
 function PEPO(
     init::Union{Tuple, ThermalState, Matrix{<:Number}, Array{6, <:Number}}, 
+    phys,
     east,
     south=east
 )

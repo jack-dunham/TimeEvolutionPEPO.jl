@@ -129,3 +129,9 @@ struct J1J2Op
     B::Matrix{ComplexF64}
     k::Float64
 end
+
+struct J1J2SymmetricOp <: AbstractSingleTerm
+    a::Float64
+    k::Float64
+    CB::Matrix{ComplexF64}
+end

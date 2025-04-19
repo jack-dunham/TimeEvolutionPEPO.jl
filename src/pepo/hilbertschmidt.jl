@@ -19,9 +19,7 @@ end
 hilbertschmidt(t) = HilbertSchmidt(t)
 hilbertschmidt(t1, t2) = HilbertSchmidt(t1, t2)
 
-function hilbertschmidt(p::AbstractPEPO)
-    return hilbertschmidt(ITC.getdata(p))
-end
+hilbertschmidt(p::AbstractPEPO) = hilbertschmidt(ITC.getdata(p))
 # hilbertschmidt(p::GlobalUpdatablePEPO) = hilbertschmidt(currentbuffer(p))
 function hilbertschmidt(p::Tuple{P,P}) where {P<:AbstractPEPO}
     return hilbertschmidt(p[1]), hilbertschmidt(p[2])

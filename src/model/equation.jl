@@ -226,7 +226,7 @@ function broadcastmodel(
     return rv
 end
 
-function broadcastmodel(::Type{<:Hamiltonian}, model, physical, method::TEPEPSO; kwargs...)
+function broadcastmodel(::Type{<:Union{Hamiltonian,Liouvillian}}, model, physical, method::TEPEPSO; kwargs...)
     # kw = paramkwargs(model)
 
     #TODO, let TrotterLayer be hamiltonain or liouvvilian
@@ -235,35 +235,20 @@ function broadcastmodel(::Type{<:Hamiltonian}, model, physical, method::TEPEPSO;
         timestep -> begin
 
             tensors = broadcast(model, physical) do liouvillian, space
-                Ls = dissipator(liouvillian)
-                h0 = oneterms(liouvillian)
-                H = terms(liouvillian)
+                rules = FSM(space)
 
-                h12 = only(terms(liouvillian))
+                fsmadd!(rules, liouvillian)
 
-                ms = map(t -> t.a, terms(h12.gx))
-                λs = map(t -> t.λ, terms(h12.gx))
-
-                return fsmpowop(h12.C, 
-                                h12.B,
-                                h0,
-                                Ls,
-                                space,
-                                timestep,
-                                h12.a,
-                                ms,
-                                λs,
-                                ;
-                                J = 1.0,
-                                extend = method.extend,
-                                )
+                return fsmpepo(rules, space, timestep; method.extend)
             end
+
+            return tensors
         end
 
     return rv
 end
 
-function (model::Union{Hamiltonian,Liouvillian})(physical, method::DMPO; kwargs...)
+function (model::Union{Hamiltonian, Liouvillian})(physical, method::DMPO; kwargs...)
     rv =
         timestep -> begin
             mpo = MPO(model)

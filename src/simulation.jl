@@ -181,9 +181,9 @@ function Simulation(
 end
 
 function Simulation(
-    model, pepo::PEPO, method::AbstractTimeEvolution, info=SimulationInfo(); storeall=true
-)
-    stepper, _ = newstepper(physicalspace(pepo), model, method)
+    model, pepo::PEPO, method::AbstractTimeEvolution, info=SimulationInfo(); storeall=true, order=1, timestep)
+
+    stepper, _ = newstepper(physicalspace(pepo), model, method; order=order, timestep=timestep)
 
     state = newevolution(pepo, stepper, method)
 

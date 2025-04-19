@@ -44,9 +44,9 @@ export ThermalState
 export AbstractPEPO, PEPO, expandspace, subpepo, unsymmetrise, weights
 export Bond
 
-export TEBD, DMPO
+export TEBD, AxialTEBD, GlobalTEBD, DMPO, GlobalTEBD, TEPEPSO
 export LocalUpdate, GlobalUpdate
-export SU, NTU, FET, VGU
+export SU, SVDU, NTU, FET, IterativeSU
 export Simulation, simulate!, quantumstate
 
 export EVB, DZM, WTG, MCF, NoGauge
@@ -128,6 +128,7 @@ include("model/model.jl")
 include("model/equation.jl")
 include("model/mpo.jl")
 include("model/pepso.jl")
+include("model/fsm.jl")
 
 include("model/heisenberg.jl")
 include("model/longrangeheisenberg.jl")

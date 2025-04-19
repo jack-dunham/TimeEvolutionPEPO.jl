@@ -388,7 +388,7 @@ function setweight!(pepo, svals; axis=axis, copy=false)
 end
 
 function evolve(pepo::PEPO, stepper::FullStepper)
-    state = pepo.state
+    state = pepo
 
     evolved = broadcast(pepo, stepper) do p, t
         D1, D2, D3, D4 = domain(p)

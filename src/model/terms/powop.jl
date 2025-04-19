@@ -15,9 +15,9 @@ struct PowOp{T<:Union{GaussOp2d,ExpOp}} <: AbstractSingleTerm
         if any(t -> t0.C != t.C || t0.B != t.B, terms)
             throw(
                 ArgumentError(
-                "mismatched C or B operators found when constructing `GaussOp`: " *
-                "all respective C and B operators must be the same every term"
-                )
+                    "mismatched C or B operators found when constructing `GaussOp`: " *
+                    "all respective C and B operators must be the same every term",
+                ),
             )
         end
         return new{T}(a, α, terms, expand)
@@ -81,7 +81,6 @@ function PowOp2d(C, B, α, A=one(C); n=10, N=50, expand=true, kwargs...)
 end
 
 function Base.show(io::IO, m::MIME"text/plain", term::PowOp{T}) where {T}
-
     n = length(terms(term))
 
     print(io, "$n-term PowOp{$T} approximation to α = $(term.α)")
@@ -92,19 +91,9 @@ function Base.show(io::IO, m::MIME"text/plain", term::PowOp{T}) where {T}
     end
     return nothing
 end
-function fsmpowop(
-    C,
-    B,
-    localops,
-    linops,
-    space,
-    dt,
-    wk,
-    mks,
-    lks;
-    J=1.0,
-    extend=true,
-)
+
+# DEPREC: This is now replaced by the contents of model/fsm.jl
+function fsmpowop(C, B, localops, linops, space, dt, wk, mks, lks; J=1.0, extend=true)
     Id = one(C)
 
     thermal = isnothing(linops) ? true : false
@@ -118,7 +107,6 @@ function fsmpowop(
     D = kron(zero(Id), zero(Id))
 
     for Aop in localops
-
         @debug "one local term coefficient: $(Aop.a)"
 
         A = Matrix(Aop)
@@ -158,9 +146,9 @@ function fsmpowop(
     hstr = 1
     vstr = 1
 
-    Id = kron(Id,Id)
+    Id = kron(Id, Id)
 
-    @debug "Generating Gaussian PEPSO" weight = wk numlocal = length(localops) 
+    @debug "Generating Gaussian PEPSO" weight = wk numlocal = length(localops)
 
     for (C, B) in zip((C1, C2), (B1, B2))
         gapprox = zip(mks, lks)
@@ -225,6 +213,10 @@ function fsmpowop(
     pepo = TensorMap(data, d * d' * d' * d, Dx * Dy * Dx' * Dy')
     return pepo
 end
+
+# Add a Gaussian term to the FSM
+
+
 # function MPO(eqn)
 #     Id = Matrix{ComplexF64}(I, 2, 2)
 #
@@ -307,11 +299,11 @@ end
 #     return MPO(A, B, C, D)
 # end
 
-
 isexpandable(term) = false
 isexpandable(term::PowOp) = term.expand
 
 expandterm(term) = terms(term)
+expandterm(term::PowOp) = map(t -> term.a * t, terms(term))
 #     if isexpandable(term)
 #         subterms = terms(term)
 #         rv = []
@@ -323,4 +315,3 @@ expandterm(term) = terms(term)
 #         return [term]
 #     end
 # end
-

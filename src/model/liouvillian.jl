@@ -57,6 +57,7 @@ struct Liouvillian{T} <: AbstractSumOfTerms
 end
 
 dissipator(L::Liouvillian) = L.dissipator
+hamiltonian(L::Liouvillian) = L.hamiltonian
 terms(L::Liouvillian) = terms(L.hamiltonian)
 oneterms(L::Liouvillian) = oneterms(L.hamiltonian)
 
@@ -103,7 +104,7 @@ function Base.show(io::IO, ::MIME"text/plain", eqn::Liouvillian)
     return print(io, "  $nd lindblad operator(s)")
 end
 
-Base.:+(L::Liouvillian, H::Hamiltonian)= Liouvillian(L.hamiltonian + H, L.dissipator)
+Base.:+(L::Liouvillian, H::AbstractTerm)= Liouvillian(L.hamiltonian + H, L.dissipator)
 Base.:+(H::Hamiltonian, D::Dissipator)= Liouvillian(H, D)
 Base.:+(L::Liouvillian, D::Dissipator)= Liouvillian(L.hamiltonian, dissipator(L) + D)
 

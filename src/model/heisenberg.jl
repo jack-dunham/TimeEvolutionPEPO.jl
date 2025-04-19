@@ -267,9 +267,8 @@ function tebdtensor(
 
     if isnothing(linops)
         thermal = true
-        c1 = -1
-        c2 = -1
-        dt = dt / 2
+        c1 = -1 / 2
+        c2 = -1 / 2
     else
         c1 = -im
         c2 = im
@@ -284,6 +283,9 @@ function tebdtensor(
     end
 
     xi = dt * model.a
+
+    println(dt)
+    println(model.a)
 
     CB = model.CB
 
