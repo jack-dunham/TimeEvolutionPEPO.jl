@@ -288,8 +288,6 @@ function (fit::ExponentialBasisFit)(x, y)
     return cumsum
 end
 
-function summary(fit::ExponentialBasisFit) end
-
 function fsmlongrangeterm(
     op,
     localops,
