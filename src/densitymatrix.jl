@@ -966,6 +966,21 @@ function testCFconv(; D=4)
     return Js, xvals, clens
 end
 
+function ITC.TransferMatrix(dm::DensityMatrix, yind=1)
+    AL, _, _, _ = ITC.unpack(dm.environment.runtime.mps)
+    bulk = contractphysical.(dm.data)
+    tms = ITC.TransferMatrix.(AL[:, yind], bulk[:, yind], AL[:, yind + 1])
+    return tms
+end
+function ITC.TransferMatrix(dm::PurifiedDensityMatrix, yind=1)
+    AL, _, _, _ = ITC.unpack(dm.environment.runtime.mps)
+    tms = ITC.TransferMatrix.(AL[:, yind], dm.data[:, yind], AL[:, yind + 1])
+    return tms
+end
+
+function transferspectrum(dm::PurifiedDensityMatrix, n=3)
+    return transferspectrum(dm.data, dm.environment.runtime, n)
+end
 function transferspectrum(dm::DensityMatrix, n=3)
     return transferspectrum(dm.data, dm.environment.runtime, n)
 end
@@ -974,7 +989,9 @@ function transferspectrum(bulk, rt::VUMPSRuntime, n::Int=3)
 
     AL, _, _, _ = ITC.unpack(mps)
 
-    bulk = contractphysical.(bulk)
+    if eltype(bulk) <: TensorMap
+        bulk = contractphysical.(bulk)
+    end
 
     tms = ITC.TransferMatrix.(AL[:, 1], bulk[:, 1], AL[:, 2])
 
@@ -1026,7 +1043,7 @@ function transferspectrum(bulk, edges::Edges, n::Int=3)
     return vals / vals[1]
 end
 
-function _correlationlength(dm::DensityMatrix)
+function _correlationlength(dm::Union{DensityMatrix, PurifiedDensityMatrix})
     xis = transferspectrum(dm, 4)
 
     eps1 = -log(abs(xis[2]))
@@ -1049,7 +1066,7 @@ quantum system. For a state with exponentially decaying correlations of the form
 C(r) ∝ exp(-r/ξ), the correlation length ξ quantifies the characteristic distance over
 which quantum correlations persist.
 """
-function correlationlength(dm::DensityMatrix)
+function correlationlength(dm::Union{DensityMatrix, PurifiedDensityMatrix})
     unit_cell_length = size(dm.data, 1)
     eps1, _ = _correlationlength(dm)
     return unit_cell_length / eps1
