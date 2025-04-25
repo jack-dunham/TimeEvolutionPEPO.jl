@@ -61,7 +61,7 @@ export AbstractTerm, AbstractSingleTerm, AbstractSumOfTerms
 export AbstractAxialTerm, AbstractRadialTerm, AbstractManhattanTerm
 export LocalOp, ExpOp, GaussOp, GaussOp2d, PowOp, PowOp2d
 
-export DensityMatrix
+export DensityMatrix, PurifiedDensityMatrix
 export trace, partialtrace
 export expval, negativity, correlator, correlationlength
 

@@ -30,6 +30,42 @@ end
 TensorKit.spacetype(::Type{<:DensityMatrix{UC}}) where {UC} = spacetype(eltype(UC))
 TensorKit.scalartype(::Type{<:DensityMatrix{UC}}) where {UC} = scalartype(eltype(UC))
 
+"""
+$(TYPEDEF)
+
+Concrete type representing a *normalized* purified density matrix with associated trace 
+environment of type `T`, i.e. a density matrix of the form ``\\rho = X^{\\dagger}X`` where
+``X`` is represented by tensor network.
+
+See also: [`DensityMatrix`](@ref), [`trace`](@ref), and [`partialtrace`](@ref).
+"""
+struct PurifiedDensityMatrix{P<:HilbertSchmidt,T<:RenormalizationProblem}
+    data::P
+    environment::T
+    function PurifiedDensityMatrix(
+        data::P, env::T
+    ) where {P<:HilbertSchmidt,T<:RenormalizationProblem}
+        data = deepcopy(data)
+        # tracenormalize!(data, env)
+
+        trval = trace(data, env)
+        @debug "" trace = trval
+
+        if all(trval .≈ zero(scalartype(trval)))
+            @warn "state cannot be normalized" trace = trval
+        else
+            data .= broadcast(data, trval) do ct, norm
+                ten, _ = ct
+                tenA = ten / sqrt(norm)
+                tenB = ten / sqrt(norm)'
+                return CompositeTensor(tenA, tenB')
+            end
+        end
+
+        return new{P,T}(data, env)
+    end
+end
+
 function Base.show(io::IO, rho::DensityMatrix)
     if get(io, :compact, false)
         summary(rho)
@@ -66,6 +102,7 @@ function DensityMatrix(
     data = ITC.getdata(pepo)
     return DensityMatrix(data, alg; kwargs...)
 end
+
 function DensityMatrix(
     pepo::Union{AbstractPEPO,Simulation,DensityMatrix},
     env::RenormalizationProblem,
@@ -80,6 +117,26 @@ function DensityMatrix(tensors::AbstractUnitCell, alg::AbstractBoundaryAlgorithm
     env = newrenormalization(contractphysical(tensors); alg=alg, kwargs...)
     ITC.renormalize!(env)
     return DensityMatrix(tensors, env)
+end
+
+function PurifiedDensityMatrix(
+    pepo::Union{AbstractPEPO,Simulation,DensityMatrix},
+    alg::AbstractBoundaryAlgorithm;
+    kwargs...,
+)
+    data = ITC.getdata(pepo)
+    return PurifiedDensityMatrix(data, alg; kwargs...)
+end
+
+function PurifiedDensityMatrix(
+    tensors::AbstractUnitCell, alg::AbstractBoundaryAlgorithm; kwargs...
+)
+    data = hilbertschmidt(tensors)
+
+    env = newrenormalization(data; alg=alg, kwargs...)
+    ITC.renormalize!(env)
+
+    return PurifiedDensityMatrix(data, env)
 end
 
 """
@@ -198,7 +255,9 @@ Calculate the expectation value of product of local operators `ops` applied to t
 of `rho` consecutively.
 """
 function expval(
-    rho::TensorMap{<:Number,<:IndexSpace,N,N}, ops::Vararg{<:Matrix,M}; inds=NTuple{N,Int}(1:N)
+    rho::TensorMap{<:Number,<:IndexSpace,N,N},
+    ops::Vararg{<:Matrix,M};
+    inds=NTuple{N,Int}(1:N),
 ) where {N,M}
     pdim = dims(codomain(rho))
 
@@ -221,7 +280,7 @@ function expval(
             p = pdim[i]
             return Matrix{T}(I, p, p)
         end
-        
+
         # If so, get the next matrix in the queue
 
         op = popfirst!(ops)
@@ -247,8 +306,8 @@ function expval(
             else
                 throw(
                     ArgumentError(
-                        "cannot apply $d-dimensional matrix between sites $i and $count as sites are not adjacent"
-                    )
+                        "cannot apply $d-dimensional matrix between sites $i and $count as sites are not adjacent",
+                    ),
                 )
             end
             count += 1
@@ -339,6 +398,17 @@ function trace(network::AbstractUnitCell, contractor, ind)
     return trval
 end
 
+function trace(network::HilbertSchmidt, contractor, ind)
+    x = ind[1]
+    y = ind[2]
+
+    FL, FR, ACU, _, ACD, _ = get_contraction_boundary(contractor, x:x, y:y)
+
+    M = network[x, y]
+
+    return tracecontract(FL, FR, ACU, ACD, M)
+end
+
 """
 $(TYPEDSIGNATURES)
 
@@ -346,11 +416,27 @@ Calculate the partial trace of `rho` returning a `TensorMap`. Indices in
 `inds` define those sites that remain *untraced*. Site indices in `inds` are mapped
 to tensor indices in the same order as in `inds`.
 """
-function partialtrace(rho::DensityMatrix, inds::Vararg{T,N}) where {T<:Union{Dims{2},CartesianIndex{2}},N}
+function partialtrace(
+    rho::DensityMatrix, inds::Vararg{T,N}
+) where {T<:Union{Dims{2},CartesianIndex{2}},N}
     return partialtrace(rho.data, rho.environment, inds...)
 end
-function partialtrace(network::AbstractUnitCell, trace, inds::Vararg{T,N}) where {T,N}
 
+function partialtrace(rho::PurifiedDensityMatrix, ind::Union{Dims{2},CartesianIndex{2}})
+    network = rho.data
+    contractor = rho.environment
+
+    x = ind[1]
+    y = ind[2]
+
+    FL, FR, ACU, _, ACD, _ = get_contraction_boundary(contractor, x:x, y:y)
+
+    M = network[x, y]
+
+    return onelocalcontract(FL, FR, ACU, ACD, M)
+end
+
+function partialtrace(network::AbstractUnitCell, trace, inds::Vararg{T,N}) where {T,N}
     RT = tensormaptype(spacetype(eltype(network)), N, N, scalartype(eltype(network)))
 
     if length(inds) == 0
@@ -915,18 +1001,17 @@ function transferspectrum(bulk, edges::Edges, n::Int=3)
     y = 1
 
     ES = map(axes(bulk, 1)) do x
-
         t1 = T1[x, y - 1]
         t3 = T3[x, y + 1]
 
-        M = contractphysical(bulk[x,y])
+        M = contractphysical(bulk[x, y])
 
         @tensor E[lt w lb; rt e rb] := t1[n; rt lt] * M[e s w n] * t3[s; lb rb]
 
         d1 = dim(codomain(E))
         d2 = dim(domain(E))
 
-        return reshape(convert(Array, E),d1,d2)
+        return reshape(convert(Array, E), d1, d2)
     end
 
     E0 = pop!(ES)
@@ -936,7 +1021,7 @@ function transferspectrum(bulk, edges::Edges, n::Int=3)
         E0 = E * E0
     end
 
-    vals,_,_ = eigsolve(E0, E0[1,:], n, :LM)
+    vals, _, _ = eigsolve(E0, E0[1, :], n, :LM)
 
     return vals / vals[1]
 end
@@ -1083,8 +1168,8 @@ function testising(; D=2)
 end
 
 function test_ising_extrap(; hx=0.0, D=5, numsteps=400)
-    X,_,Z = PAULI
-    
+    X, _, Z = PAULI
+
     if hx == 0.0
         βc = log(1 + sqrt(2)) / 2
     elseif hx == 2.5
@@ -1103,7 +1188,7 @@ function test_ising_extrap(; hx=0.0, D=5, numsteps=400)
     s = ComplexSpace(2)
     S = ComplexSpace(D)
 
-    H = -1.0 * LocalOp(Z,Z) + hx * LocalOp(X)
+    H = -1.0 * LocalOp(Z, Z) + hx * LocalOp(X)
     model = Model(H)
 
     alg = VUMPS(; bonddim=16, maxiter=200, tol=1e-10)
@@ -1142,7 +1227,7 @@ function alltestbias(; D=5)
     # Ds = [5,6,7]
 
     foreach(hz) do hz
-        zs, ls, ts = testquantum(; xi=Inf, D=D, hz = hz)
+        zs, ls, ts = testquantum(; xi=Inf, D=D, hz=hz)
 
         push!(Zs, zs)
         push!(Ls, ls)
@@ -1153,9 +1238,8 @@ function alltestbias(; D=5)
 end
 
 function alltestquantum(; D=5)
-
     Xis = [exp10(i) for i in 4:0.2:5]
-    Ds = [6,7,8]
+    Ds = [6, 7, 8]
 
     Zs = Vector{Float64}[]
     Ls = Vector{Float64}[]
@@ -1175,7 +1259,7 @@ function alltestquantum(; D=5)
 end
 
 function testquantum(; xi=Inf, D)
-    X,_,Z = PAULI
+    X, _, Z = PAULI
 
     rho = fill(ThermalState(), 2, 2)
 
@@ -1187,11 +1271,11 @@ function testquantum(; xi=Inf, D)
     model = Model(PEPOKit.Ising(-1.0, Z, [2.5 * LocalOp(X)]))
     # model = Model([0.5 * h, -1.0 * LocalOp(Z,Z), 0.5 * h])
 
-    truncalg = PEPOKit.SU(ξ = xi)
+    truncalg = PEPOKit.SU(; ξ=xi)
     # truncalg = PEPOKit.NTU(ξ = xi, optalg=DZM(check=false))
 
     # Need 400 iterations total
-    method = TEBD(timestep = 0.02βc /8 , truncalg=truncalg)
+    method = TEBD(; timestep=0.02βc / 8, truncalg=truncalg)
 
     # alg = CTMRG(; bonddim=25, maxiter=200, tol=1e-8, randinit=false)
     alg = VUMPS(; bonddim=16, maxiter=200, tol=1e-8)
@@ -1214,15 +1298,14 @@ function testquantum(; xi=Inf, D)
     simulate!(identity, sim, 300)
 
     simulate!(sim, 200; maxshots=50) do sim
-
         dm = DensityMatrix(quantumstate(sim), alg)
         rdm = partialtrace(dm, (1, 1))
 
-        M = abs(expval(rdm, Z))
+        m = abs(expval(rdm, z))
 
         push!(Zs, M)
 
-        try 
+        try
             L = correlationlength(dm)
             push!(Ls, L)
         catch _
@@ -1236,7 +1319,7 @@ function testquantum(; xi=Inf, D)
 end
 
 function extrapquantum(; D)
-    X,_,Z = PAULI
+    X, _, Z = PAULI
 
     rho = fill(ThermalState(), 2, 2)
 
@@ -1244,7 +1327,7 @@ function extrapquantum(; D)
 
     h = 2.5 * LocalOp(X)
 
-    model = Model(-1.0 * LocalOp(Z,Z) + 2.5 * LocalOp(X))
+    model = Model(-1.0 * LocalOp(Z, Z) + 2.5 * LocalOp(X))
     # model = Model([0.5 * h, -1.0 * LocalOp(Z,Z), 0.5 * h])
 
     # truncalg = PEPOKit.NTU(ξ = xi)
@@ -1259,16 +1342,14 @@ function extrapquantum(; D)
 
     output = Float64[]
 
-
     # Observables
     Zs = Float64[]
     Ls = Float64[]
 
     Xs = [exp10(i) for i in 4:0.1:5]
     for xi in Xs
-
-        truncalg = PEPOKit.SU(ξ = xi)
-        method = TEBD(timestep = (0.02 * βc) / 4, truncalg=truncalg)
+        truncalg = PEPOKit.SU(; ξ=xi)
+        method = TEBD(; timestep=(0.02 * βc) / 4, truncalg=truncalg)
 
         sim = Simulation(model, rho, S; physical=s, method=method)
         simulate!(identity, sim, 200)

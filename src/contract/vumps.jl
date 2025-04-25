@@ -70,7 +70,7 @@ function truncmetric!(dst, vumps::VUMPSRuntime, network::ITC.AbstractNetwork)
     )
 end
 
-function tracecontract(FL_00, FR_00, AT_00, AB_01, M_00)
+function tracecontract(FL_00, FR_00, AT_00, AB_01, M_00::AbsTen{4})
     @tensoropt rv =
         FL_00[D3; x1 x3] *
         AT_00[D4; x2 x1] *
@@ -79,15 +79,71 @@ function tracecontract(FL_00, FR_00, AT_00, AB_01, M_00)
         (AB_01')[x4 x3; D2]
     return rv
 end
-function tracecontract_two_layer(FL_00, FR_00, AT_00, AB_01, M1_00, M2_00)
+
+function tracecontract(FL_00, FR_00, AT_00, AB_01, M_00::CompositeTensor{2})
+    M1_00, M2_00 = M_00
+    return tracecontract(FL_00, FR_00, AT_00, AB_01, M1_00, M2_00)
+end
+
+function tracecontract(
+    FL_00::AbsTen{2,2},
+    FR_00::AbsTen{2,2},
+    AT_00::AbsTen{2,2},
+    AB_01::AbsTen{2,2},
+    M1_00::AbsTen{2,4},
+    M2_00::AbsTen{4,2},
+)
     @tensoropt rv =
         FL_00[D3 E3; x1 x3] *
         AT_00[D4 E4; x2 x1] *
         FR_00[D1 E1; x2 x4] *
         M1_00[k b; D1 D2 D3 D4] *
-        (M2_00')[E1 E2 E3 E4; k b] *
-        (AB_01')[x4 x3; D2 E2]
+        M2_00[E1 E2 E3 E4; k b] *
+        AB_01[x4 x3; D2 E2]
     return rv
+end
+
+function tracecontract(
+    FL_00::AbsTen{2,2},
+    FR_00::AbsTen{2,2},
+    AT_00::TensorMap,
+    AB_01::TensorMap,
+    M1_00::AbsTen{2,4},
+    M2_00::AbsTen{4,2},
+)
+    return tracecontract(FL_00, FR_00, AT_00, AB_01', M1_00, M2_00)
+end
+
+function onelocalcontract(FL_00, FR_00, AT_00, AB_01, M_00::CompositeTensor{2})
+    M1_00, M2_00 = M_00
+    return onelocalcontract(FL_00, FR_00, AT_00, AB_01, M1_00, M2_00)
+end
+function onelocalcontract(
+    FL_00::AbsTen{2,2},
+    FR_00::AbsTen{2,2},
+    AT_00::AbsTen{2,2},
+    AB_01::AbsTen{2,2},
+    M1_00::AbsTen{2,4},
+    M2_00::AbsTen{4,2},
+)
+    @tensoropt ρ[k; b] :=
+        FL_00[D3 E3; x1 x3] *
+        AT_00[D4 E4; x2 x1] *
+        FR_00[D1 E1; x2 x4] *
+        M1_00[x b; D1 D2 D3 D4] *
+        M2_00[E1 E2 E3 E4; x k] *
+        AB_01[x4 x3; D2 E2]
+    return ρ
+end
+function onelocalcontract(
+    FL_00::AbsTen{2,2},
+    FR_00::AbsTen{2,2},
+    AT_00::TensorMap,
+    AB_01::TensorMap,
+    M1_00::AbsTen{2,4},
+    M2_00::AbsTen{4,2},
+)
+    return onelocalcontract(FL_00, FR_00, AT_00, AB_01', M1_00, M2_00)
 end
 
 function onelocalcontract(FL_00, FR_00, AT_00, AB_01, M_00)
