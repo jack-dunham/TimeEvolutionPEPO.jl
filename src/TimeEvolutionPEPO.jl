@@ -53,7 +53,7 @@ export EVB, DZM, WTG, MCF, NoGauge
 
 export dynamicalmpo, MPO
 
-export Hamiltonian, Liouvillian, Dissipator, TrotterLayer, Model
+export Hamiltonian, Liouvillian, Dissipator, TrotterLayer, Model, Ising
 
 export isaxial, isexpandable, dissipator
 
