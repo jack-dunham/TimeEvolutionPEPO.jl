@@ -13,6 +13,13 @@ end
     randomness::Float64 = 0.0
     gauge::G = WTG()
 end
+@kwdef struct EVBTrivial <: AbstractIsometryOptimisation{WTG}
+    maxiter::Int = 100
+    verbose::Bool = false
+    pinvtol::Float64 = sqrt(eps())
+    isotol::Float64 = 1e-8
+    gauge::NoGauge = NoGauge()
+end
 
 @kwdef struct DZM{G} <: AbstractIsometryOptimisation{G}
     maxiter::Int = 100
@@ -262,7 +269,8 @@ environment!(pepo, ::NTUState, bond::Bond) = pair -> ntu_total(pair, pepo, bond)
 
 function environment!(pepo, truncator::RenormalizationProblem, ::Bond)
     hs = hilbertschmidt(pepo)
-    ITC.renormalize!(truncator, hs)
+    truncs = newtruncators(pepo, truncator.alg)
+    return ITC.renormalize!(truncs, hs)
     return truncator
 end
 

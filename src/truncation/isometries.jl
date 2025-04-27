@@ -349,7 +349,6 @@ metric(pair::Pair, environment::Function, ::Bond) = environment(pair)
 function metric_isometries_from_simple_update!(
     initpair, initiso, environment, bond; D, optkwargs...
 )
-
     (u0, v0) = initiso
     pair = initpair
 
@@ -620,7 +619,6 @@ function simple_update_tensors(pair::Pair{T}; axis, xi=Inf) where {T<:AbsTen{2,4
 
     (u, v), s = applyweight(u => v, s, Inf; verbose=false)
 
-
     # Q1p = Q1 * u
     # Q2p = v * Q2
 
@@ -887,7 +885,6 @@ end
 # safetsvd!(m; trunc=notrunc()) = tsvd!(m; trunc=trunc)
 
 function dzmcheck!(cf, iso, u, s, v, min)
-
     uu = u * sqrt(s)
     vv = sqrt(s) * v
 
@@ -1001,6 +998,8 @@ function dziarmaga(
 
     @info "...done; iterations: $counter, ϵ: $ϵ"
 
+    println(s)
+
     return iso
 end
 
@@ -1038,6 +1037,31 @@ function isometryoptimise(cf, u, v, metric, u0, v0, method::EVB; trunc)
         isotol=method.isotol,
         randomness=method.randomness,
     )
+
+    # u,s,v = evenblytrivial(
+    #     metric;
+    #     trunc,
+    #     maxiter=100,
+    #     verbose=true,
+    #     eigentol=sqrt(eps(real(float(oneunit(scalartype(metric)))))),
+    #     isotol=1e-8,
+    # )
+    # iso = TruncationIsometries(metric, u,s, v)
+
+    return iso
+end
+
+function isometryoptimise(cf, u, v, metric, u0, v0, method::EVBTrivial; trunc)
+    u,s,v = evenblytrivial(
+        metric;
+        trunc,
+        maxiter=100,
+        verbose=true,
+        eigentol=sqrt(eps(real(float(oneunit(scalartype(metric)))))),
+        isotol=1e-8,
+    )
+    iso = TruncationIsometries(metric, u,s, v)
+
     return iso
 end
 
@@ -1056,10 +1080,11 @@ function evenbly(
 )
     @info "Optimising isometries (Evenbly)..."
 
+    # posapprox!(metric)
+
     S = spacetype(metric)
 
     u, s, v = tsvd(u0 * v0; trunc=trunc)
-
 
     iso = TruncationIsometries(metric, u * sqrt(s), s, sqrt(s) * v)
 
@@ -1084,70 +1109,43 @@ function evenbly(
     R1 = similar(P1, η, D)
     R2 = similar(P2, D, η)
 
-    s1old = id(D)
-    s2old = id(D)
+    s1old = zero(id(D))
+    s2old = zero(id(D))
 
-    # Initialize convergence measure and counter
     ϵ = Inf
     numiter = 0
 
     maxmethod = :pinv
     # maxmethod = :linsolve
 
-    totaltime = 0
+    @info "bond env" space(metric)
 
+    totaltime = 0
+    # Dη <- U <- D
+    #  D <- V <- Dη
     while numiter < maxiter
         totaltime += @elapsed begin
+            @tensoropt B1[i j; k l] =
+                transpose(vt')[j; α] * metric[i α; k β] * transpose(vt)[β; l]
             @tensoropt P1[i j] =
                 transpose(vt')[j; α] * metric[i α; β1 β2] * u0[β1; β] * v0[β; β2]
 
-            if maxmethod === :pinv
-                @tensoropt B1[i j; k l] =
-                    transpose(vt')[j; α] * metric[i α; k β] * transpose(vt)[β; l]
+            # B1 is hermitian
+            axpby!(0.5, B1', 0.5, B1)
 
-                # B1 is hermitian
-                axpby!(0.5, B1', 0.5, B1)
-
-                mul!(RM1, safepinv(B1; rtol=pinvtol), P1)
-
-            elseif maxmethod === :linsolve
-                RM, _ = linsolve(P1; ishermitian=true) do x
-                    RM = similar(P1)
-                    @tensoropt RM[i j] =
-                        transpose(vt')[j; α] *
-                        metric[i α; k β] *
-                        transpose(vt)[β; l] *
-                        x[k l]
-                    return RM
-                end
-
-                copy!(RM1, RM)
-            end
+            mul!(RM1, safepinv(B1; rtol=pinvtol), P1)
 
             permute!(R1, RM1, ((1,), (2,)))
 
             u1, s1, v1 = safetsvd!(R1)
             copy!(ut, u1 * v1)
 
+            @tensoropt B2[i j; k l] = (ut')[i; α] * metric[α j; β l] * ut[β; k]
             @tensoropt P2[i j] = (ut')[i; α] * metric[α j; β1 β2] * u0[β1; β] * v0[β; β2]
 
-            if maxmethod === :pinv
-                @tensoropt B2[i j; k l] = (ut')[i; α] * metric[α j; β l] * ut[β; k]
+            axpby!(0.5, B2', 0.5, B2)
 
-                axpby!(0.5, B2', 0.5, B2)
-
-                mul!(RM2, safepinv(B2; rtol=pinvtol), P2)
-
-            elseif maxmethod === :linsolve
-                RM, _ = linsolve(P2; ishermitian=true) do x
-                    RM = similar(P2)
-                    @tensoropt RM[i j] =
-                        (ut')[i; α] * metric[α j; β l] * ut[β; k] * x[k l]
-                    return RM
-                end
-
-                copy!(RM2, RM)
-            end
+            mul!(RM2, safepinv(B2; rtol=pinvtol), P2)
 
             permute!(R2, RM2, ((1,), (2,)))
             u2, s2, v2 = safetsvd!(R2)
@@ -1185,9 +1183,14 @@ function evenbly(
     maxnormalize!(s)
 
     # As v is an isometry, we can avoid inverting `sqrt(s)` be instead calculating adjoint
-    # u * v s v vt 
+    # u * sqrt(s) * v * v' * sqrt(s) * v * v' * u'
     l = u * sqrt(s) * v
     r = vt' * v' * sqrt(s) * v
+
+    # l = u * sqrt(s) * v
+    # r = vt' * v' * sqrt(s) * v
+
+    println(s)
 
     copy!(iso.u, l)
     copy!(iso.s, s)
@@ -1254,6 +1257,7 @@ function evenblytrivial(
     s1old = zeros(Float64, D)
     s2old = zeros(Float64, D)
 
+    # ut - s - vt'
     verbose ? print("performing FET: [") : ()
     for k in 1:maxiter
         utold .= ut
@@ -1357,9 +1361,9 @@ function evenblytrivial(
     #scl=[exp(-1e-0*(i-1)) for i =1:length(F1.S)]
     #F1.S.*=scl
 
-    r = F1.U * Diagonal(sqrt.(F1.S)) * F1.Vt
     l = ut * F1.Vt' * Diagonal(sqrt.(F1.S)) * F1.Vt
     σ = F1.S[1:D]
+    r = F1.U * Diagonal(sqrt.(F1.S)) * F1.Vt
 
     ######## end iteration and output convergence data #########################
     verbose ? print("] iterations:", counter, " δ:", ϵ, "\n") : ()
@@ -1368,7 +1372,12 @@ function evenblytrivial(
     lt = TensorMap(l, χsp, Dsp)
     rt = TensorMap(permutedims(conj(r)), Dsp, χsp)
 
-    return lt, id(Dsp), rt
+    s = TensorMap(diagm(σ), Dsp,Dsp)
+
+    println(s)
+
+    # return lt, id(Dsp), rt
+    return lt, s, rt
 end
 
 function to_WTG!(
