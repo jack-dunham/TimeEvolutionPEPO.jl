@@ -105,7 +105,7 @@ simple_update_gauge_get_pair(_, buffer, bond) = buffer[bond]
 function simple_update_gauge_step!(pepo, buffer; inreverse=false, absorb=true)
 
     # Iterative calculation 
-    isnothing(buffer) || copy!.(buffer, currentbuffer(pepo))
+    isnothing(buffer) || copyto!(buffer, pepo)
 
     bonds = eachbond(pepo)
 
@@ -132,7 +132,7 @@ function simple_update_gauge_step!(pepo, buffer; inreverse=false, absorb=true)
 
         truncateto!(newpair, pair, iso; axis=bondaxis(bond))
 
-        pepo.state[bond] = newpair
+        pepo[bond] = newpair
 
         setweight!(pepo, s, bond; copy=false)
 
