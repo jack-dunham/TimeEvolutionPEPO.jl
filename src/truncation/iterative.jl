@@ -623,10 +623,10 @@ function iterative_simple_update_prototype!(
 
     if gauge == 1
         @info "Gauge fixing"
-        size(buff) == (1, 1) && minimalcanonicalform!(buff; maxiter=2000)
+        size(pepo!) == (1, 1) && minimalcanonicalform!(pepo!; maxiter=2000)
         # size(buff) == (1, 1) &&
         #     simple_update_gauge!(pepo!; maxiter=200, tol=1e-10, verbose=false, reset=false)
-        size(buff) != (1, 1) && simple_update_gauge!(pepo!; maxiter=100, reset=false)
+        size(pepo!) != (1, 1) && simple_update_gauge!(pepo!; maxiter=100, reset=false)
     end
 
     # minimalcanonicalform!(tensors(pepo))
