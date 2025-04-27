@@ -281,7 +281,7 @@ function newstepper(physical, model, method; timestep, order)
 
     oplist = TrotterDecomposition(T[], body, T[];timestep=timestep, order=order)
 
-    physicalspace = broadcast((p, _) -> p, physical, CartesianIndices(size(oplist)))
+    physicalspace = broadcast((p, _) -> p, physical, CartesianIndices(size(first(oplist))))
 
     @info "...of $(length(body)) operators"
 
