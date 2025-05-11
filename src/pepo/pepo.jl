@@ -96,7 +96,7 @@ function pepodata(rho::Tuple, phys, east, south, west, north)
     return pepositedata(bloch(rho), dim(east), dim(south), dim(west), dim(north))
 end
 function pepodata(rho::Matrix{<:Number}, phys, east, south, west, north)
-    return pepositedata(bloch(rho), dim(east), dim(south), dim(west), dim(north))
+    return pepositedata(rho, dim(east), dim(south), dim(west), dim(north))
 end
 
 dim2space(d::Int) = ℂ^d
