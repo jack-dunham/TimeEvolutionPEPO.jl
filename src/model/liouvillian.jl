@@ -19,6 +19,7 @@ Dissipator(ops::Vararg{AbstractMatrix}) = Dissipator(collect(ops))
 # Lindblad operator by sqrt(a)
 Base.:*(a::Number, D::Dissipator) = Dissipator(map(t -> sqrt(a) * t, terms(D)))
 Base.:+(D1::Dissipator,D2::Dissipator) = Dissipator(vcat(D1.terms,D2.terms))
+Base.:+(D::Dissipator,h::AbstractTerm) = zero(Hamiltonian) + h + D
 
 terms(D::Dissipator) = D.terms
 

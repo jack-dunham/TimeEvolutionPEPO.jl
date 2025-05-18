@@ -7,6 +7,10 @@ struct Ising{HL} <: AbstractSumOfTerms
     Ising(a, CB, oneterms, dissipator) = new{Liouvillian}(a, CB, oneterms, dissipator)
 end
 
+function Base.:+(::Ising, term::AbstractTerm)
+    throw(ArgumentError("Terms of type Ising are self contained and cannot be added to other terms"))
+end
+
 oneterms(L::Ising) = L.oneterms
 
 function scalelocal(L::Ising, a)
