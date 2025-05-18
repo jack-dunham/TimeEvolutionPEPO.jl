@@ -3,18 +3,19 @@ using TimeEvolutionPEPO
 
 makedocs(
     sitename="TimeEvolutionPEPO.jl",
-    pages = [
-        "Home"=>"index.md",
+    pages=[
+        "Home" => "index.md",
         "Manual" => ["man/tutorial.md"],
         "Library" => [
-           "lib/models.md",
-           "lib/observables.md",
-           "lib/simulations.md",
+            "lib/models.md",
+            "lib/observables.md",
+            "lib/simulations.md",
         ],
         "Index" => "lib/index.md",
     ],
 )
 
 deploydocs(
-    repo = "github.com/jack-dunham/TimeEvolutionPEPO.git",
+    repo="github.com/jack-dunham/TimeEvolutionPEPO.jl.git",
+    devbranch="dev",
 )
