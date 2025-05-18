@@ -7,7 +7,7 @@ abstract type Abstract2DModel <: AbstractModel end
     Jy::Float64 = 0.0
     Jz::Float64 = 0.0
     hx::Float64 = 0.0
-    hy::Float64 = 0.0
+hy::Float64 = 0.0
     hz::Float64 = 0.0
     L::Dissipator
 end
@@ -274,6 +274,7 @@ function tebdtensor(
         c2 = im
     end
 
+    # 
     expf = (xi, A) -> begin
         return cosh(xi) * kron(one(A), one(A)) + sinh(xi) * kron(A, A)
     end
@@ -293,7 +294,7 @@ function tebdtensor(
 
     op = expfv(xi, CB)
 
-    # ket bra ket bra
+    # ket ket bra bra
     space = p1 * p2 * p1' * p2'
 
     # TODO: this is not generic atm.
@@ -308,8 +309,11 @@ function tebdtensor(
         h = term.a
         A = term.D
 
+
+        # Make two-local
         hA = 1 / 2 * (kron(id, A) + kron(A, id))
 
+        # Then vectorise k1 k2 ; b1 b2
         lop += h * ( c1 * kron(hA, one(hA)) + c2 * kron(one(hA), transpose(hA)))
     end
 
@@ -319,6 +323,7 @@ function tebdtensor(
 
     L = exp(dt / 2 * lop)
 
+    # k1 k2 b1 b2 
     tensor = TensorMap(L * op * L, space, space)
 
     H = permute(tensor, (1, 3, 5, 7), (2, 4, 6, 8))
