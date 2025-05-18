@@ -1,5 +1,6 @@
 copyindex!(lat, val, bondind) = copy!(lat[bondind], val)
 
+using InfiniteTensorContractions: SquareSymmetric
 struct Bond
     data::Pair{CartesianIndex{2},CartesianIndex{2}}
     function Bond(data::Pair{CartesianIndex{2},CartesianIndex{2}})
@@ -71,7 +72,8 @@ square ucs, horizontal and vertical bond directions are defined by the mapping t
 square uc.
 """
 function bonds(uc::AbstractUnitCell)
-    hind = eachindex(uc)
+    # hind = eachindex(uc)
+    hind = uniqueindices(uc)
     vind = permutedims(hind)
 
     hbonds = map(hind) do ind
@@ -85,12 +87,23 @@ function bonds(uc::AbstractUnitCell)
     return hbonds, vbonds
 end
 
+function bonds(uc::AbstractUnitCell{SquareSymmetric})
+    # hind = eachindex(uc)
+    hind = uniqueindices(uc)
+
+    hbonds = map(hind) do ind
+        return Bond(ind, ind + CartesianIndex(1, 0))
+    end
+
+    return hbonds, transpose.(hbonds)
+end
+
 bonds(uc::AbstractUnitCell, axis) = bonds(uc)[axis]
 
 eachbond(lat) = Iterators.flatten(bonds(lat))
 
 bondswith(::AbstractUnitCell{G}, ind) where {G} = bondswith(G, ind)
-function bondswith(::Type{Square}, ind)
+function bondswith(::Type{<:Union{Square,SquareSymmetric}}, ind)
     x = CartesianIndex(1, 0)
     y = CartesianIndex(0, 1)
 
@@ -139,7 +152,8 @@ function Base.copyto!(uc::AbstractUnitCell, val1, val2, bond::Bond)
 end
 
 uniqueindices(L::AbstractUnitCell{Square}) = CartesianIndices(size(L))
-uniquebonds(L; kwargs...) = bonds(L, kwargs...)[uniqueindices(L)]
+uniqueindices(L::AbstractUnitCell{SquareSymmetric}) = CartesianIndices((size(L, 1), 1))
+uniquebonds(L; kwargs...) = bonds(L; kwargs...)[uniqueindices(L)]
 
 contractphysical(l::AbstractUnitCell) = contractphysical.(l)
 
