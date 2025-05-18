@@ -299,7 +299,7 @@ function iterative_simple_update_prototype!(
 
     local ent0
 
-    while i < 2 * maxiter
+    while i < 1 * maxiter
         i += 1
 
         bonds = eachbond(pepo!)
