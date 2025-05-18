@@ -6,8 +6,7 @@ are internal and not part of the public API.
 
 # Constructors
 
-    $(FUNCTIONNAME)(model::AbstractModel, rho, physical, virtual, [vertical_virtual=virtual]; method::AbstractMethod, timestep::Float64, kwargs...)
-    $(FUNCTIONNAME)(model::AbstractModel, pepo::PEPO; method::AbstractMethod, timestep::Float64, kwargs...)
+    $(FUNCTIONNAME)(pepo::PEPO, model, method::AbstractMethod; timestep::Float64, kwargs...)
 
 Initialise a `Simulation` of the model `model` with initial quantum state defined by `rho`,
 as any valid input into the constructor `PEPO(rho, physical, virtual, virtual_vertical)`, or
@@ -19,7 +18,7 @@ arguments. An addition, the following optional keywords can also be used:
 - `order::Int=1`: order of the trotter decomposition (if any).
 - `storeall::Bool=true`: this should be set to false if one does not wish to store objects
     that can be reconstructed; useful if, for example, very large tensors are used for the
-    time evolution, but repeated calls to `simulate!` will be slower.
+    time evolution. Repeated calls to `simulate!` will be slower if this is set to `true`.
 
 See also: [`simulate!`](@ref)
 """
@@ -55,15 +54,6 @@ struct Simulation{E<:AbstractTimeEvolution,P<:AbstractPEPO,L<:AbstractTimeSteppe
     end
 end
 
-"""
-    quantumstate(obj) -> PEPO
-
-Return the quantum state associated with object `obj`.
-"""
-quantumstate(s::Simulation) = quantumstate(s.state)
-quantumstate(p::PEPO) = p
-quantumstate(p::AxialPEPO) = p.parent
-
 function Base.show(io::IO, m::MIME"text/plain", sim::Simulation)
     # pepo = getpepo(sim)
     # map(b -> bondspace(pepo ,b ), uniquebonds(pepo)) |> display
@@ -80,36 +70,12 @@ function Base.show(io::IO, m::MIME"text/plain", sim::Simulation)
     return nothing
 end
 
+
 unitcellsize(x::AbstractMatrix) = size(x)
 unitcellsize(_) = (1, 1)
 
 similar_matrix(A::AbstractMatrix, outsize) = Matrix{eltype(A)}(undef, outsize)
 similar_matrix(A, outsize) = Matrix{typeof(A)}(undef, outsize)
-
-function promotelattice(model::NTuple, args...; geometry::G=Square()) where {G}
-    shape = (x, i...) -> isa(x, AbstractMatrix) ? size(x, i...) : size([x;;], i...)
-
-    xs = map(x -> shape(x, 1), (model..., args...))
-    ys = map(x -> shape(x, 2), (model..., args...))
-    outsize = (lcm(xs...), lcm(ys...))
-
-    outmat = map(x -> similar_matrix(x, outsize), args)
-
-    outlat = map(outmat, args) do mat, arg
-        sx, sy = shape(arg)
-        nx, ny = size(mat)
-
-        for y in 1:sy:ny
-            for x in 1:sx:nx
-                copyspaceto!(view(mat, x:(x + sx - 1), y:(y + sy - 1)), arg)
-            end
-        end
-
-        return UnitCell{G}(mat)
-    end
-
-    return outlat
-end
 
 geometrytype(::Type{G}) where {G<:ITC.AbstractUnitCellGeometry} = G
 geometrytype(::Type{<:AbstractUnitCell{G}}) where {G} = G
@@ -126,68 +92,27 @@ end
 copyspaceto!(mat, arg::AbstractMatrix) = copyto!(mat, arg)
 copyspaceto!(mat, arg::TensorSpace) = copyto!(mat, [arg;;])
 
-model2matrix(m::AbstractVector) = map(model2matrix, m)
-model2matrix(m::AbstractMatrix) = m
-model2matrix(m::AbstractMatrix{<:Number}) = [m;;]
-model2matrix(m) = [m;;]
-
-function model2tuple(m::NTuple{N}) where {N}
-    println(typeof(m))
-    if N in (1, 2)
-        return map(model2matrix, m)
-    else
-        throw(ArgumentError("model tuple as too many elements for 2D simulation; got $N"))
-    end
-end
-model2tuple(m) = model2tuple((m,))
+@deprecate(
+    Simulation(model, rho0, physical, virtual; method, kwargs...),
+    Simulation(PEPO(rho0, physical, virtual), model, method; kwargs...)
+)
 
 function Simulation(
+    pepo::PEPO,
     model,
-    rho0,
-    physical,
-    virtual,
-    vertical_virtual=virtual;
-    # Kwargs
-    timestep::Float64,
     method::AbstractTimeEvolution,
-    order::Int=1,
-    storeall::Bool=true,
+    info=SimulationInfo();
+    timestep,
+    storeall=true,
+    order=1,
 )
-    # model = model2tuple(model)
-
-    # physical, horizontal, vertical = promotelattice(model, physical, horizontal, vertical)
-
-    G = promote_geometry_type(physical, virtual, vertical_virtual)
-
-    stepper, physicalspace = newstepper(
-        UnitCell{G}([physical;;]), model, method; timestep=timestep, order=order
+    stepper, _ = newstepper(
+        physicalspace(pepo), model, method; order=order, timestep=timestep
     )
 
-    pepo = PEPO(rho0, physical, virtual, vertical_virtual)
-
-    # Construct the time evolving state
     state = newevolution(pepo, stepper, method)
 
-    # Construct the truncators
-    truncators = newtruncators(state, stepper, method.truncalg)
-
-    initialstate = storeall ? deepcopy(state) : nothing
-
-    info = SimulationInfo()
-
-    sim = Simulation(info, method, model, state, stepper, truncators, initialstate)
-
-    return sim
-end
-
-function Simulation(
-    model, pepo::PEPO, method::AbstractTimeEvolution, info=SimulationInfo(); storeall=true, order=1, timestep)
-
-    stepper, _ = newstepper(physicalspace(pepo), model, method; order=order, timestep=timestep)
-
-    state = newevolution(pepo, stepper, method)
-
-    truncators = newtruncators(state, stepper, method.truncalg)
+    truncators = newtruncators(state, stepper, method.alg)
 
     initialstate = storeall ? deepcopy(state) : nothing
 
@@ -200,7 +125,6 @@ function initenvironment(network, alg::AbstractBoundaryAlgorithm; kwargs...)
     return ITC.initialize(alg, network; kwargs...)
 end
 
-simulate!(sim::Simulation; kwargs...) = simulate!(identity, sim; kwargs...)
 
 """
     simulate([callback = identity], sim::Simulation; numsteps::Int, kwargs...)
@@ -219,6 +143,7 @@ executed during every shot (default behaviour results in a shot at the end of ea
 
 See also: [`Simulation`](@ref).
 """
+simulate!(sim::Simulation; kwargs...) = simulate!(identity, sim; kwargs...)
 function simulate!(
     callback,
     sim::Simulation;
@@ -228,18 +153,21 @@ function simulate!(
     breaktol::Float64=0.0,
     verbose::Bool=true,
 )
-    t0 = time()
+    initial_wall_time = time()
 
     method = sim.method
     pepo = sim.state
     model = sim.model
 
     # Get simulation infomation and set appropriate fields
-    info = sim.info
-    setfield!(info, :finished, false)
-    setfield!(info, :converged, convergence(info) < breaktol)
+    info = getfield(sim, :info)
+    info.finished = false
+    info.converged = convergence(info) < breaktol
 
-    truncalg = method.truncalg
+    total_wall_duration = info.walltime
+    total_sim_duration = info.simtime
+
+    truncalg = method.alg
 
     # Shots are taken at these iterations
     r = range(; start=0, step=round(Int, numsteps / maxshots, RoundUp), stop=numsteps)
@@ -281,7 +209,6 @@ function simulate!(
         end
         # Calculate the difference in pepo singular values between timesteps
         tol = tolerance!(prev_weights, weights(pepo), timestep)
-        # tol = 0.0
 
         numiter += 1
         verbose && @info "Steady state convergence: $tol after $numiter iterations."
@@ -289,18 +216,30 @@ function simulate!(
         info.convergence = tol
         info.iterations += 1
 
+        # We compute the delta's like this to avoid floating point rounding errors you would obtain if
+        # incrementing the total times. Less important for wall time, but for sim time you often expect 
+        # an exact final time.
+        sim_time_delta = numiter * timestep
+        info.simtime = sim_time_delta + total_sim_duration
+
+        wall_time_delta = time() - intial_wall_time
+        info.walltime = wall_time_delta + total_wall_duration
+
         # User specified function for post-step processing
         if numiter in shotsat
             pepo isa AxialPEPO && setaxis!(pepo, 1)
             callback(sim)
         end
 
-        if time() - t0 > maxtime
+        if wall_time_delta > maxtime
+            @info "Maximum simulation time $wall_time_delta > $maxtime exceeded after $numiter iterations."
+            callback(sim)
             break
         elseif info.convergence < breaktol
             info.converged = true
             info.finished = true
-            @info "Simulation reached break tolerance $(info.convergence) < $breaktol."
+            @info "Simulation reached break tolerance $(info.convergence) < $breaktol after $numiter iterations"
+            callback(sim)
             break
         end
     end
@@ -333,6 +272,34 @@ function updatetimestep!(sim::Simulation, timestep::Float64)
     return sim
 end
 
+# function Base.getproperty(::Simulation, ::Symbol)
+#     throw(ArgumentError("field access is an unsupported interface for `Simulation` objects"))
+#     return nothing
+# end
+
+## INTERFACE
+"""
+    quantumstate(obj) -> PEPO
+
+Return the quantum state associated with object `obj`.
+"""
+quantumstate(s::Simulation) = quantumstate(getfield(s, :state))
+quantumstate(p::PEPO) = p
+quantumstate(p::AxialPEPO) = p.parent
+
+function simulationinfo(s::Simulation)
+
+    info = getfield(s, :info)
+
+    names = fieldnames(SimulationInfo)
+
+    values = map(fname -> getfield(info, fname), names)
+
+    return NamedTuple{names}(values)
+end
+
+### REMOVE THESE BELOW
+
 function dampinghook!(sim::Simulation, xi, output)
     alg = VUMPS(; tol=1e-10, maxiter=50, bonddim=16, verbose=true)
 
@@ -346,10 +313,10 @@ function dampinghook!(sim::Simulation, xi, output)
 
         expt = map(x -> expval(x, X), rhos)
 
-        push!(xi, sim.method.truncalg.ξ)
+        push!(xi, sim.method.alg.zeta)
         push!(output, expt)
 
-        sim.method.truncalg.ξ += 20.0
+        sim.method.alg.zeta += 20.0
     end
 
     return nothing
@@ -358,8 +325,8 @@ end
 function measurehook!(sim::Simulation, A=PAULI[1]; env=nothing)
     pepo = TimeEvolutionPEPO.quantumstate(sim)
 
-    # alg = VUMPS(; tol=1e-8, maxiter=200, bonddim=32, verbose=true)
-    alg = CTMRG(; tol=1e-8, maxiter=200, bonddim=16, verbose=true, randinit=false)
+    # alg = VUMPS(; tol=1e-8, maxiter=200, bonddim=16, verbose=true)
+    alg = CTMRG(; tol=1e-7, maxiter=200, bonddim=16, verbose=true, randinit=false)
     #
     # env = newcontraction(alg, contractphysical( TimeEvolutionPEPO.tensors(pepo)))
     # renormalize!(env, contractphysical( TimeEvolutionPEPO.tensors(pepo)))
@@ -396,6 +363,20 @@ function measurehook!(output::Vector, sim, args...)
     return f
 end
 
+function vumpshook!(output, A)
+    return sim -> begin
+        pdm = PurifiedDensityMatrix(quantumstate(sim), VUMPS(; bonddim=16, tol=1e-8))
+
+        rdm = partialtrace(pdm, (1, 1))
+
+        m = abs(expval(rdm, A))
+        l = correlationlength(pdm)
+
+        push!(output, (m, l))
+
+        return nothing
+    end
+end
 function errorhook!(output)
     f = sim -> begin
         push!(output, sim.info.convergence)
