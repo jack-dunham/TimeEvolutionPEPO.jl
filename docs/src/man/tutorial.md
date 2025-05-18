@@ -101,9 +101,24 @@ function magnetisation(pepo::PEPO; alg = CTMRG(bonddim = 16))
     return X
 end
 ```
-In practice it is useful to save the `DensityMatrix` object rather than running the boundary renormalisation everytime one wished to compute a local observable.
-The correlation length of a state can be directly accessed via the eigenvalues of transfer matrix.
+In practice it is useful to save the `DensityMatrix` object rather than running the boundary renormalization every time one wishes to compute a local observable.
+The correlation length of a state can be directly accessed directly from the `DensityMatrix` object without first needing to compute a partial trace:
+```@repl
+dm = DensityMatrix(pepo, alg)
+correlationlength(dm)
+```
+It is also possible to compute arbitrary ``n``-point observables be computing reduced density matrices over multiple sites:
+```julia
+function cx13(dm::DensityMatrix)
+    X = PAULI[1]
+    id = one(X)
 
+    rdm13 = partialtrace(dm, (1,1), (3,1)) # specified sites do not have to be adjacent
+    cx13 = expval(rdm13, X, X) - expval(rdm13, kron(X, id)) * expval(rdm13, kron(id, X))
+
+    return cx13
+end
+```
 ## Running Simulation
 
 Simulations must first be initialised:
@@ -119,7 +134,12 @@ function newsim(model)
     D = ℂ^4
 
     # Initialise using the TEBD (with default options)
-    sim = Simulation(model, ρ, s, D; timestep=0.01, method=TEBD())
+    method = TEBD()
+
+    # Construct the tensor network
+    state = PEPO(ρ, s, D)
+
+    sim = Simulation(state, model, method; timestep=0.01)
 
     return sim
 end
@@ -134,10 +154,15 @@ function runsim!(sim)
 
     # Execute an additional 100 timesteps, computing the magnetisation each time.
     simulate!(sim; numsteps = 100, maxshots = 100) do sim
-        push!(rv, quantumstate(sim) |> magnetisation)
+        push!(M, quantumstate(sim) |> magnetisation)
         return nothing
     end
 
     return M
 end
 ```
+Information pertaining to a given `Simulation` object can be obtained by calling
+```@repl
+simulationinfo(sim)
+```
+which can also be accessed in the callback function.
