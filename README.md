@@ -40,9 +40,13 @@ Loading [InfiniteTensorContractions.jl](https://github.com/jack-dunham/InfiniteT
 ## Related packages
 
 This package is inspired by the package (for one-dimensional systems):
+
 - [MPSKit.jl](https://github.com/QuantumKitHub/MPSKit.jl)
+
 and is similar to
+
 - [PEPSKit.jl](https://github.com/QuantumKitHub/PEPSKit.jl)
+
 which is focused more on ground state optimisation for closed systems, rather than time evolution of open systems.
 I encourage you to check out either of these packages as they may be more suited to your needs. 
 Both of those packages, as well as this package, make use of the [TensorKit.jl](https://github.com/Jutho/TensorKit.jl) as a backend for performing (possibly) symmetric tensor network contractions.
