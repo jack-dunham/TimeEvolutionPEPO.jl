@@ -173,40 +173,103 @@ function Base.show(io::IO, m::MIME"text/plain", sim::AbstractTruncationScheme)
 end
 
 # TRUNCATION SCHEMES
+"""
+$(TYPEDEF)
+
+The full environment truncation method.
+
+# FIELDS
+
+$(TYPEDFIELDS)
+
+See also: [`SimpleUpdate`](@ref), [`SVDU`](@ref), [`NTU`](@ref).
+"""
 @kwdef mutable struct FET{
     BAlg<:AbstractBoundaryAlgorithm,OAlg<:AbstractIsometryOptimisation,G<:Union{NoGauge,MCF}
 } <: AbstractTruncationScheme
-    zeta::Float64 = Inf
-    rankreduce::Bool = true
-    optalg::OAlg = EVB()
-    gauge::G = NoGauge()
+    "Boundary algorithm to use to compute the full environment used in truncation."
     const alg::BAlg
+    "(default `NoGauge()`) Gauge fixing to be applied at the end of each time step."
+    gauge::G = NoGauge()
+    "(default `EVB()`) Optimisation subroutine to employ."
+    optalg::OAlg = EVB()
+    "(default `false`) Whether to use a rank reduction to obtain an initial guess for the isometries."
+    rankreduce::Bool = false
+    "(default `Inf`) Level of correlation length damping to apply after computing the bond weight."
+    zeta::Float64 = Inf
 end
 
 showheader(::Type{<:FET}) = "Full environment truncation (FET)"
 
+"""
+$(TYPEDEF)
+
+The neighbourhood tensor update method. Performs worse than FET, however uses an environment
+that is Hermitian exactly, which may improve stabilty.
+
+# FIELDS
+
+$(TYPEDFIELDS)
+
+See also: [`SimpleUpdate`](@ref), [`SVDU`](@ref), [`FET`](@ref).
+"""
 @kwdef mutable struct NTU{OAlg<:AbstractIsometryOptimisation,G<:Union{NoGauge,MCF}} <:
                       AbstractTruncationScheme
-    zeta::Float64 = Inf
-    rankreduce::Bool = true
-    optalg::OAlg = DZM()
+    "(default `NoGauge()`) Gauge fixing to be applied at the end of each time step."
     gauge::G = NoGauge()
+    "(default `DZM()`) Optimisation subroutine to employ."
+    optalg::OAlg = DZM()
+    "(default `true`) Whether to use a rank reduction to obtain an initial guess for the isometries."
+    rankreduce::Bool = true
+    "(default `Inf`) Level of correlation length damping to apply after computing the bond weight."
+    zeta::Float64 = Inf
 end
 
 showheader(::Type{<:NTU}) = "Neighbourhood tensor update (NTU)"
 
+"""
+$(TYPEDEF)
+
+The singular value decomposition method. No bond weights are absorbed when truncating resulting in
+much worse truncations than would be obtained using simple update, however this method does not
+require matrix inversions.
+
+# FIELDS
+
+$(TYPEDFIELDS)
+
+See also: [`SimpleUpdate`](@ref), [`NTU`](@ref), [`FET`](@ref).
+"""
 @kwdef mutable struct SVDU{G<:Union{NoGauge,MCF}} <: AbstractSimpleTruncationScheme
+    "(default `NoGauge()`) Gauge fixing to be applied at the end of each time step."
     gauge::G = NoGauge()
-    zeta::Float64 = Inf
+    "(default `:pre`) When to perform the rank reduction. Can be `:pre`, to do so before the application of each local gate, or `:post` for after."
     reduce::Symbol = :pre
+    "(default `Inf`) Level of correlation length damping to apply after computing the bond weight."
+    zeta::Float64 = Inf
 end
 
+"""
+$(TYPEDEF)
+
+The simple update method (SU). At each truncation, the bond weights of the tensor network
+are absorbed, resulting improved truncations over SVDU. This method is fast and robust,
+but may provide inaccurate results when the correlation length of the state becomes large.
+
+# FIELDS
+
+$(TYPEDFIELDS)
+
+See also: [`SVDU`](@ref), [`NTU`](@ref), [`FET`](@ref).
+"""
 @kwdef mutable struct SimpleUpdate{G<:Union{NoGauge,MCF}} <: AbstractSimpleTruncationScheme
+    "(default `NoGauge()`) Gauge fixing to be applied at the end of each time step."
     gauge::G = NoGauge()
-    zeta::Float64 = Inf
+    "(default `:pre`) When to perform the rank reduction. Can be `:pre`, to do so before the application of each local gate, or `:post` for after."
     reduce::Symbol = :pre
+    "(default `Inf`) Level of correlation length damping to apply after computing the bond weight."
+    zeta::Float64 = Inf
 end
-
 
 showheader(::Type{<:SVDU}) = "Singular value decomposition update (SVDU)"
 showheader(::Type{<:SimpleUpdate}) = "Simple update (SimpleUpdate)"
@@ -238,7 +301,9 @@ function newtruncators(pepo::AxialPEPO, _, truncalg::Union{FET,NTU})
     return xenv, yenv
 end
 
-function newtruncators(::NTuple{2,P}, ::Vector{S}, truncalg::SimpleUpdate) where {P<:AbstractPEPO,S}
+function newtruncators(
+    ::NTuple{2,P}, ::Vector{S}, truncalg::SimpleUpdate
+) where {P<:AbstractPEPO,S}
     return SimpleUpdateState(), SimpleUpdateState()
 end
 
