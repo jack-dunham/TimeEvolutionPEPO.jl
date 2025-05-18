@@ -4,9 +4,6 @@
 CurrentModule = TimeEvolutionPEPO
 ShareDefaultModule = true
 ```
-
-TimeEvolutionPEPO.jl is a high-level and domain-specific package for simulating the time-evolution of an open-quantum system represented by the iPEPO ansatz.
-A variety of options are implemented under one common interface for both Lindblad real-time evolution and thermal state annealing.
 To get started, load TimeEvolutionPEPO.jl and the TensorKit package.jl
 ```@repl
 using TimeEvolutionPEPO
