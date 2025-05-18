@@ -122,10 +122,6 @@ function PEPO{G}(
 ) where {G}
     init = UnitCell{G}(init)
 
-    println(typeof(phys))
-    println(typeof(east))
-    println(typeof(south))
-
     spaces = pepospace(G, phys, east, south)
 
     spaces[1] .⊗ spaces[2] .⊗ spaces[3]
