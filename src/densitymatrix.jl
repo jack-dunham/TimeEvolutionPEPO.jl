@@ -234,12 +234,12 @@ function expval(
 
     return tr(observable * rho)
 end
-function expval(rho::TensorMap, a::Vararg{Matrix{ComplexF64},N}) where {N}
-    observable = mapreduce(⊗, enumerate(a)) do (i, op)
-        return TensorMap(op, domain(rho)[i], codomain(rho)[i])
-    end
-    return tr(observable * rho)
-end
+# function expval(rho::TensorMap, a::Vararg{Matrix{ComplexF64},N}) where {N}
+#     observable = mapreduce(⊗, enumerate(a)) do (i, op)
+#         return TensorMap(op, domain(rho)[i], codomain(rho)[i])
+#     end
+#     return tr(observable * rho)
+# end
 
 """
     partialtranspose(rho::TensorMap, i) -> typeof(rho)
