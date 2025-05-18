@@ -23,6 +23,7 @@ const PEPOKit = TimeEvolutionPEPO
 
 import InfiniteTensorContractions: AbsTen
 import InfiniteTensorContractions: TenAbs
+import InfiniteTensorContractions: SquareSymmetric
 
 export PEPOKit
 
@@ -35,7 +36,7 @@ export delta
 
 export cj, conjugate
 
-export PAULI, LADDER
+export PAULI, LADDER, SPIN1
 
 # PEPO
 export UnitCellBonds
@@ -64,6 +65,8 @@ export LocalOp, ExpOp, GaussOp, GaussOp2d, PowOp, PowOp2d
 export DensityMatrix, PurifiedDensityMatrix
 export trace, partialtrace
 export expval, negativity, correlator, correlationlength
+
+export permutebasis
 
 include("utils.jl")
 include("tensorkitutils.jl")
