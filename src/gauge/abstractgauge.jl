@@ -4,7 +4,7 @@ struct NoGauge end
 
 @kwdef mutable struct WTG <: AbstractGauge
     test::Bool = true
-    skiptol::Float64 = 1e-10
+    skiptol::Float64 = 1e-14
     postol::Float64 = eps()
 end
 

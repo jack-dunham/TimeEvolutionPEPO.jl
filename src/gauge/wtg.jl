@@ -126,7 +126,6 @@ function barewtg!(u, s, v, yiso; test=true, skiptol=1e-10, postol=eps())
     yf = permute(yiso, (2, 4), (3, 1))
 
     yf = (0.5 * (yf + yf'))
-
     posapprox!(yf; tol=postol)
 
     permute!(yiso, yf, ((4, 1), (3, 2)))
@@ -186,7 +185,105 @@ function barewtg!(u, s, v, yiso; test=true, skiptol=1e-10, postol=eps())
 
     return u, s, v
 end
-function wtg!(u, s, v, Y; test=true, skiptol=1e-10, postol=eps())
+
+function wtg!(u, s, v, Y; test=true, skiptol=1e-14, postol=eps())
+    if test == true && verifywtg(u, s, v, Y; verbose=false)
+        @info "Already in weighted trace gauge"
+        return u, s, v
+    end
+
+    svals = diag(convert(Array, s))
+    smin = minimum(abs.(svals))
+
+    # if smin < skiptol
+    #     @info "Skipped gauge fixing"
+    #     return u, s, v
+    # end
+
+    @debug "Singular values: " svals
+
+    # @tensoropt γi[-1 -2; -3 -4] :=
+    #     γ[1 2 3 4; 5 6 7 8] * u[5 6; -3] * v[-1; 1 2] * (u')[-2; 3 4] * (v')[7 8; -4]
+
+    @tensoropt yiso[-1 -2; -3 -4] :=
+        Y[1 2; 3 4] * u[3; -3] * v[-1; 1] * (u')[-2; 2] * (v')[4; -4]
+
+    yf = permute(yiso, (2, 4), (3, 1))
+
+    # yf = (0.5 * (yf + yf'))
+    stablizemetric!(yf)
+    posapprox!(yf; tol=postol)
+
+    permute!(yiso, yf, ((4, 1), (3, 2)))
+
+    γm = permute(yiso, ((1, 4), (3, 2))) # Transform to matrix
+    @tensor γN = γm[a b; a b] # Y_ji
+    γm = γm / γN
+
+    # val,vec=eigen(γm)
+    # println(val)
+
+    # γmr = γm * (s ⊗ permute(s', (2,), (1,)))
+    ri = Tensor(randn, ComplexF64, domain(γm))
+    # re, rs, _ = eigsolve(x -> γm * x, ri, 1, :LM; eager=true, ishermitian=false)
+    DR,V = eigen(γm)
+    rs1 = V * isometry(domain(V), one(spacetype(V)))
+
+
+    li = TensorMap(randn, ComplexF64, one(codomain(γm)), codomain(γm))
+    # γml = (s ⊗ permute(s', (2,), (1,))) * γm
+    # le, ls, _ = eigsolve(x -> x * γm, li, 1, :LM; eager=true, ishermitian=false)
+    DL,V = eigen(_transpose(γm))
+    ls1 = _transpose(V * isometry(domain(V), one(spacetype(V))))
+
+    lmin = minimum(abs.(diag(convert(Array, DL))))
+    rmin = minimum(abs.(diag(convert(Array, DR))))
+
+    if (lmin < skiptol || rmin < skiptol)
+        @info "skipped gauge fixing $lmin $rmin"
+        return u,s,v
+    end
+
+
+    l0 = permute(ls1, (2,), (1,))
+    r0 = permute(rs1, (1,), (2,))
+
+    @debug norm(l0 - cj(l0'))
+    @debug norm(r0 - cj(r0'))
+
+    # dl, ul = eigen!(0.5 * (l0 + cj(l0')))
+    # dr, ur = eigen!(0.5 * (r0 + cj(r0')))
+
+    dl, ul = eigen!(l0)
+    dr, ur = eigen!(r0)
+
+    # sp = sqrt(dl) * ul' * s * ur * sqrt(dr)
+    sp = sqrt(dl) * ul' * ur * sqrt(dr)
+    vl, st, vrt = tsvd!(sp)
+
+    x = vl' * sqrt(dl) * ul'
+    y = ur * sqrt(dr) * vrt'
+
+    # x = ul * inv(sqrt(dl)) * vl
+    # y = vrt * inv(sqrt(dr)) * ur'
+
+    maxnormalize!(st)
+
+    utemp = u * inv(x)
+    vtemp = inv(y) * v
+
+    # Test if the metric is gauged correctly.
+    test && verifywtg(utemp, st, vtemp, Y)
+
+    copy!(s, st)
+
+    mul!(u, utemp, sqrt(s))
+    mul!(v, sqrt(s), vtemp)
+
+    return u, s, v
+end
+
+function _wtg!(u, s, v, Y; test=true, skiptol=1e-14, postol=eps())
     if test == true && verifywtg(u, s, v, Y; verbose=false)
         @info "Already in weighted trace gauge"
         return u, s, v
@@ -210,8 +307,8 @@ function wtg!(u, s, v, Y; test=true, skiptol=1e-10, postol=eps())
 
     yf = permute(yiso, (2, 4), (3, 1))
 
-    yf = (0.5 * (yf + yf'))
-
+    # yf = (0.5 * (yf + yf'))
+    stablizemetric!(yf)
     posapprox!(yf; tol=postol)
 
     permute!(yiso, yf, ((4, 1), (3, 2)))
@@ -231,8 +328,8 @@ function wtg!(u, s, v, Y; test=true, skiptol=1e-10, postol=eps())
     # γml = (s ⊗ permute(s', (2,), (1,))) * γm
     le, ls, _ = eigsolve(x -> x * γm, li, 1, :LM; eager=true, ishermitian=false)
 
-    # println("re: ", re)
-    # println("le: ", le)
+    println("re: ", re)
+    println("le: ", le)
 
     l0 = permute(ls[1], (2,), (1,))
     r0 = permute(rs[1], (1,), (2,))
