@@ -70,7 +70,6 @@ function Base.show(io::IO, m::MIME"text/plain", sim::Simulation)
     return nothing
 end
 
-
 unitcellsize(x::AbstractMatrix) = size(x)
 unitcellsize(_) = (1, 1)
 
@@ -124,7 +123,6 @@ end
 function initenvironment(network, alg::AbstractBoundaryAlgorithm; kwargs...)
     return ITC.initialize(alg, network; kwargs...)
 end
-
 
 """
     simulate([callback = identity], sim::Simulation; numsteps::Int, kwargs...)
@@ -222,7 +220,7 @@ function simulate!(
         sim_time_delta = numiter * timestep
         info.simtime = sim_time_delta + total_sim_duration
 
-        wall_time_delta = time() - intial_wall_time
+        wall_time_delta = time() - initial_wall_time
         info.walltime = wall_time_delta + total_wall_duration
 
         # User specified function for post-step processing
@@ -288,7 +286,6 @@ quantumstate(p::PEPO) = p
 quantumstate(p::AxialPEPO) = p.parent
 
 function simulationinfo(s::Simulation)
-
     info = getfield(s, :info)
 
     names = fieldnames(SimulationInfo)
