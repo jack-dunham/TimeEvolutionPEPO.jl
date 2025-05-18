@@ -29,8 +29,7 @@ jobs:
         run: |
           using Pkg
           Pkg.add(url="https://github.com/jack-dunham/InfiniteTensorContractions.jl", rev="dev")
-          Pkg.add(url="https://github.com/jack-dunham/TimeEvolutionPEPO.jl", rev="dev")
-          # Pkg.develop(PackageSpec(path=pwd()))
+          Pkg.develop(PackageSpec(path=pwd()))
           Pkg.instantiate()
       - name: Build and deploy
         run: julia --color=yes --project=docs docs/make.jl
