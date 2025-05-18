@@ -104,7 +104,8 @@ end
 In practice it is useful to save the `DensityMatrix` object rather than running the boundary renormalization every time one wishes to compute a local observable.
 The correlation length of a state can be directly accessed directly from the `DensityMatrix` object without first needing to compute a partial trace:
 ```@repl
-dm = DensityMatrix(pepo, alg)
+pepo = PEPO((0,0,-1), ℂ^2, ℂ^4)
+dm = DensityMatrix(pepo, VUMPS(bonddim = 16))
 correlationlength(dm)
 ```
 It is also possible to compute arbitrary ``n``-point observables be computing reduced density matrices over multiple sites:
