@@ -143,3 +143,21 @@ function mpinv(
     Sinv[index] .= pinv.(view(SVD.S, index))
     return SVD.Vt' * (Diagonal(Sinv) * SVD.U')
 end
+
+permutebasis(mat::AbstractMatrix, perm) = only(permutebasis((mat,), perm))
+function permutebasis(allmat, perm)
+
+    @assert allequal(size, allmat)
+
+    n, m = size(first(allmat))
+
+    @assert n == m
+
+    pmat = zeros(n, n)
+
+    for i in 1:n 
+        pmat[i,perm[i]] = 1
+    end
+
+    return map(x -> pmat' * x * pmat, allmat)
+end
