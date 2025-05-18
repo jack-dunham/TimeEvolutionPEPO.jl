@@ -17,7 +17,8 @@ function simple_update_gauge!(
     while ϵ > tol && numiter < maxiter
         reverse = isodd(numiter)
 
-        if 1 in size(pepo)
+        # if 1 in size(pepo)
+        if true
             simple_update_gauge_parallel_step!(pepo)
         else
             simple_update_gauge_step!(pepo, buffer; inreverse=reverse)
@@ -387,7 +388,7 @@ function setweight!(pepo, svals; axis=axis, copy=false)
     return pepo
 end
 
-function evolve(pepo::PEPO, stepper::FullStepper)
+function evolve(pepo::PEPO{G}, stepper::FullStepper) where {G}
     state = pepo
 
     evolved = broadcast(pepo, stepper) do p, t
@@ -408,7 +409,7 @@ function evolve(pepo::PEPO, stepper::FullStepper)
     # src = axisbuffer(pepo)
     apply_four_bond_stepper!(evolved, pepo, stepper)
 
-    return PEPO(evolved)
+    return PEPO{G}(evolved)
 end
 
 function evolve(pepo::AbstractPEPO, stepper::FullStepper)

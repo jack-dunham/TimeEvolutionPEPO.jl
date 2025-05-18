@@ -65,7 +65,6 @@ function onvector(t)
 end
 
 function trotterlayers(model::Hamiltonian, theterms)
-
     for term in theterms
         if isexpandable(term)
             model += sum(trotterlayers(model, terms(term)))
@@ -78,14 +77,13 @@ function trotterlayers(model::Hamiltonian, theterms)
 end
 
 function trotterlayers(model::Hamiltonian)
-
     rv = Hamiltonian((), oneterms(model))
 
     return trotterlayers(rv, model)
 end
 
 # Obtain the trotter layers from the Liouvillian
-function trotterlayers(model::Liouvillian) 
+function trotterlayers(model::Liouvillian)
     ham = trotterlayers(model.hamiltonian)
     return Liouvillian(ham, model.linops)
 end
@@ -112,7 +110,6 @@ function distributelocal(layers, localops, ::Nothing)
 end
 
 function distributelocal(layers, localops, linops)
-
     distributelocal(layers, localops, nothing)
 
     numl = length(layers)
@@ -134,21 +131,19 @@ function _trotterise(physical, layers, method, localops, linops)
 end
 
 function _trotterise(physical, steps, method)
-
     @debug "Trotterising over $(length(steps)) layers"
 
     trotterlist = map(steps) do modelstep
-        G = promote_geometry_type(physical, modelstep)
-
         S = applykwargs(stepper_type(method), modelstep)
 
-        rvf = dt -> begin
-            lat = broadcastmodel(G, modelstep, physical, method)(dt)
+        rvf =
+            dt -> begin
+                lat = broadcastmodel(geometrytype(physical), modelstep, physical, method)(dt)
 
-            v = onvector(lat)
+                v = onvector(lat)
 
-            return map(S, v)
-        end
+                return map(S, v)
+            end
 
         return rvf
     end
@@ -184,7 +179,6 @@ end
 
 # Given a sequence of trotter-layers, combine consequtive layers if on different axis
 function combineaxial(steps)
-
     steps = [steps...]
 
     rv = Combine[]
@@ -203,7 +197,7 @@ function combineaxial(steps)
                 push!(rv, Combine(op, opid))
             end
         else
-            push!(rv, Combine(changeaxis(op, 1), changeaxis(op,2)))
+            push!(rv, Combine(changeaxis(op, 1), changeaxis(op, 2)))
         end
     end
     return rv
@@ -211,14 +205,14 @@ end
 
 # Given a sequence of trotter-layers, extract them into axial components
 function seperateaxis(steps)
-    if any(p -> p.axis !=  0, steps)
+    if any(p -> p.axis != 0, steps)
         # Symmetry broken 
         rv = TrotterLayer[]
         for op in steps
             if op.axis != 0
                 push!(rv, op)
             else
-                append!(rv, [changeaxis(op, 1; a = 0.5), changeaxis(op, 2; a = 0.5)])
+                append!(rv, [changeaxis(op, 1; a=0.5), changeaxis(op, 2; a=0.5)])
             end
         end
     else
@@ -226,16 +220,15 @@ function seperateaxis(steps)
         rvy = TrotterLayer[]
 
         for op in steps
-            push!(rvx, changeaxis(op,1; a = 0.5))
-            push!(rvy, changeaxis(op,2; a = 0.5))
+            push!(rvx, changeaxis(op, 1; a=0.5))
+            push!(rvy, changeaxis(op, 2; a=0.5))
         end
 
-        rv = vcat(rvx,rvy)
+        rv = vcat(rvx, rvy)
     end
 
     return rv
 end
-
 
 # TODO this is hacky and convoluted and needs more thought
 function newstepper(physical, model, method; timestep, order)
@@ -254,7 +247,6 @@ function newstepper(physical, model, method; timestep, order)
 
     if length(trotterlist) == 1 && method isa ClusterPEPO
         # No trotterisation required if we have made it this far with only one operator 
-        # using TEPEPSO
         # using ClusterPEPO
         # in the list
         theop = only(only(trotterlist)(tau))
@@ -263,7 +255,8 @@ function newstepper(physical, model, method; timestep, order)
 
         T = typeof(theop)
 
-        return TrotterDecomposition(T[], [theop], T[]; timestep=timestep, order=order), physicalspace
+        return TrotterDecomposition(T[], [theop], T[]; timestep=timestep, order=order),
+        physicalspace
     end
 
     if order == 1
@@ -278,7 +271,7 @@ function newstepper(physical, model, method; timestep, order)
 
     T = eltype(body)
 
-    oplist = TrotterDecomposition(T[], body, T[];timestep=timestep, order=order)
+    oplist = TrotterDecomposition(T[], body, T[]; timestep=timestep, order=order)
 
     physicalspace = broadcast((p, _) -> p, physical, CartesianIndices(size(first(oplist))))
 

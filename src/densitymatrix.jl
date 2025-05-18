@@ -12,6 +12,7 @@ struct DensityMatrix{P<:AbstractUnitCell,T<:RenormalizationProblem}
     function DensityMatrix(
         data::P, env::T
     ) where {P<:AbstractUnitCell,T<:RenormalizationProblem}
+        # data = deepcopy(dealias(data))
         data = deepcopy(data)
         # tracenormalize!(data, env)
 
@@ -46,6 +47,7 @@ struct PurifiedDensityMatrix{P<:HilbertSchmidt,T<:RenormalizationProblem}
         data::P, env::T
     ) where {P<:HilbertSchmidt,T<:RenormalizationProblem}
         data = deepcopy(data)
+        # data = deepcopy(delalias(data))
         # tracenormalize!(data, env)
 
         trval = trace(data, env)
@@ -99,6 +101,7 @@ function DensityMatrix(
     alg::AbstractBoundaryAlgorithm;
     kwargs...,
 )
+    # data = dealias(ITC.getdata(pepo))
     data = ITC.getdata(pepo)
     return DensityMatrix(data, alg; kwargs...)
 end
@@ -1387,4 +1390,43 @@ function extrapquantum(; D)
     end
 
     return Xs, Zs, Ls
+end
+
+function alltestaxy()
+    zs = []
+    ps = []
+    ns = []
+    js = collect(0.05:0.05:2.0)
+    for J in js
+        z, p, n =testaxy(J)
+        push!(zs, z)
+        push!(ps, p)
+        push!(ns, n)
+    end
+
+    return js, zs, ps, ns
+end
+function testaxy(J)
+    X,Y,Z = PAULI
+
+    D = Dissipator(LADDER[1])
+
+    model = Model(J  * LocalOp(X,X) - J * LocalOp(Y,Y) + D)
+
+    s = U1Space(-1=>1, 1=>1)
+    sp = [s s'; s' s]
+
+    S = U1Space(0=>8)
+
+    ρ = [(0,0,-1) (0,0,1) ; (0,0,1) (0,0,-1)]
+    sim = Simulation(model,ρ, sp, S; timestep=0.1, method=TEBD())
+
+    simulate!(identity, sim; numsteps=100, maxshots=1);
+
+    dm = DensityMatrix(quantumstate(sim), VUMPS(bonddim=16))
+
+    rdm1 = partialtrace(dm, (1,1))
+    rdm12 = partialtrace(dm, (1,1),(2,1))
+
+    return sim, real(expval(rdm1, PAULI[3])), real(tr(rdm12 * rdm12)), real(negativity(rdm12))
 end

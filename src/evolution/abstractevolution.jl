@@ -21,6 +21,8 @@ struct LocalStepper{G,MType} <: AbstractTrotterizedTimeStepper{G,MType}
     isreversed::Bool
 end
 
+Base.eltype(::Type{<:LocalStepper{G,T}}) where {G,T} = NTuple{2, T}
+
 LocalStepper(lat; axis=1, inreverse=false) = LocalStepper(lat, axis, inreverse)
 
 function Base.getindex(stepper::LocalStepper, bond::Bond)
@@ -96,11 +98,11 @@ function evolve(pepo, operator::LocalStepper, bond::Bond)
     p1, p2 = pepo[bond]
     u1, v2 = operator[bond]
 
-    Du = domain(u1)
-    Dv = domain(v2)
-
-    D1a, D2a, D3a, D4a = domain(p1)
-    D1b, D2b, D3b, D4b = domain(p2)
+    # Du = domain(u1)
+    # Dv = domain(v2)
+    #
+    # D1a, D2a, D3a, D4a = domain(p1)
+    # D1b, D2b, D3b, D4b = domain(p2)
 
     if axis == 1
         @tensoropt begin
@@ -108,8 +110,8 @@ function evolve(pepo, operator::LocalStepper, bond::Bond)
             q2[ok ob; e s w x n] := v2[ok ob ik ib; x] * p2[ik ib; e s w n]
         end
 
-        pe1 = similar(p1, codomain(p1), fuse(D1a * Du) * D2a * D3a * D4a)
-        pe2 = similar(p2, codomain(p2), D1b * D2b * fuse(D3b * Dv)' * D4b)
+        # pe1 = similar(p1, codomain(p1), fuse(D1a * Du) * D2a * D3a * D4a)
+        # pe2 = similar(p2, codomain(p2), D1b * D2b * fuse(D3b * Dv)' * D4b)
 
     elseif axis == 2
         @tensoropt begin
@@ -117,8 +119,8 @@ function evolve(pepo, operator::LocalStepper, bond::Bond)
             q2[ok ob; e s w n x] := v2[ok ob ik ib; x] * p2[ik ib; e s w n]
         end
 
-        pe1 = similar(p1, codomain(p1), D1a * fuse(D2a * Du) * D3a * D4a)
-        pe2 = similar(p2, codomain(p2), D1b * D2b * D3b * fuse(D4b * Dv)')
+        # pe1 = similar(p1, codomain(p1), D1a * fuse(D2a * Du) * D3a * D4a)
+        # pe2 = similar(p2, codomain(p2), D1b * D2b * D3b * fuse(D4b * Dv)')
     end
 
     return q1 => q2

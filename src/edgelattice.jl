@@ -62,6 +62,8 @@ function Base.permutedims!(
     return dst
 end
 
+# Map the function f on all the bonds incident to the tensors indicident to `bond`
+# returns U => V with the the bonds in U and V in canonical order.
 function mapadjacent(f, edgelat::UnitCellBonds{Geom,T}, bond::Bond) where {Geom,T}
     uind, vind = bond
 
