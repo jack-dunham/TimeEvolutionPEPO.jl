@@ -70,8 +70,8 @@ function PowOp(C, B, α, A=one(C); n=10, N=50, expand=false)
 
     return PowOp(1.0, α, terms, expand)
 end
-function PowOp2d(C, B, α, A=one(C); n=10, N=50, expand=true, kwargs...)
-    X, Λ = approx_as_sum_of_exp(α / 2, n; N=N)
+function PowOp2d(C, B, α, A=one(C); kmax=10, N=50, expand=true, kwargs...)
+    X, Λ = approx_as_sum_of_exp(α / 2, kmax; N=N)
 
     M = -log.(Λ)
 
@@ -215,7 +215,6 @@ function fsmpowop(C, B, localops, linops, space, dt, wk, mks, lks; J=1.0, extend
 end
 
 # Add a Gaussian term to the FSM
-
 
 # function MPO(eqn)
 #     Id = Matrix{ComplexF64}(I, 2, 2)
