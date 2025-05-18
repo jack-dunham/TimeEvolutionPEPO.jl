@@ -18,15 +18,15 @@ function Base.similar(lat::UnitCellBonds{G}, ::Type{T}) where {G,T}
     return UnitCellBonds{G}(similar(ITC.getdata(lat), T))
 end
 
-function UnitCellBonds(X::AbstractMatrix, Y::AbstractMatrix)
-    X = UnitCell(X)
-    Y = UnitCell(Y)
-
+function UnitCellBonds(X::AbstractUnitCell, Y::AbstractUnitCell)
     A = similar(X, NTuple{2,promote_type(eltype(X), eltype(Y))})
 
     A .= zip(X, Y)
 
     return UnitCellBonds(A)
+end
+function UnitCellBonds(X::AbstractMatrix, Y::AbstractMatrix)
+    return UnitCellBonds(UnitCell(X), UnitCell(Y))
 end
 
 Base.getindex(mat::UnitCellBonds, bond::Bond) = mat.data[first(bond)][bondaxis(bond)]
