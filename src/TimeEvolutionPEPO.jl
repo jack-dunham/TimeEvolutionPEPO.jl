@@ -48,7 +48,7 @@ export Bond
 export TEBD, AxialTEBD, GlobalTEBD, ClusterMPO, GlobalTEBD, ClusterPEPO
 export LocalUpdate, GlobalUpdate
 export SimpleUpdate, SVDU, NTU, FET, IterativeSU
-export Simulation, simulate!, quantumstate
+export Simulation, simulate!, quantumstate, simulationinfo
 
 export EVB, DZM, WTG, MCF, NoGauge
 
