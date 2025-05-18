@@ -157,101 +157,7 @@ function ITC.renormalize!(rho::DensityMatrix)
 end
 
 """
-    struct ReduceDensityMatrix{S, N, T<:AbstractTensorMap{S,N,N}} <: AbstractTensorMap{S,N,N}
-
-Concrete type representing a reduced density matrix as a single tensor of type `T`. For 
-convenience, much of the `AbstractTensorMap` interface works for this data type, however no 
-effort is made to esnure the resulting object representes a physical density matrix.
-"""
-struct ReducedDensityMatrix{T,S,N,A<:AbstractTensorMap{T,S,N,N}} <:
-       AbstractTensorMap{T,S,N,N}
-    data::A
-    inds::NTuple{N,CartesianIndex{2}}
-    function ReducedDensityMatrix(
-        data::A, inds::NTuple{N,Union{CartesianIndex{2},NTuple{2}}}
-    ) where {T,S,N,A<:AbstractTensorMap{T,S,N,N}}
-        inds_cartesian = map(CartesianIndex, inds)
-        return new{T,S,N,A}(data, inds_cartesian)
-    end
-end
-
-function Base.show(io::IO, rho::ReducedDensityMatrix)
-    tupinds = map(x -> convert(Tuple, x), rho.inds)
-    println(io, "ReducedDensityMatrix over sites:")
-    foreach(x -> println(io, x), tupinds)
-    println("with data:")
-    Base.show(io, rho.data)
-    return nothing
-end
-
-TensorKit.codomain(rho::ReducedDensityMatrix) = codomain(rho.data)
-TensorKit.domain(rho::ReducedDensityMatrix) = domain(rho.data)
-TensorKit.space(rho::ReducedDensityMatrix) = codomain(rho) ← domain(rho)
-TensorKit.blocksectors(rho::ReducedDensityMatrix) = blocksectors(rho.data)
-
-TensorKit.block(rho::ReducedDensityMatrix, s::Sector) = TensorKit.block(rho.data, s)
-TensorKit.blocks(rho::ReducedDensityMatrix) = TensorKit.blocks(rho.data)
-TensorKit.hasblock(rho::ReducedDensityMatrix, s::Sector) = TensorKit.hasblock(rho.data, s)
-
-function TensorKit.adjoint(rho::ReducedDensityMatrix)
-    return ReducedDensityMatrix(adjoint(rho.data), rho.inds)
-end
-
-function Base.similar(
-    rho::ReducedDensityMatrix{ElType,S,N}, T::Type{<:Number}, space::TensorMapSpace{S,N,N}
-) where {ElType,S,N}
-    return ReducedDensityMatrix(similar(rho.data, T, space), rho.inds)
-end
-
-function TensorKit.storagetype(
-    ::Union{T,Type{T}}
-) where {ElType,S,N,A,T<:ReducedDensityMatrix{ElType,S,N,A}}
-    return storagetype(A)
-end
-
-tensorind(rho::ReducedDensityMatrix, i::NTuple{2,Int}) = tensorind(rho, CartesianIndex(i))
-function tensorind(rho::ReducedDensityMatrix, i::CartesianIndex{2})
-    inds = rho.inds
-    if i ∉ inds
-        throw(ArgumentError("index $i not in the indices of $rho"))
-    else
-        return findfirst(isequal(i), inds)
-    end
-end
-tensorind(::ReducedDensityMatrix, i::Int) = i
-
-siteind(rho::ReducedDensityMatrix, i::Int) = rho.inds[i]
-
-function ReducedDensityMatrix(qs::DensityMatrix, sites...)
-    tensor = partialtrace(qs, sites...)
-    return ReducedDensityMatrix(tensor, sites)
-end
-
-function permutesites(rho::ReducedDensityMatrix{S,N}, p::NTuple{N,Int}) where {S,N}
-    return ReducedDensityMatrix(
-        permute(rho.data, p, p .+ N), TupleTools.permute(rho.inds, p)
-    )
-end
-
-function TensorKit.permute(
-    rho::ReducedDensityMatrix{S,N}, p::NTuple{2,NTuple{N,Int}}
-) where {S,N}
-    return permute(rho, p[1], p[2])
-end
-function TensorKit.permute(
-    ::ReducedDensityMatrix{S,N}, p1::NTuple{N,Int}, p2::NTuple{N,Int}
-) where {S,N}
-    throw(
-        ArgumentError(
-            "TensorKit.permute not supported for ReducedDensityMatrix; use `permutesites` instead.",
-        ),
-    )
-end
-
-LinearAlgebra.ishermitian(rho::ReducedDensityMatrix) = ishermitian(rho.data)
-
-"""
-    expval(rho::ReducedDensityMatrix, ops::Vararg{T, N}; inds=NTuple{N}(1:N))
+    expval(rho::TensorMap, ops::Vararg{T, N}; inds=NTuple{N}(1:N))
 
 Calculate the expectation value of product of local operators `ops` applied to the indices
 `inds` respectively. The keyword `inds` defaults to applying all `ops` to the first indices
@@ -328,9 +234,7 @@ function expval(
 
     return tr(observable * rho)
 end
-function expval(
-    rho::ReducedDensityMatrix{T,S,N}, a::Vararg{Matrix{ComplexF64},N}
-) where {T,S,N}
+function expval(rho::TensorMap, a::Vararg{Matrix{ComplexF64},N}) where {N}
     observable = mapreduce(⊗, enumerate(a)) do (i, op)
         return TensorMap(op, domain(rho)[i], codomain(rho)[i])
     end
@@ -338,11 +242,10 @@ function expval(
 end
 
 """
-    partialtranspose(rho::ReducedDensityMatrix{S,N,T}, i) -> T
+    partialtranspose(rho::TensorMap, i) -> typeof(rho)
 
 Returns the tensor obtained by transposing the `i`th index of `rho`.
 """
-partialtranspose(rho::ReducedDensityMatrix, i) = partialtranspose(rho.data, i)
 function partialtranspose(t::AbsTen{N,N}, i) where {N}
     codp = NTuple{N,Int}(j == i ? N + i : j for j in 1:N)
     domp = NTuple{N,Int}(j == i ? i : N + j for j in 1:N)
@@ -351,13 +254,13 @@ function partialtranspose(t::AbsTen{N,N}, i) where {N}
 end
 
 """
-    negativity(rho::ReducedDensityMatrix{S,2}) -> Number
+    negativity(rho) -> Number
 
 Calculate the entanglement negativity of bipartite `rho` represented as a `TensorMap` with
 `codomain(rho) == domain(rho)`.
 """
-function negativity(t)
-    pt = partialtranspose(t, 1)
+function negativity(rho)
+    pt = partialtranspose(rho, 1)
 
     tracenorm = tr(sqrt(pt' * pt))
 
@@ -371,7 +274,7 @@ Calculate the two-point correlator of `rho` between observables `A1` and `A2` on
 end `i2` respectively.
 """
 function correlator(rho::DensityMatrix, A1, i1, A2, i2)
-    dm = ReducedDensityMatrix(rho, i1, i2)
+    dm = partialtrace(rho, i1, i2)
     return expval(dm, A1, A2)
 end
 
@@ -1046,7 +949,7 @@ function transferspectrum(bulk, edges::Edges, n::Int=3)
     return vals / vals[1]
 end
 
-function _correlationlength(dm::Union{DensityMatrix, PurifiedDensityMatrix})
+function _correlationlength(dm::Union{DensityMatrix,PurifiedDensityMatrix})
     xis = transferspectrum(dm, 4)
 
     eps1 = -log(abs(xis[2]))
@@ -1069,7 +972,7 @@ quantum system. For a state with exponentially decaying correlations of the form
 C(r) ∝ exp(-r/ξ), the correlation length ξ quantifies the characteristic distance over
 which quantum correlations persist.
 """
-function correlationlength(dm::Union{DensityMatrix, PurifiedDensityMatrix})
+function correlationlength(dm::Union{DensityMatrix,PurifiedDensityMatrix})
     unit_cell_length = size(dm.data, 1)
     eps1, _ = _correlationlength(dm)
     return unit_cell_length / eps1
@@ -1257,7 +1160,7 @@ function alltestbias(; D=5)
     return Xis, Zs, Ls, Ts
 end
 
-function alltestquantum(; D=5, N = 1)
+function alltestquantum(; D=5, N=1)
     Xis = [exp10(i) for i in 4:0.2:5]
     Ds = [6, 7, 8]
 
@@ -1268,7 +1171,7 @@ function alltestquantum(; D=5, N = 1)
 
     # foreach(Xis) do xi
     foreach(Ds) do D
-        zs, ls, ts = testquantum(; zeta=Inf, D=D, N = N)
+        zs, ls, ts = testquantum(; zeta=Inf, D=D, N=N)
 
         push!(Zs, zs)
         push!(Ls, ls)
@@ -1295,7 +1198,11 @@ function testquantum(; zeta=Inf, D, N=1)
 
     # Need 400 iterations total
     # method = TEBD(; truncalg=truncalg)
-    method = TEBD(; truncalg=PEPOKit.NTU(rankreduce=true, zeta=zeta, optalg=DZM(isotol=1e-8, gauge=NoGauge())))
+    method = TEBD(;
+        truncalg=PEPOKit.NTU(;
+            rankreduce=true, zeta=zeta, optalg=DZM(; isotol=1e-8, gauge=NoGauge())
+        ),
+    )
     # method = TEBD(; truncalg=PEPOKit.FET( 
     #     alg=VUMPS(bonddim=4, tol=1e-8), rankreduce=false, optalg=PEPOKit.EVB()))
     # alg = CTMRG(; bonddim=25, maxiter=200, tol=1e-8, randinit=false)
@@ -1305,7 +1212,7 @@ function testquantum(; zeta=Inf, D, N=1)
     S = ComplexSpace(D)
 
     output = Float64[]
-    timestep=0.02βc / (8 * N)
+    timestep = 0.02βc / (8 * N)
     sim = Simulation(model, rho, s, S; method=method, timestep=timestep)
     # sim = Simulation(model, rho, s, S; method=TEBD(), timestep=timestep)
 
@@ -1317,11 +1224,11 @@ function testquantum(; zeta=Inf, D, N=1)
     Ts = Float64[]
 
     # simulate!(identity, sim, 80)
-    simulate!(identity, sim; numsteps = 300 * N)
+    simulate!(identity, sim; numsteps=300 * N)
 
     sim = Simulation(model, quantumstate(sim), method, sim.info; timestep=timestep)
 
-    simulate!(sim; numsteps = 200 * N, maxshots=40) do sim
+    simulate!(sim; numsteps=200 * N, maxshots=40) do sim
         dm = DensityMatrix(quantumstate(sim), alg)
         # dm = PurifiedDensityMatrix(quantumstate(sim), alg)
         rdm = partialtrace(dm, (1, 1))
@@ -1398,7 +1305,7 @@ function alltestaxy()
     ns = []
     js = collect(0.05:0.05:2.0)
     for J in js
-        z, p, n =testaxy(J)
+        z, p, n = testaxy(J)
         push!(zs, z)
         push!(ps, p)
         push!(ns, n)
@@ -1407,26 +1314,28 @@ function alltestaxy()
     return js, zs, ps, ns
 end
 function testaxy(J)
-    X,Y,Z = PAULI
+    X, Y, Z = PAULI
 
     D = Dissipator(LADDER[1])
 
-    model = Model(J  * LocalOp(X,X) - J * LocalOp(Y,Y) + D)
+    model = Model(J * LocalOp(X, X) - J * LocalOp(Y, Y) + D)
 
-    s = U1Space(-1=>1, 1=>1)
+    s = U1Space(-1 => 1, 1 => 1)
     sp = [s s'; s' s]
 
-    S = U1Space(0=>8)
+    S = U1Space(0 => 8)
 
-    ρ = [(0,0,-1) (0,0,1) ; (0,0,1) (0,0,-1)]
-    sim = Simulation(model,ρ, sp, S; timestep=0.1, method=TEBD())
+    ρ = [(0, 0, -1) (0, 0, 1); (0, 0, 1) (0, 0, -1)]
+    sim = Simulation(model, ρ, sp, S; timestep=0.1, method=TEBD())
 
-    simulate!(identity, sim; numsteps=100, maxshots=1);
+    simulate!(identity, sim; numsteps=100, maxshots=1)
 
-    dm = DensityMatrix(quantumstate(sim), VUMPS(bonddim=16))
+    dm = DensityMatrix(quantumstate(sim), VUMPS(; bonddim=16))
 
-    rdm1 = partialtrace(dm, (1,1))
-    rdm12 = partialtrace(dm, (1,1),(2,1))
+    rdm1 = partialtrace(dm, (1, 1))
+    rdm12 = partialtrace(dm, (1, 1), (2, 1))
 
-    return sim, real(expval(rdm1, PAULI[3])), real(tr(rdm12 * rdm12)), real(negativity(rdm12))
+    return sim,
+    real(expval(rdm1, PAULI[3])), real(tr(rdm12 * rdm12)),
+    real(negativity(rdm12))
 end
