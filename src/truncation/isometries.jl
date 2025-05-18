@@ -328,7 +328,7 @@ function _generic_environment_isometries(
 )
     rankreduce = truncalg.rankreduce
     optalg = truncalg.optalg
-    xi = truncalg.ξ
+    xi = truncalg.zeta
 
     iso, s, infid = single_bond_metric_isometries!(
         pair,
@@ -337,7 +337,7 @@ function _generic_environment_isometries(
         parallel=parallel,
         optalg=optalg,
         doreduction=rankreduce,
-        xi=xi,
+        zeta=zeta,
         kwargs...,
     )
 
@@ -545,14 +545,14 @@ function rankreduce!(tensors::Pair{T,T}; axis=1) where {T<:AbsTen{2,4}}
     return uten => vten, R => L
 end
 
-function updatetensors(pair, weights, truncalg::SU, bond)
+function updatetensors(pair, weights, truncalg::SimpleUpdate, bond)
     absorb_adjacent_weights!(pair, weights, bond; inverse=false)
-    newpair, s = simple_update_tensors(pair; axis=bondaxis(bond), xi=truncalg.ξ)
+    newpair, s = simple_update_tensors(pair; axis=bondaxis(bond), zeta=truncalg.zeta)
     absorb_adjacent_weights!(newpair, weights, bond; inverse=true)
     return newpair, s
 end
 function updatetensors(pair, weights, truncalg::SVDU, bond)
-    newpair, s = simple_update_tensors(pair; axis=bondaxis(bond), xi=truncalg.ξ)
+    newpair, s = simple_update_tensors(pair; axis=bondaxis(bond), zeta=truncalg.zeta)
     return newpair, s
 end
 
@@ -595,7 +595,7 @@ function simple_update_tensors(pair::Pair{T}; axis, xi=Inf) where {T<:AbsTen{2,5
     return unew => vnew, s
 end
 
-function simple_update_tensors(pair::Pair{T}; axis, xi=Inf) where {T<:AbsTen{2,4}}
+function simple_update_tensors(pair::Pair{T}; axis, zeta=Inf) where {T<:AbsTen{2,4}}
     uten, vten = pair
 
     if axis == 1
@@ -791,14 +791,14 @@ function metricoptimise(left, right, metric::AbsTen{2,2}; trunc, doreduction, xi
     hermiticity = norm(Y - Y')
 
     # htol = 1e-10
-    # htol = 0.0 # force SU
+    # htol = 0.0 # force SimpleUpdate
     htol = Inf # force update
 
     @debug "Metric normalisation (F0): $F0"
 
     if hermiticity > htol
         @warn "Metric not hermitian! inhermiticity: $hermiticity, tolerance: $htol"
-        @info "Metric not hermitian: using SU"
+        @info "Metric not hermitian: using SimpleUpdate"
         u, s, v, err = tsvd(left * right; trunc=trunc)
         @info "Truncation error: $err"
         return TruncationIsometries(metric, u, s, v)
@@ -1381,7 +1381,7 @@ function evenblytrivial(
 end
 
 function to_WTG!(
-    env::AbstractTensorMap{S}, l, r, σ, test::Bool=true, ξ::Float64=Inf
+    env::AbstractTensorMap{S}, l, r, σ, test::Bool=true, zeta::Float64=Inf
 ) where {S}
     sw = x -> cj(transpose(x'))
 
@@ -1471,7 +1471,7 @@ function to_WTG!(
 end
 
 function to_WTG2!(
-    env::AbstractTensorMap{S}, u, v, s, test::Bool=true, ξ::Float64=Inf
+    env::AbstractTensorMap{S}, u, v, s, test::Bool=true, zeta::Float64=Inf
 ) where {S}
     sw = x -> cj(transpose(x'))
 
@@ -1568,7 +1568,7 @@ function isometries_to_WTG!(
     r::Union{Array{T,2},Array{Complex{T},2},Adjoint},
     σ::Array{T,1};
     test::Bool=true,
-    ξ::Float64=Inf,
+    zeta::Float64=Inf,
 ) where {T}
     D = length(σ)
     #check_degeneracy(p.σ)
@@ -1606,8 +1606,8 @@ function isometries_to_WTG!(
     F.S ./= F.S[1] # added
     @info "" F.S
 
-    if ξ != Inf
-        scl = [exp(-(i - 1) / ξ) for i in 1:D]
+    if zeta != Inf
+        scl = [exp(-(i - 1) / zeta) for i in 1:D]
         F.S .*= scl
     end
     xnI .= xnI * F.U * Diagonal(sqrt.(F.S))

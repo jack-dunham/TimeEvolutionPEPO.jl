@@ -34,7 +34,7 @@ end
 
 ModelStyle(::Type{J1J2Heisenberg}) = IsGlobal()
 
-stepper_type(::Type{J1J2Heisenberg}, ::Type{<:TEPEPSO}) = FullStepper
+stepper_type(::Type{J1J2Heisenberg}, ::Type{<:ClusterPEPO}) = FullStepper
 
 function (M::Type{<:AbstractModel})(L...; kwargs...)
     itr = map(L) do op
@@ -75,14 +75,14 @@ function broadcastmodel(::Type{Combine}, model, physical, method::GlobalTEBD; kw
 
     return rv
 end
-function broadcastmodel(::Type{Combine}, model, physical, method::GlobalDMPO; kwargs...)
+function broadcastmodel(::Type{Combine}, model, physical, method::GlobalClusterMPO; kwargs...)
     model = unwrap(model)
 
     rv =
         timestep -> begin
             mpo = MPO(model)
 
-            data = dynamicalmpo(
+            data = clustermpo(
                 mpo,
                 timestep,
                 method.order;
@@ -91,14 +91,14 @@ function broadcastmodel(::Type{Combine}, model, physical, method::GlobalDMPO; kw
                 method.approx,
             )
 
-            tensor = dmpotensor(data, physical)
+            tensor = clustermpotensor(data, physical)
 
             return tensor
         end
 
     return rv
 end
-function (model::Union{J1J2Heisenberg,Heisenberg})(physical, method::TEPEPSO; kwargs...)
+function (model::Union{J1J2Heisenberg,Heisenberg})(physical, method::ClusterPEPO; kwargs...)
     kw = paramkwargs(model)
 
     L = linops(model)

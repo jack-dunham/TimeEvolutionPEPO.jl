@@ -566,39 +566,39 @@ abstract type AbstractTimeEvolution end
 
 Base.show(io::IO, m::MIME"text/plain", sim::AbstractTimeEvolution) = shownested(io, m, sim)
 
-abstract type AbstractDMPO <: AbstractTimeEvolution end
+abstract type AbstractClusterMPO <: AbstractTimeEvolution end
 
-Base.parent(dmpo::AbstractDMPO) = getfield(dmpo, :parent)
+Base.parent(ClusterMPO::AbstractClusterMPO) = getfield(ClusterMPO, :parent)
 
-@kwdef struct DMPO{TAlg<:AbstractTruncationScheme} <: AbstractDMPO
+@kwdef struct ClusterMPO{TAlg<:AbstractTruncationScheme} <: AbstractClusterMPO
     approx::Bool = true
     compress::Bool = true
     extend::Bool = true
     order::Int = 1
-    truncalg::TAlg = SU()
+    alg::TAlg = SimpleUpdate()
     verbose::Bool = true
 end
 
-UpdateStyle(::Type{<:DMPO}) = IsAxial()
+UpdateStyle(::Type{<:ClusterMPO}) = IsAxial()
 
-struct GlobalDMPO{TAlg} <: AbstractDMPO
-    parent::DMPO{TAlg}
+struct GlobalClusterMPO{TAlg} <: AbstractClusterMPO
+    parent::ClusterMPO{TAlg}
 end
 
-GlobalDMPO(; kwargs...) = GlobalDMPO(DMPO(; kwargs...))
+GlobalClusterMPO(; kwargs...) = GlobalClusterMPO(ClusterMPO(; kwargs...))
 
-UpdateStyle(::Type{<:GlobalDMPO}) = IsGlobal()
+UpdateStyle(::Type{<:GlobalClusterMPO}) = IsGlobal()
 
-showheader(::Type{<:DMPO}) = "Dynamical matrix product operator (DMPO)"
+showheader(::Type{<:ClusterMPO}) = "Dynamical matrix product operator (ClusterMPO)"
 
 abstract type AbstractTEBD <: AbstractTimeEvolution end
 
 Base.show(io::IO, m::MIME"text/plain", sim::AbstractTEBD) = shownested(io, m, sim)
 showheader(::Type{<:AbstractTEBD}) = "Time-evolving block decimation (TEBD)"
 
-Base.parent(tebd::Union{AbstractTEBD,AbstractDMPO}) = getfield(tebd, :parent)
+Base.parent(tebd::Union{AbstractTEBD,AbstractClusterMPO}) = getfield(tebd, :parent)
 
-function Base.getproperty(method::Union{AbstractTEBD,AbstractDMPO}, sym::Symbol)
+function Base.getproperty(method::Union{AbstractTEBD,AbstractClusterMPO}, sym::Symbol)
     if sym === :parent
         return getfield(method, sym)
     else
@@ -606,15 +606,15 @@ function Base.getproperty(method::Union{AbstractTEBD,AbstractDMPO}, sym::Symbol)
     end
 end
 
-@kwdef mutable struct TEBD{TAlg<:AbstractTruncationScheme} <: AbstractTEBD
+@kwdef mutable struct TEBD{Alg<:AbstractTruncationScheme} <: AbstractTEBD
     compresstol::Float64 = eps()
-    truncalg::TAlg = SU()
+    alg::Alg = SimpleUpdate()
     verbose::Bool = true
 end
 
 UpdateStyle(::Type{<:TEBD}) = IsLocal()
 
-Base.parent(method::Union{TEBD,DMPO}) = method
+Base.parent(method::Union{TEBD,ClusterMPO}) = method
 
 struct AxialTEBD{TAlg} <: AbstractTEBD
     parent::TEBD{TAlg}
@@ -632,26 +632,16 @@ GlobalTEBD(; kwargs...) = GlobalTEBD(TEBD(; kwargs...))
 
 UpdateStyle(::Type{<:GlobalTEBD}) = IsGlobal()
 
-@kwdef struct TETNO{TAlg,Style} <: AbstractTimeEvolution
-    truncalg::TAlg = SU()
-    truncstyle::Style = SemiParallel()
-    verbose::Bool = true
-end
-
-truncstyle(method::TETNO) = method.truncstyle
-
-showheader(::Type{<:TETNO}) = "Time-evolving tensor network operator (TETNO)"
-
-@kwdef struct TEPEPSO{TAlg} <: AbstractTimeEvolution
-    truncalg::TAlg = IterativeSU()
+@kwdef struct ClusterPEPO{Alg} <: AbstractTimeEvolution
+    alg::Alg = IterativeSU()
     verbose::Bool = true
     extend::Bool = true
 end
 
-UpdateStyle(::TEPEPSO) = IsGlobal()
+UpdateStyle(::ClusterPEPO) = IsGlobal()
 
-truncstyle(method::TEPEPSO) = Global()
+truncstyle(method::ClusterPEPO) = Global()
 
-function showheader(::Type{<:TEPEPSO})
-    return "Time-evolving projected entangled pair super-operator (tePEPSO)"
+function showheader(::Type{<:ClusterPEPO})
+    return "Time-evolving projected entangled pair super-operator (ClusterPEPO)"
 end

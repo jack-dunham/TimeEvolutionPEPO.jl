@@ -45,14 +45,14 @@ export ThermalState
 export AbstractPEPO, PEPO, expandspace, subpepo, unsymmetrise, weights
 export Bond
 
-export TEBD, AxialTEBD, GlobalTEBD, DMPO, GlobalTEBD, TEPEPSO
+export TEBD, AxialTEBD, GlobalTEBD, ClusterMPO, GlobalTEBD, ClusterPEPO
 export LocalUpdate, GlobalUpdate
-export SU, SVDU, NTU, FET, IterativeSU
+export SimpleUpdate, SVDU, NTU, FET, IterativeSU
 export Simulation, simulate!, quantumstate
 
 export EVB, DZM, WTG, MCF, NoGauge
 
-export dynamicalmpo, MPO
+export clustermpo, MPO
 
 export Hamiltonian, Liouvillian, Dissipator, TrotterLayer, Model, Ising
 

@@ -163,8 +163,9 @@ abstract type AbstractTruncatorState end
 # Most basic algorithm for truncating bonds
 struct SimpleUpdateState <: AbstractTruncatorState end
 
-# SU, FET, NTU
+# SimpleUpdate, FET, NTU
 abstract type AbstractTruncationScheme end
+abstract type AbstractSimpleTruncationScheme <: AbstractTruncationScheme end
 
 function Base.show(io::IO, m::MIME"text/plain", sim::AbstractTruncationScheme)
     shownested(io, m, sim)
@@ -175,7 +176,7 @@ end
 @kwdef mutable struct FET{
     BAlg<:AbstractBoundaryAlgorithm,OAlg<:AbstractIsometryOptimisation,G<:Union{NoGauge,MCF}
 } <: AbstractTruncationScheme
-    ξ::Float64 = Inf
+    zeta::Float64 = Inf
     rankreduce::Bool = true
     optalg::OAlg = EVB()
     gauge::G = NoGauge()
@@ -186,7 +187,7 @@ showheader(::Type{<:FET}) = "Full environment truncation (FET)"
 
 @kwdef mutable struct NTU{OAlg<:AbstractIsometryOptimisation,G<:Union{NoGauge,MCF}} <:
                       AbstractTruncationScheme
-    ξ::Float64 = Inf
+    zeta::Float64 = Inf
     rankreduce::Bool = true
     optalg::OAlg = DZM()
     gauge::G = NoGauge()
@@ -194,20 +195,24 @@ end
 
 showheader(::Type{<:NTU}) = "Neighbourhood tensor update (NTU)"
 
-@kwdef mutable struct SVDU{G<:Union{NoGauge,MCF}} <: AbstractTruncationScheme
+@kwdef mutable struct SVDU{G<:Union{NoGauge,MCF}} <: AbstractSimpleTruncationScheme
     gauge::G = NoGauge()
-    ξ::Float64 = Inf
+    zeta::Float64 = Inf
+    reduce::Symbol = :pre
 end
 
-@kwdef mutable struct SU{G<:Union{NoGauge,MCF}} <: AbstractTruncationScheme
+@kwdef mutable struct SimpleUpdate{G<:Union{NoGauge,MCF}} <: AbstractSimpleTruncationScheme
     gauge::G = NoGauge()
-    ξ::Float64 = Inf
+    zeta::Float64 = Inf
+    reduce::Symbol = :pre
 end
 
-showheader(::Type{<:SU}) = "Simple update"
+
+showheader(::Type{<:SVDU}) = "Singular value decomposition update (SVDU)"
+showheader(::Type{<:SimpleUpdate}) = "Simple update (SimpleUpdate)"
 
 @kwdef mutable struct VGU <: AbstractTruncationScheme
-    ξ::Float64 = Inf
+    zeta::Float64 = Inf
 end
 
 ## Initalialize truncators for a full TD-PEPO
@@ -223,7 +228,7 @@ function newtruncators(pepo::PEPO, _, truncalg::Union{FET,NTU})
     xenv = newtruncators(pepo, truncalg)
     return xenv, xenv
 end
-function newtruncators(::PEPO, _, truncalg::Union{SU,SVDU})
+function newtruncators(::PEPO, _, truncalg::Union{SimpleUpdate,SVDU})
     xenv = SimpleUpdateState()
     return xenv, xenv
 end
@@ -233,7 +238,7 @@ function newtruncators(pepo::AxialPEPO, _, truncalg::Union{FET,NTU})
     return xenv, yenv
 end
 
-function newtruncators(::NTuple{2,P}, ::Vector{S}, truncalg::SU) where {P<:AbstractPEPO,S}
+function newtruncators(::NTuple{2,P}, ::Vector{S}, truncalg::SimpleUpdate) where {P<:AbstractPEPO,S}
     return SimpleUpdateState(), SimpleUpdateState()
 end
 

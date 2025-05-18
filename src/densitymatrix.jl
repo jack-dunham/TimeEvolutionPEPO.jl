@@ -869,7 +869,7 @@ function testextrap(; Jy=1.2, D=4)
         trotterorder=1,
         numsteps=10000,
         timestep=0.01,
-        truncalg=PEPOKit.SU(; ξ=xi0),
+        truncalg=PEPOKit.SimpleUpdate(; zeta=zeta0),
     )
     sim = Simulation(
         [PEPOKit.OnAxis(model, 1), PEPOKit.OnAxis(model, 2)],
@@ -893,7 +893,7 @@ function testextrap(; Jy=1.2, D=4)
             trotterorder=1,
             numsteps=10000,
             timestep=0.01,
-            truncalg=PEPOKit.SU(; ξ=xi0),
+            truncalg=PEPOKit.SimpleUpdate(; zeta=zeta0),
         )
         sim = Simulation(sim.model, PEPOKit.quantumstate(sim), method, SimulationInfo())
 
@@ -934,7 +934,7 @@ function testCFconv(; D=4)
         trotterorder=1,
         numsteps=10000,
         timestep=0.01,
-        truncalg=PEPOKit.SU(; ξ=Inf),
+        truncalg=PEPOKit.SimpleUpdate(; zeta=Inf),
     )
 
     for Jy in (Js = 1.45:0.05:1.55)
@@ -1058,7 +1058,7 @@ end
     correlationlength(state::PEPO, env::AbstractBoundary) -> Float64
     correlationlength(state::PEPO, alg::AbstractBoundaryAlgorithm) -> Float64
 
-Calculate the correlation length ξ of the quantum state `state` by constructing the transfer
+Calculate the correlation length zeta of the quantum state `state` by constructing the transfer
 matrix and computing the the inverse of the sub-leading eigenvalue.
 
 The correlation length characterizes how quickly correlations decay with distance in a
@@ -1087,7 +1087,7 @@ function correlationlength(f, qs, chis=8:1:16)
     return delt_vec, eps1_vec
 end
 
-function _testising(; xi=Inf, D=2)
+function _testising(; zeta=Inf, D=2)
     rho = fill(ThermalState(), 2, 2)
 
     # βc = log(1 + sqrt(2)) / 2
@@ -1097,12 +1097,12 @@ function _testising(; xi=Inf, D=2)
     # H = Heisenberg(; Jz=-1.0)
     # Until b = 0.8
 
-    alg = NTU(; optalg=EVB(; gauge=WTG()), ξ=xi, rankreduce=false)
+    alg = NTU(; optalg=EVB(; gauge=WTG()), zeta=zeta, rankreduce=false)
 
     method_coarse = TEBD(; timestep=0.01 * βc, truncalg=alg)
     method_fine = TEBD(; timestep=0.01 * βc, truncalg=alg)
-    # method_coarse = TEBD(; timestep=0.01 * βc, truncalg=PEPOKit.SU(; ξ=xi))
-    # method_coarse = TEBD(; timestep=0.0001 * βc, truncalg=PEPOKit.SU(; ξ=xi))
+    # method_coarse = TEBD(; timestep=0.01 * βc, truncalg=PEPOKit.SimpleUpdate(; zeta=zeta))
+    # method_coarse = TEBD(; timestep=0.0001 * βc, truncalg=PEPOKit.SimpleUpdate(; zeta=zeta))
 
     model = [OnAxis(H, 1), OnAxis(H, 2)]
 
@@ -1172,7 +1172,7 @@ function testising(; D=2)
     # Ds = [5,6,7]
 
     foreach(xis) do xi
-        zs, ls, ts, cs = _testising(; xi=xi, D=D)
+        zs, ls, ts, cs = _testising(; zeta=zeta, D=D)
 
         push!(Zs, zs)
         push!(Ls, ls)
@@ -1211,7 +1211,7 @@ function test_ising_extrap(; hx=0.0, D=5, numsteps=400)
     alg = VUMPS(; bonddim=16, maxiter=200, tol=1e-10)
 
     for xi in xis
-        method = TEBD(; timestep=0.0025 * βc, truncalg=PEPOKit.SU(; ξ=xi))
+        method = TEBD(; timestep=0.0025 * βc, truncalg=PEPOKit.SimpleUpdate(; zeta=zeta))
 
         sim = Simulation(model, rho, S; physical=s, method=method)
 
@@ -1244,7 +1244,7 @@ function alltestbias(; D=5)
     # Ds = [5,6,7]
 
     foreach(hz) do hz
-        zs, ls, ts = testquantum(; xi=Inf, D=D, hz=hz)
+        zs, ls, ts = testquantum(; zeta=Inf, D=D, hz=hz)
 
         push!(Zs, zs)
         push!(Ls, ls)
@@ -1254,7 +1254,7 @@ function alltestbias(; D=5)
     return Xis, Zs, Ls, Ts
 end
 
-function alltestquantum(; D=5)
+function alltestquantum(; D=5, N = 1)
     Xis = [exp10(i) for i in 4:0.2:5]
     Ds = [6, 7, 8]
 
@@ -1265,7 +1265,7 @@ function alltestquantum(; D=5)
 
     # foreach(Xis) do xi
     foreach(Ds) do D
-        zs, ls, ts = testquantum(; xi=Inf, D=D)
+        zs, ls, ts = testquantum(; zeta=Inf, D=D, N = N)
 
         push!(Zs, zs)
         push!(Ls, ls)
@@ -1275,34 +1275,36 @@ function alltestquantum(; D=5)
     return Xis, Zs, Ls, Ts
 end
 
-function testquantum(; xi=Inf, D)
+function testquantum(; zeta=Inf, D, N=1)
     X, _, Z = PAULI
 
     rho = fill(ThermalState(), 2, 2)
 
     βc = 1 / 1.2737
 
-    h = 2.5 * LocalOp(X)
-
     # model = Model(-1.0 * LocalOp(Z,Z) + 2.5 * LocalOp(X))
-    model = Model(PEPOKit.Ising(-1.0, Z, [2.5 * LocalOp(X)]))
+    model = Model(PEPOKit.Ising(-1.0, Z, [2.5 * LocalOp(X), 0.005 * LocalOp(Z)]))
+
     # model = Model([0.5 * h, -1.0 * LocalOp(Z,Z), 0.5 * h])
 
-    truncalg = PEPOKit.SU(; ξ=xi)
-    # truncalg = PEPOKit.NTU(ξ = xi, optalg=DZM(check=false))
+    truncalg = PEPOKit.SimpleUpdate(; zeta=zeta)
+    # truncalg = PEPOKit.NTU(;zeta = xi, optalg=EVB())
 
     # Need 400 iterations total
-    method = TEBD(; timestep=0.02βc / 8, truncalg=truncalg)
-
+    # method = TEBD(; truncalg=truncalg)
+    method = TEBD(; truncalg=PEPOKit.NTU(rankreduce=true, zeta=zeta, optalg=DZM(isotol=1e-8, gauge=NoGauge())))
+    # method = TEBD(; truncalg=PEPOKit.FET( 
+    #     alg=VUMPS(bonddim=4, tol=1e-8), rankreduce=false, optalg=PEPOKit.EVB()))
     # alg = CTMRG(; bonddim=25, maxiter=200, tol=1e-8, randinit=false)
-    alg = VUMPS(; bonddim=16, maxiter=200, tol=1e-8)
+    alg = VUMPS(; bonddim=4, maxiter=200, tol=1e-8)
 
     s = ComplexSpace(2)
     S = ComplexSpace(D)
 
     output = Float64[]
-
-    sim = Simulation(model, rho, S; physical=s, method=method)
+    timestep=0.02βc / (8 * N)
+    sim = Simulation(model, rho, s, S; method=method, timestep=timestep)
+    # sim = Simulation(model, rho, s, S; method=TEBD(), timestep=timestep)
 
     t0 = 0
 
@@ -1312,13 +1314,16 @@ function testquantum(; xi=Inf, D)
     Ts = Float64[]
 
     # simulate!(identity, sim, 80)
-    simulate!(identity, sim, 300)
+    simulate!(identity, sim; numsteps = 300 * N)
 
-    simulate!(sim, 200; maxshots=50) do sim
+    sim = Simulation(model, quantumstate(sim), method, sim.info; timestep=timestep)
+
+    simulate!(sim; numsteps = 200 * N, maxshots=40) do sim
         dm = DensityMatrix(quantumstate(sim), alg)
+        # dm = PurifiedDensityMatrix(quantumstate(sim), alg)
         rdm = partialtrace(dm, (1, 1))
 
-        m = abs(expval(rdm, z))
+        M = abs(expval(rdm, Z))
 
         push!(Zs, M)
 
@@ -1329,7 +1334,7 @@ function testquantum(; xi=Inf, D)
             push!(Ls, NaN)
         end
 
-        push!(Ts, 1 / (t0 + sim.info.iterations * method.timestep))
+        push!(Ts, 1 / (t0 + sim.info.iterations * timestep))
     end
 
     return Zs, Ls, Ts
@@ -1347,7 +1352,7 @@ function extrapquantum(; D)
     model = Model(-1.0 * LocalOp(Z, Z) + 2.5 * LocalOp(X))
     # model = Model([0.5 * h, -1.0 * LocalOp(Z,Z), 0.5 * h])
 
-    # truncalg = PEPOKit.NTU(ξ = xi)
+    # truncalg = PEPOKit.NTU(zeta = xi)
 
     # Need 400 iterations total
 
@@ -1365,7 +1370,7 @@ function extrapquantum(; D)
 
     Xs = [exp10(i) for i in 4:0.1:5]
     for xi in Xs
-        truncalg = PEPOKit.SU(; ξ=xi)
+        truncalg = PEPOKit.SimpleUpdate(; zeta=zeta)
         method = TEBD(; timestep=(0.02 * βc) / 4, truncalg=truncalg)
 
         sim = Simulation(model, rho, S; physical=s, method=method)

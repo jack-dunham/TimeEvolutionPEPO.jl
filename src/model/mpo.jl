@@ -83,7 +83,7 @@ function MPO(eqn::Union{Hamiltonian, Liouvillian})
             @debug "Adding 2-local term" h.a
             nothing
         else
-            throw(ArgumentError("incompatible term of type $(typeof(h)) for method DMPO"))
+            throw(ArgumentError("incompatible term of type $(typeof(h)) for method ClusterMPO"))
         end
 
         @debug a1 a2
@@ -117,11 +117,11 @@ function MPO(eqn::Union{Hamiltonian, Liouvillian})
     return MPO(A, B, C, D)
 end
 
-function dynamicalmpo(eqn::Model, dt::Number, order::Integer; kwargs...)
-    return dynamicalmpo(MPO(eqn), dt, order; kwargs...)
+function clustermpo(eqn::Model, dt::Number, order::Integer; kwargs...)
+    return clustermpo(MPO(eqn), dt, order; kwargs...)
 end
 
-function dynamicalmpo(
+function clustermpo(
     H::MPO, dt::Number, order::Integer; extend=true, compress=true, approx=true
 )
     N = order

@@ -1,13 +1,13 @@
 function initevolution(
     pepo::AbstractPEPO, map::DynamicalMap{<:WIIPEPO}, evoalg::Union{TNO}
 )
-    pepo = _initevolution(pepo, map.x, evoalg.truncalg)
+    pepo = _initevolution(pepo, map.x, evoalg.alg)
     return pepo
 end
 function _initevolution(pepo::AbstractPEPO, ::WIIPEPO, ::VGU)
     return GlobalUpdatablePEPO(pepo, deepcopy(getstate(pepo)), false)
 end
-function _initevolution(pepo::AbstractPEPO, map::WIIPEPO, ::SU)
+function _initevolution(pepo::AbstractPEPO, map::WIIPEPO, ::SimpleUpdate)
     function useful_f(x, l)
         D = domain(x)
         η = domain(l)

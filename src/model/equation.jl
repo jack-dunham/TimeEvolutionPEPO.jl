@@ -131,12 +131,12 @@ function broadcastmodel(model::OnAxis)
     return broadcast
 end
 
-# function (model::LindbladEquation)(physical, method::AbstractDMPO; kwargs...)
+# function (model::LindbladEquation)(physical, method::AbstractClusterMPO; kwargs...)
 #     rv =
 #         timestep -> begin
 #             mpo = MPO(model)
 #
-#             data = dynamicalmpo(
+#             data = clustermpo(
 #                 mpo,
 #                 timestep,
 #                 method.order;
@@ -145,7 +145,7 @@ end
 #                 method.approx,
 #             )
 #
-#             tensor = dmpotensor(data, physical)
+#             tensor = clustermpotensor(data, physical)
 #
 #             return tensor
 #         end
@@ -226,7 +226,7 @@ function broadcastmodel(
     return rv
 end
 
-function broadcastmodel(::Type{<:Union{Hamiltonian,Liouvillian}}, model, physical, method::TEPEPSO; kwargs...)
+function broadcastmodel(::Type{<:Union{Hamiltonian,Liouvillian}}, model, physical, method::ClusterPEPO; kwargs...)
     # kw = paramkwargs(model)
 
     #TODO, let TrotterLayer be hamiltonain or liouvvilian
@@ -248,12 +248,12 @@ function broadcastmodel(::Type{<:Union{Hamiltonian,Liouvillian}}, model, physica
     return rv
 end
 
-function (model::Union{Hamiltonian, Liouvillian})(physical, method::DMPO; kwargs...)
+function (model::Union{Hamiltonian, Liouvillian})(physical, method::ClusterMPO; kwargs...)
     rv =
         timestep -> begin
             mpo = MPO(model)
 
-            data = dynamicalmpo(
+            data = clustermpo(
                 mpo,
                 timestep,
                 method.order;
@@ -262,7 +262,7 @@ function (model::Union{Hamiltonian, Liouvillian})(physical, method::DMPO; kwargs
                 method.approx,
             )
 
-            tensor = dmpotensor(data, physical)
+            tensor = clustermpotensor(data, physical)
 
             return tensor
         end

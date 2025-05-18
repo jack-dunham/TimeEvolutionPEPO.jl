@@ -42,12 +42,12 @@ getparams(axp::AxialIsing) = (axp.J, axp.K)
 stepper_type(::AxialHeisenberg, _) = AxialStepper
 stepper_type(::AbstractMatrix{<:AxialHeisenberg}, _) = AxialStepper
 
-function (model::AxialHeisenberg)(physical, method::AbstractDMPO; kwargs...)
+function (model::AxialHeisenberg)(physical, method::AbstractClusterMPO; kwargs...)
     rv =
         timestep -> begin
             mpo = MPO(model)
 
-            data = dynamicalmpo(
+            data = clustermpo(
                 mpo,
                 timestep,
                 method.order;
@@ -56,7 +56,7 @@ function (model::AxialHeisenberg)(physical, method::AbstractDMPO; kwargs...)
                 method.approx,
             )
 
-            tensor = dmpotensor(data, physical)
+            tensor = clustermpotensor(data, physical)
 
             return tensor
         end
@@ -156,7 +156,7 @@ function MPO(model::AxialHeisenberg)
     return MPO(A, B, C, D)
 end
 
-function (model::AxialIsing)(physical, method::TEPEPSO; kwargs...)
+function (model::AxialIsing)(physical, method::ClusterPEPO; kwargs...)
     rv =
         timestep -> begin
             tensor = fsmaxialising(Matrix.(model.L), physical, timestep; J=model.J, K=model.K)

@@ -4,7 +4,7 @@
     sequential::Bool = false
     recycle::Bool = true
     gauge::Int = 0
-    xi = Inf
+    zeta::Float64 = Inf
 end
 @kwdef mutable struct IterativeSUTest <: AbstractTruncationScheme
     maxiter::Int = 50
@@ -12,7 +12,7 @@ end
     sequential::Bool = false
     recycle::Bool = true
     gauge::Int = 0
-    xi = Inf
+    zeta::Float64 = Inf
 end
 
 struct Isometries{G,N,U<:AbsTen{N},V<:TenAbs{N}}
@@ -309,7 +309,7 @@ function iterative_simple_update_prototype!(
 
             for bond in itr
                 (u, v), s, _ = iterative_simple_update_step(
-                    pepo!, stepper, isoms, bond; xi=Inf
+                    pepo!, stepper, isoms, bond; zeta=Inf
                 )
 
                 setindex!(isoms, u => v, bond)
@@ -423,7 +423,7 @@ function iterative_simple_update_prototype!(
                     @warn "overlap:  " rv / sqrt(rvnorm1)
                 end
                 (u, v), s, _ = iterative_simple_update_step(
-                    pepo!, stepper, isoms, bond; xi=Inf
+                    pepo!, stepper, isoms, bond; zeta=Inf
                 )
 
                 setindex!(newisoms, u => v, bond)
@@ -649,16 +649,16 @@ function iterative_neighbourhood_update!(pepo, truncator, stepper)
 
     # return pepo
 
-    # ξ = 500.0
-    ξ = Inf
-    # truncalg = NTU(; ξ=ξ, rankreduce=false, optalg=EVB(; gauge=NoGauge()))
-    truncalg = NTU(; ξ=ξ, rankreduce=false, optalg=EVB(; maxiter=100))
-    # truncalg = FET(; alg=VUMPS(bonddim=16, tol=1e-8), ξ=ξ, rankreduce=false, optalg=EVB())
-    # truncalg = NTU(; ξ=ξ, rankreduce=true, optalg=DZM(EAT=false,gauge=NoGauge()))
-    # truncalg = NTU(; ξ=ξ, rankreduce=true, optalg=DZM())
-    # truncalg = SU()
+    # zeta = 500.0
+    zeta = Inf
+    # truncalg = NTU(; zeta=zeta, rankreduce=false, optalg=EVB(; gauge=NoGauge()))
+    truncalg = NTU(; zeta=zeta, rankreduce=false, optalg=EVB(; maxiter=100))
+    # truncalg = FET(; alg=VUMPS(bonddim=16, tol=1e-8), zeta=zeta, rankreduce=false, optalg=EVB())
+    # truncalg = NTU(; zeta=zeta, rankreduce=true, optalg=DZM(EAT=false,gauge=NoGauge()))
+    # truncalg = NTU(; zeta=zeta, rankreduce=true, optalg=DZM())
+    # truncalg = SimpleUpdate()
 
-    # println("xi = $(ξ)")
+    # println("xi = $(zeta)")
 
     # evx = evolvedtensors(pepox)[1]
     # evy = evolvedtensors(pepoy)[1]

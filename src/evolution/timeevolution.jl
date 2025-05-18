@@ -13,7 +13,7 @@ function timestep!(pepo, truncator, stepper, truncalg; kwargs...)
 
     return pepo
 end
-function _timestep!(pepo::PEPO, truncator, stepper::LocalStepper, truncalg::SU; kwargs...)
+function _timestep!(pepo::PEPO, truncator, stepper::LocalStepper, truncalg::SimpleUpdate; kwargs...)
     size(pepo) < (2, 2) && throw(ArgumentError(""))
 
     axis = stepper.axis
@@ -38,7 +38,7 @@ function _timestep!(pepo::PEPO, truncator, stepper::LocalStepper, truncalg::SU; 
     return pepo
 end
 
-function timestep!(pepo!::PEPO, truncator, stepper::FullStepper, truncalg::SU; kwargs...)
+function timestep!(pepo!::PEPO, truncator, stepper::FullStepper, truncalg::SimpleUpdate; kwargs...)
     isoms = newisometries(pepo!, stepper)
 
     newpepo = evolve(pepo!, stepper)
@@ -54,7 +54,7 @@ function timestep!(pepo!::PEPO, truncator, stepper::FullStepper, truncalg::SU; k
 end
 
 # function timestep!(
-#     pepo!::AxialPEPO, truncator, stepper::AxialStepper, truncalg::SU; kwargs...
+#     pepo!::AxialPEPO, truncator, stepper::AxialStepper, truncalg::SimpleUpdate; kwargs...
 # )
 #     axis = stepper.axis
 #
@@ -108,18 +108,18 @@ function timestep!(
         pair = evolvemerge(pepo, stepper, bond)
 
 
-        if truncalg.rankreduce
+        if false #truncalg.rankreduce
             init_weights = environment!(pepo.parent, SimpleUpdateState(), bond)
             if axis == 2
                 init_weights = permutedims(init_weights)
             end
 
-            pair, initiso = updatetensors(pair, init_weights, SU(), bond)
+            pair, initiso = updatetensors(pair, init_weights, SimpleUpdate(), bond)
 
             env = environment!(pepo, truncator[axis], bond)
             (u, v), s, _ = metric_isometries_from_simple_update!(
                 pair, initiso, env, bond;
-                D=D, optalg=truncalg.optalg, xi=truncalg.ξ
+                D=D, optalg=truncalg.optalg, zeta=truncalg.zeta
             )
 
         else
@@ -174,7 +174,7 @@ function timestep!(
 end
 
 function timestep!(
-    pepo::AxialPEPO, truncator, stepper::AxialStepper, truncalg::SU; kwargs...
+    pepo::AxialPEPO, truncator, stepper::AxialStepper, truncalg::SimpleUpdate; kwargs...
 )
     axis = stepper.axis
 
@@ -189,7 +189,7 @@ function timestep!(
 
     evpepo = evolve(pepo, stepper)
 
-    axial = true
+    axial = false
 
     if !axial
         if 1 in size(evpepo)
@@ -291,7 +291,7 @@ function timestep!(pepo!::PEPO, truncator!::Isometries, stepper, truncalg::Itera
         recycle=truncalg.recycle,
         sequential=truncalg.sequential,
         gauge=truncalg.gauge,
-        xi=truncalg.xi,
+        zeta=truncalg.zeta,
     )
 
     return pepo!
@@ -306,7 +306,7 @@ function timestep!(pepo!::PEPO, truncator!::Isometries, stepper, truncalg::Itera
         recycle=truncalg.recycle,
         sequential=truncalg.sequential,
         gauge=truncalg.gauge,
-        xi=truncalg.xi,
+        zeta=truncalg.zeta,
         check_fidelity=true,
     )
 
@@ -555,16 +555,16 @@ function _timestep!(
 
     # return pepo
 
-    # ξ = 500.0
-    ξ = Inf
-    # truncalg = NTU(; ξ=ξ, rankreduce=false, optalg=EVB(; gauge=NoGauge()))
-    truncalg = NTU(; ξ=ξ, rankreduce=false, optalg=EVB())
-    # truncalg = FET(; alg=VUMPS(bonddim=16, tol=1e-8), ξ=ξ, rankreduce=false, optalg=EVB())
-    # truncalg = NTU(; ξ=ξ, rankreduce=false, optalg=DZM(gauge=NoGauge()))
-    # truncalg = NTU(; ξ=ξ, rankreduce=true, optalg=DZM())
-    # truncalg = SU()
+    # zeta = 500.0
+    zeta = Inf
+    # truncalg = NTU(; zeta=zeta, rankreduce=false, optalg=EVB(; gauge=NoGauge()))
+    truncalg = NTU(; zeta=zeta, rankreduce=false, optalg=EVB())
+    # truncalg = FET(; alg=VUMPS(bonddim=16, tol=1e-8), zeta=zeta, rankreduce=false, optalg=EVB())
+    # truncalg = NTU(; zeta=zeta, rankreduce=false, optalg=DZM(gauge=NoGauge()))
+    # truncalg = NTU(; zeta=zeta, rankreduce=true, optalg=DZM())
+    # truncalg = SimpleUpdate()
 
-    # println("xi = $(ξ)")
+    # println("xi = $(zeta)")
 
     # evx = evolvedtensors(pepox)[1]
     # evy = evolvedtensors(pepoy)[1]
@@ -728,7 +728,7 @@ function halftimestep!(
     stepper = stepper[dir]
 
     # truncalg = NTU(; rankreduce=false, optalg=EVB())
-    truncalg = SU()
+    truncalg = SimpleUpdate()
     trunc = SimpleUpdateState()
     # truncalg = FET(; alg=VUMPS(bonddim=16), rankreduce=false, optalg=EVB())
 
@@ -930,7 +930,7 @@ function _bptimestep!(
 
     # truncate
 
-    truncalg = SU()
+    truncalg = SimpleUpdate()
     truncator = SimpleUpdateState()
 
     infidelity = similar(bondv, Float64)

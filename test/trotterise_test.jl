@@ -2,7 +2,7 @@
 using Reexport
 @reexport using TimeEvolutionPEPO
 @reexport import TimeEvolutionPEPO: combineaxial, TrotterLayer, Combine
-@reexport import TimeEvolutionPEPO: GlobalTEBD, GlobalDMPO, changeaxis, terms
+@reexport import TimeEvolutionPEPO: GlobalTEBD, GlobalClusterMPO, changeaxis, terms
 @reexport import TimeEvolutionPEPO: trotterlayers, seperateaxis, isexpandable
 @reexport import TimeEvolutionPEPO: PowOp, LocalOp, GaussOp2d, oneterms, distributelocal
 end

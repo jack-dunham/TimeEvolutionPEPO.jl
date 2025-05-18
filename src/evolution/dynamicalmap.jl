@@ -156,8 +156,7 @@ function _trotterise(physical, steps, method)
     return trotterlist
 end
 
-function trotterise(physical, model, method::Union{GlobalTEBD, GlobalDMPO})
-
+function trotterise(physical, model, method::Union{GlobalTEBD,GlobalClusterMPO})
     steps = combineaxial(model.layers)
 
     trotterlist = _trotterise(physical, steps, method)
@@ -165,8 +164,7 @@ function trotterise(physical, model, method::Union{GlobalTEBD, GlobalDMPO})
     return trotterlist
 end
 
-function trotterise(physical, model, method::Union{TEBD, AxialTEBD, DMPO})
-
+function trotterise(physical, model, method::Union{TEBD,AxialTEBD,ClusterMPO})
     @debug "seperating..."
     steps = seperateaxis(model.layers)
 
@@ -175,7 +173,7 @@ function trotterise(physical, model, method::Union{TEBD, AxialTEBD, DMPO})
     return trotterlist
 end
 
-function trotterise(physical, model, method::TEPEPSO)
+function trotterise(physical, model, method::ClusterPEPO)
 
     # oneloc = oneterms(model)
 
@@ -254,9 +252,10 @@ function newstepper(physical, model, method; timestep, order)
 
     tau = timestep
 
-    if length(trotterlist) == 1 && method isa TEPEPSO
+    if length(trotterlist) == 1 && method isa ClusterPEPO
         # No trotterisation required if we have made it this far with only one operator 
         # using TEPEPSO
+        # using ClusterPEPO
         # in the list
         theop = only(only(trotterlist)(tau))
 
@@ -473,7 +472,7 @@ stepper(step, method::TEBD; kwargs...) = stepper(step, method.updatestyle; kwarg
 function stepper(step, ::LocalUpdate; axis, isreversed=false)
     return OneBondStepper(step, axis, isreversed)
 end
-function stepper(step, ::Union{GlobalUpdate,DMPO}; axis, isreversed=false)
+function stepper(step, ::Union{GlobalUpdate,ClusterMPO}; axis, isreversed=false)
     return TwoBondStepper(step, axis, isreversed)
 end
 
@@ -492,11 +491,14 @@ end
 # end
 
 function timestepper(
-    physical::AbstractUnitCell, model::AbstractUnitCell, method::DMPO; tau=method.timestep
+    physical::AbstractUnitCell,
+    model::AbstractUnitCell,
+    method::ClusterMPO;
+    tau=method.timestep,
 )
     # Calculate the time-evolution mpo for each unique mpo
     tempo = broadcast(
-        x -> dynamicalmpo(
+        x -> clustermpo(
             x,
             tau,
             method.order;
@@ -508,7 +510,7 @@ function timestepper(
     )
 
     t = broadcast(eachindex(physical), physical) do ind, p
-        return dmpotensor(tempo[ind[1], ind[2]], p)
+        return clustermpotensor(tempo[ind[1], ind[2]], p)
     end
 
     rv = [(t, t)]
@@ -530,7 +532,7 @@ function timestepper(
 end
 
 # function timestepper(physical::AbstractUnitCell, model::AbstractUnitCell, method::TETNO)
-#     newmethod = DMPO(timestep=method.timestep, numsteps=method.numsteps)
+#     newmethod = ClusterMPO(timestep=method.timestep, numsteps=method.numsteps)
 #
 #     # e,w
 #     # s,n
@@ -548,7 +550,7 @@ end
 # end
 
 function timestepper(
-    physical::AbstractUnitCell, model::AbstractUnitCell, method::Union{TETNO,TEPEPSO}; tau
+    physical::AbstractUnitCell, model::AbstractUnitCell, method::ClusterPEPO; tau
 )
     return FullStepper(model)
 end
@@ -625,7 +627,7 @@ function tebdtensor(model::AbstractMatrix, p1::IndexSpace, p2::IndexSpace, dt; c
     return u * sqrt(s), _transpose(sqrt(s) * v)
 end
 
-function dmpotensor(mpo, p::S) where {S<:IndexSpace}
+function clustermpotensor(mpo, p::S) where {S<:IndexSpace}
     d = dim(p)
     D = sum(x -> size(x, 1), mpo[:, 1])
 

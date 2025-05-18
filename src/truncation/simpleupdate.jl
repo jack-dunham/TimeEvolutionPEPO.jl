@@ -1,7 +1,46 @@
-newtruncators(::AxialPEPO, _, ::SU) = (SimpleUpdateState(), SimpleUpdateState())
+newtruncators(::AxialPEPO, _, ::SimpleUpdate) = (SimpleUpdateState(), SimpleUpdateState())
 newtruncators(::AxialPEPO, _, ::SVDU) = (SimpleUpdateState(), SimpleUpdateState())
 
-function timestep!(pepo::PEPO, truncator, stepper::LocalStepper, truncalg::Union{SU,SVDU}; kwargs...)
+function timestep!(
+    pepo::PEPO, truncator, stepper::LocalStepper, truncalg::Union{SimpleUpdate,SVDU}; kwargs...
+)
+
+    # Evolve and then truncate each bond in sequence
+    size(pepo) < (2, 2) && throw(ArgumentError(""))
+
+    infidelity = similar(ITC.getdata(pepo))
+
+    allbonds = bonds(pepo, stepper.axis)
+
+    for bond in allbonds
+        env = environment!(pepo, SimpleUpdateState(), bond)
+
+        # println("alt:", altbonds[i])
+
+        # Evolved the pair of tensors connected by `bond`, leaving the original pair
+        # unmutated.
+
+        if truncalg.reduce === :post
+            pair = evolve(pepo, stepper, bond)
+            newpair, newweight = updatetensors(pair, env, truncalg, bond)
+        elseif truncalg.reduce === :pre
+            newpair, newweight = evolve_updatetensors(pepo, env, stepper, truncalg, bond)
+        end
+
+        pepo[bond] = mapreduce(copy, =>, newpair)
+        setweight!(pepo, newweight, bond; copy=false)
+    end
+
+    # simple_update_gauge!(pepo; reset=false, verbose=true)
+    # quicknormalize!(pepo)
+    hermitianize!(pepo)
+    #
+    return pepo, infidelity
+end
+
+function _timestep!(
+    pepo::PEPO{Square}, truncator, stepper::LocalStepper, truncalg::Union{SimpleUpdate,SVDU}; kwargs...
+)
 
     # Evolve and then truncate each bond in sequence
     size(pepo) < (2, 2) && throw(ArgumentError(""))
@@ -31,65 +70,66 @@ function timestep!(pepo::PEPO, truncator, stepper::LocalStepper, truncalg::Union
 
             # Evolved the pair of tensors connected by `bond`, leaving the original pair
             # unmutated.
-            pair = evolve(pepo, stepper, bond)
 
-            newpair, newweight = updatetensors(pair, env, truncalg, bond)
+            # pair = evolve(pepo, stepper, bond)
+            # newpair, newweight = updatetensors(pair, env, truncalg, bond)
 
+            newpair, newweight = evolve_updatetensors(pepo, env, stepper, truncalg, bond)
             # Loop through all the columns 
             for col in bondcols
                 thisbond = popfirst!(col)
 
-                pepo.data[thisbond] = mapreduce(copy, =>, newpair)
+                pepo[thisbond] = mapreduce(copy, =>, newpair)
                 setweight!(pepo, newweight, thisbond; copy=false)
 
                 # If not a checkerboard lattice, only update the first column
                 checker || break
             end
 
-            quicknormalize!(pepo)
-            hermitianize!(pepo)
+            # quicknormalize!(pepo)
+            # hermitianize!(pepo)
         end
 
         popfirst!(bondcols)
     end
 
-    # quicknormalize!(pepo)
-    # hermitianize!(pepo)
-    # simple_update_gauge!(pepo; reset=true, verbose=false)
+    # simple_update_gauge!(pepo; reset=false, verbose=true)
+    quicknormalize!(pepo)
+    hermitianize!(pepo)
     #
     return pepo, infidelity
 end
 
 # isometries for sequential simple update
-function isometries!(pair::Pair, pepo::AbstractPEPO, bond::Bond, truncalg::SU)
+function isometries!(pair::Pair, pepo::AbstractPEPO, bond::Bond, truncalg::SimpleUpdate)
     D = bondspace(pepo, bond)
 
     trunc = truncspace(D)
 
-    xi = truncalg.ξ
+    xi = truncalg.zeta
 
-    iso, s, infid = simpleupdate!(pair, weights(pepo), bond; trunc=trunc, xi=xi)
+    iso, s, infid = simpleupdate!(pair, weights(pepo), bond; trunc=trunc, zeta=zeta)
 
     return iso, s, infid
 end
 
-function isometries(pair::Pair, pepo::AbstractPEPO, bond::Bond, truncalg::SU)
+function isometries(pair::Pair, pepo::AbstractPEPO, bond::Bond, truncalg::SimpleUpdate)
     return isometries(pair, weights(pepo), bond, truncalg; D=bondspace(pepo, bond))
 end
 function isometries(
-    pair::Pair, weights::UnitCellBonds, bond::Bond, truncalg::SU; D, axial=false
+    pair::Pair, weights::UnitCellBonds, bond::Bond, truncalg::SimpleUpdate; D, axial=false
 )
     trunc = truncspace(D)
 
-    xi = truncalg.ξ
+    xi = truncalg.zeta
 
-    iso, s, infid = simpleupdate(pair, weights, bond; axial=axial, trunc=trunc, xi=xi)
+    iso, s, infid = simpleupdate(pair, weights, bond; axial=axial, trunc=trunc, zeta=zeta)
 
     return iso, s, infid
 end
 
 # For updating in parellel
-function parallelisometries(pepo::AbstractPEPO, bond::Bond, truncalg::SU; kwargs...)
+function parallelisometries(pepo::AbstractPEPO, bond::Bond, truncalg::SimpleUpdate; kwargs...)
     a, b = pepo[bond]
 
     pair = copy(a) => copy(b)
@@ -97,7 +137,7 @@ function parallelisometries(pepo::AbstractPEPO, bond::Bond, truncalg::SU; kwargs
     return isometries!(pair, pepo, bond, truncalg)
 end
 
-function parallelisometries(pair::Pair, pepo::AbstractPEPO, bond::Bond, truncalg::SU)
+function parallelisometries(pair::Pair, pepo::AbstractPEPO, bond::Bond, truncalg::SimpleUpdate)
     return isometries(pair, pepo, bond, truncalg)
 end
 # Sequential simple update
@@ -143,7 +183,7 @@ function simple_update_svd!(pair; axis, kwargs...)
     return iso, s, infid
 end
 
-function isometries_from_svd(P, Q, u0, v0; xi=Inf, trunc=notrunc(), absorb=true, axis)
+function isometries_from_svd(P, Q, u0, v0; zeta=Inf, trunc=notrunc(), absorb=true, axis)
     # u, s, v, err2 = safetsvd!(normalize(u0 * v0); trunc=trunc)
     u, s, v, err2 = safetsvd!(u0 * v0; trunc=trunc)
 

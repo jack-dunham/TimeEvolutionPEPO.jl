@@ -31,7 +31,7 @@ struct PowerLawTerm
     coeff::Float64
 end
 
-function (model::PowerLawTerm)(hilbertspace, ::TEPEPSO; kwargs...)
+function (model::PowerLawTerm)(hilbertspace, ::ClusterPEPO; kwargs...)
     return timestep -> fsmgeneral(
         model.op,
         model.localops,
@@ -70,7 +70,7 @@ function AxialLongRangeHeisenberg(L...; Jx=0.0, Jy=0.0, Jz=0.0, ax=0, ay=0, az=0
     return AxialLongRangeHeisenberg(Jx, Jy, Jz, ax, ay, az, collect(linops))
 end
 
-function (model::LongRangeHeisenberg)(physical, method::TEPEPSO)
+function (model::LongRangeHeisenberg)(physical, method::ClusterPEPO)
     (Jx, Jy, Jz, ax, ay, az) = getparams(model)
 
     rv =
@@ -94,7 +94,7 @@ function (model::LongRangeHeisenberg)(physical, method::TEPEPSO)
     return rv
 end
 
-function (model::AxialLongRangeHeisenberg)(physical, method::TEPEPSO; kwargs...)
+function (model::AxialLongRangeHeisenberg)(physical, method::ClusterPEPO; kwargs...)
     (Jx, Jy, Jz, ax, ay, az) = getparams(model)
 
     rv =
