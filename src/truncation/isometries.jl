@@ -599,7 +599,7 @@ function evolve_simple_update_tensors(pair::Pair{T}, op_pair; axis, zeta=Inf) wh
 
     maxnormalize!(s)
 
-    (u, v), s = applyweight(u => v, s, xi; verbose=false)
+    (u, v), s = applyweight(u => v, s, zeta; verbose=false)
 
     # Q1p = Q1 * u
     # Q2p = v * Q2
@@ -636,7 +636,7 @@ function simple_update_tensors(pair::Pair{T}; axis, zeta=Inf) where {T<:AbsTen{2
     # println(s)
     maxnormalize!(s)
 
-    (u, v), s = applyweight(u => v, s, xi; verbose=false)
+    (u, v), s = applyweight(u => v, s, zeta; verbose=false)
 
     Q1p = Q1 * u
     Q2p = v * Q2
