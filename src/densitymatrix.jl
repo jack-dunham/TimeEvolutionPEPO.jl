@@ -101,8 +101,11 @@ function DensityMatrix(
     alg::AbstractBoundaryAlgorithm;
     kwargs...,
 )
-    # data = dealias(ITC.getdata(pepo))
-    data = ITC.getdata(pepo)
+    if alg isa CTMRG
+        data = dealias(ITC.getdata(pepo))
+    else
+        data = ITC.getdata(pepo)
+    end
     return DensityMatrix(data, alg; kwargs...)
 end
 
