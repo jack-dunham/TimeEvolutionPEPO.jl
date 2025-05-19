@@ -23,15 +23,14 @@ end</code></pre><pre class="documenter-example-output"><code class="nohighlight 
     return real(M)
 end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">magnetisation (generic function with 1 method)</code></pre><p>In practice it is useful to save the <code>DensityMatrix</code> object rather than running the boundary renormalization every time one wishes to compute a local observable. The correlation length of a state can be directly accessed directly from the <code>DensityMatrix</code> object without first needing to compute a partial trace:</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; pepo = PEPO((0,0,-1), ℂ^2, ℂ^4);</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; dm = DensityMatrix(pepo, VUMPS(bonddim = 16))</code><code class="nohighlight hljs ansi" style="display:block;"><span class="sgr36"><span class="sgr1">┌ Info: </span></span>Running algorithm:
 <span class="sgr36"><span class="sgr1">└ </span></span>  algorithm = VUMPS(16, 100, 1.0e-12, true)
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Convergence ≈ 0.26091458093548525 after 1 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Convergence ≈ 0.9778903224555242 after 2 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Convergence ≈ 6.9344859670388965e-6 after 3 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Convergence ≈ 3.5738883425275582e-12 after 4 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Convergence ≈ 2.4351438476495823e-17 after 5 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Convergence: 2.4351438476495823e-17
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Algorithm convergenced to within tolerance 1.0e-12 after 5 iterations
+<span class="sgr36"><span class="sgr1">[ Info: </span></span>Convergence ≈ 0.36358944862450987 after 1 iterations.
+<span class="sgr36"><span class="sgr1">[ Info: </span></span>Convergence ≈ 0.8280480732424363 after 2 iterations.
+<span class="sgr36"><span class="sgr1">[ Info: </span></span>Convergence ≈ 1.5403947093103453e-7 after 3 iterations.
+<span class="sgr36"><span class="sgr1">[ Info: </span></span>Convergence ≈ 1.3527199814752975e-17 after 4 iterations.
+<span class="sgr36"><span class="sgr1">[ Info: </span></span>Convergence: 1.3527199814752975e-17
+<span class="sgr36"><span class="sgr1">[ Info: </span></span>Algorithm convergenced to within tolerance 1.0e-12 after 4 iterations
 DensityMatrix of unit cell size (1, 1) normalized using:
-VUMPS(16, 100, 1.0e-12, true)</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; correlationlength(dm)</code><code class="nohighlight hljs ansi" style="display:block;">10.046371227317085</code></pre><p>It is also possible to compute arbitrary <span>$n$</span>-point observables be computing reduced density matrices over multiple sites:</p><pre><code class="language-julia hljs">function cx13(dm::DensityMatrix)
+VUMPS(16, 100, 1.0e-12, true)</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; correlationlength(dm)</code><code class="nohighlight hljs ansi" style="display:block;">13.408825282513053</code></pre><p>It is also possible to compute arbitrary <span>$n$</span>-point observables be computing reduced density matrices over multiple sites:</p><pre><code class="language-julia hljs">function cx13(dm::DensityMatrix)
     X = PAULI[1]
     id = one(X)
 
@@ -153,7 +152,7 @@ end</code></pre><pre class="documenter-example-output"><code class="nohighlight 
 <span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.48840890514309043 after 5 iterations.
 <span class="sgr36"><span class="sgr1">┌ Info: </span></span>Running algorithm:
 <span class="sgr36"><span class="sgr1">└ </span></span>  algorithm = VUMPS(16, 100, 1.0e-12, false)
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Convergence: 7.714632490003209e-14
+<span class="sgr36"><span class="sgr1">[ Info: </span></span>Convergence: 4.7822364290896096e-15
 <span class="sgr36"><span class="sgr1">[ Info: </span></span>Algorithm convergenced to within tolerance 1.0e-12 after 5 iterations
 <span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.20026489494384023 after 6 iterations.
 <span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.07931643538838737 after 7 iterations.
@@ -162,7 +161,7 @@ end</code></pre><pre class="documenter-example-output"><code class="nohighlight 
 <span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.062430382491230105 after 10 iterations.
 <span class="sgr36"><span class="sgr1">┌ Info: </span></span>Running algorithm:
 <span class="sgr36"><span class="sgr1">└ </span></span>  algorithm = VUMPS(16, 100, 1.0e-12, false)
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Convergence: 1.6464947598547401e-15
+<span class="sgr36"><span class="sgr1">[ Info: </span></span>Convergence: 1.3156385329360644e-15
 <span class="sgr36"><span class="sgr1">[ Info: </span></span>Algorithm convergenced to within tolerance 1.0e-12 after 5 iterations
 <span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.1538044655313923 after 11 iterations.
 <span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.3396369191936135 after 12 iterations.
@@ -171,7 +170,7 @@ end</code></pre><pre class="documenter-example-output"><code class="nohighlight 
 <span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.07106963008126253 after 15 iterations.
 <span class="sgr36"><span class="sgr1">┌ Info: </span></span>Running algorithm:
 <span class="sgr36"><span class="sgr1">└ </span></span>  algorithm = VUMPS(16, 100, 1.0e-12, false)
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Convergence: 5.368815213691917e-15
+<span class="sgr36"><span class="sgr1">[ Info: </span></span>Convergence: 1.3819602555322609e-15
 <span class="sgr36"><span class="sgr1">[ Info: </span></span>Algorithm convergenced to within tolerance 1.0e-12 after 5 iterations
 <span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.05192399616968907 after 16 iterations.
 <span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.11079138984270587 after 17 iterations.
@@ -180,7 +179,7 @@ end</code></pre><pre class="documenter-example-output"><code class="nohighlight 
 <span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.13198488519994045 after 20 iterations.
 <span class="sgr36"><span class="sgr1">┌ Info: </span></span>Running algorithm:
 <span class="sgr36"><span class="sgr1">└ </span></span>  algorithm = VUMPS(16, 100, 1.0e-12, false)
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Convergence: 9.226115176561035e-16
+<span class="sgr36"><span class="sgr1">[ Info: </span></span>Convergence: 1.612436884941291e-15
 <span class="sgr36"><span class="sgr1">[ Info: </span></span>Algorithm convergenced to within tolerance 1.0e-12 after 5 iterations
 <span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.19982865901781868 after 21 iterations.
 <span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.036109072307923026 after 22 iterations.
@@ -189,7 +188,7 @@ end</code></pre><pre class="documenter-example-output"><code class="nohighlight 
 <span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.23459930375981505 after 25 iterations.
 <span class="sgr36"><span class="sgr1">┌ Info: </span></span>Running algorithm:
 <span class="sgr36"><span class="sgr1">└ </span></span>  algorithm = VUMPS(16, 100, 1.0e-12, false)
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Convergence: 3.57500101475304e-15
+<span class="sgr36"><span class="sgr1">[ Info: </span></span>Convergence: 9.374292751515566e-16
 <span class="sgr36"><span class="sgr1">[ Info: </span></span>Algorithm convergenced to within tolerance 1.0e-12 after 5 iterations
 <span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.08248149302974146 after 26 iterations.
 <span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.21380502193133233 after 27 iterations.
@@ -198,7 +197,7 @@ end</code></pre><pre class="documenter-example-output"><code class="nohighlight 
 <span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.07872919737101422 after 30 iterations.
 <span class="sgr36"><span class="sgr1">┌ Info: </span></span>Running algorithm:
 <span class="sgr36"><span class="sgr1">└ </span></span>  algorithm = VUMPS(16, 100, 1.0e-12, false)
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Convergence: 2.4993074061094308e-15
+<span class="sgr36"><span class="sgr1">[ Info: </span></span>Convergence: 3.864472162869884e-15
 <span class="sgr36"><span class="sgr1">[ Info: </span></span>Algorithm convergenced to within tolerance 1.0e-12 after 5 iterations
 <span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.08785465445700993 after 31 iterations.
 <span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.07173582534332208 after 32 iterations.
@@ -207,7 +206,7 @@ end</code></pre><pre class="documenter-example-output"><code class="nohighlight 
 <span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.14389075821587752 after 35 iterations.
 <span class="sgr36"><span class="sgr1">┌ Info: </span></span>Running algorithm:
 <span class="sgr36"><span class="sgr1">└ </span></span>  algorithm = VUMPS(16, 100, 1.0e-12, false)
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Convergence: 1.4564199150298378e-14
+<span class="sgr36"><span class="sgr1">[ Info: </span></span>Convergence: 4.546497108438997e-15
 <span class="sgr36"><span class="sgr1">[ Info: </span></span>Algorithm convergenced to within tolerance 1.0e-12 after 5 iterations
 <span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.07009866074545222 after 36 iterations.
 <span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.040775779460479174 after 37 iterations.
@@ -216,7 +215,7 @@ end</code></pre><pre class="documenter-example-output"><code class="nohighlight 
 <span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.07646744165604395 after 40 iterations.
 <span class="sgr36"><span class="sgr1">┌ Info: </span></span>Running algorithm:
 <span class="sgr36"><span class="sgr1">└ </span></span>  algorithm = VUMPS(16, 100, 1.0e-12, false)
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Convergence: 1.634055451797424e-14
+<span class="sgr36"><span class="sgr1">[ Info: </span></span>Convergence: 1.0911803196759663e-13
 <span class="sgr36"><span class="sgr1">[ Info: </span></span>Algorithm convergenced to within tolerance 1.0e-12 after 5 iterations
 <span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.08218340722989599 after 41 iterations.
 <span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.05158576169657605 after 42 iterations.
@@ -225,7 +224,7 @@ end</code></pre><pre class="documenter-example-output"><code class="nohighlight 
 <span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.2053394674501095 after 45 iterations.
 <span class="sgr36"><span class="sgr1">┌ Info: </span></span>Running algorithm:
 <span class="sgr36"><span class="sgr1">└ </span></span>  algorithm = VUMPS(16, 100, 1.0e-12, false)
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Convergence: 4.6012187774805586e-15
+<span class="sgr36"><span class="sgr1">[ Info: </span></span>Convergence: 7.039045101760152e-14
 <span class="sgr36"><span class="sgr1">[ Info: </span></span>Algorithm convergenced to within tolerance 1.0e-12 after 5 iterations
 <span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.32723495572057315 after 46 iterations.
 <span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.10074820869885814 after 47 iterations.
@@ -234,16 +233,16 @@ end</code></pre><pre class="documenter-example-output"><code class="nohighlight 
 <span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.18654083611781427 after 50 iterations.
 <span class="sgr36"><span class="sgr1">┌ Info: </span></span>Running algorithm:
 <span class="sgr36"><span class="sgr1">└ </span></span>  algorithm = VUMPS(16, 100, 1.0e-12, false)
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Convergence: 4.5982378412417495e-14
+<span class="sgr36"><span class="sgr1">[ Info: </span></span>Convergence: 2.4753384935563908e-14
 <span class="sgr36"><span class="sgr1">[ Info: </span></span>Algorithm convergenced to within tolerance 1.0e-12 after 5 iterations
 10-element Vector{Float64}:
- -0.5158297346918062
+ -0.5158297346918064
  -0.5383134071810893
- -0.5341016087817071
- -0.5246632659197306
- -0.5389151670763412
- -0.5527004220969942
- -0.5314327863465349
- -0.5150421621231129
- -0.509706711516718
- -0.5404757381641712</code></pre><p>Note the <code>Simulation</code> object <code>sim</code> mutates in the process.  Some information pertaining to a given <code>Simulation</code> object can be obtained by calling:</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; simulationinfo(sim)</code><code class="nohighlight hljs ansi" style="display:block;">(converged = false, convergence = 0.18654083611781427, iterations = 100, finished = true, simtime = 10.0, walltime = 8.90496301651001)</code></pre><p>which can also be accessed in the callback function.</p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../../">« Home</a><a class="docs-footer-nextpage" href="../../lib/models/">Models »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.11.4 on <span class="colophon-date" title="Sunday 18 May 2025 21:17">Sunday 18 May 2025</span>. Using Julia version 1.11.5.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+ -0.534101608781707
+ -0.5246632659197324
+ -0.5389151670763404
+ -0.5527004220969941
+ -0.5314327863465353
+ -0.5150421621231128
+ -0.5097067115167184
+ -0.540475738164171</code></pre><p>Note the <code>Simulation</code> object <code>sim</code> mutates in the process.  Some information pertaining to a given <code>Simulation</code> object can be obtained by calling:</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; simulationinfo(sim)</code><code class="nohighlight hljs ansi" style="display:block;">(converged = false, convergence = 0.18654083611781427, iterations = 100, finished = true, simtime = 10.0, walltime = 8.261550903320312)</code></pre><p>which can also be accessed in the callback function.</p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../../">« Home</a><a class="docs-footer-nextpage" href="../../lib/models/">Models »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.11.4 on <span class="colophon-date" title="Monday 19 May 2025 22:49">Monday 19 May 2025</span>. Using Julia version 1.11.5.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
