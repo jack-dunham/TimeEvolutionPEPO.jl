@@ -328,7 +328,7 @@ function _generic_environment_isometries(
 )
     rankreduce = truncalg.rankreduce
     optalg = truncalg.optalg
-    xi = truncalg.zeta
+    zeta = truncalg.zeta
 
     iso, s, infid = single_bond_metric_isometries!(
         pair,
@@ -556,21 +556,23 @@ function updatetensors(pair, weights, truncalg::SVDU, bond)
     return newpair, s
 end
 function evolve_updatetensors(pepo, weights, stepper, truncalg, bond)
-
     pair = mapreduce(deepcopy, =>, pepo[bond])
     op_pair = stepper[bond]
 
     absorb_adjacent_weights!(pair, weights, bond; inverse=false)
 
-    newpair, s = evolve_simple_update_tensors(pair, op_pair; axis=bondaxis(bond), zeta=truncalg.zeta)
+    newpair, s = evolve_simple_update_tensors(
+        pair, op_pair; axis=bondaxis(bond), zeta=truncalg.zeta
+    )
 
     absorb_adjacent_weights!(newpair, weights, bond; inverse=true)
 
     return newpair, s
 end
 
-function evolve_simple_update_tensors(pair::Pair{T}, op_pair; axis, zeta=Inf) where {T<:AbsTen{2,4}}
-
+function evolve_simple_update_tensors(
+    pair::Pair{T}, op_pair; axis, zeta=Inf
+) where {T<:AbsTen{2,4}}
     uten, vten = pair
     u1op, v2op = op_pair
 
@@ -589,7 +591,6 @@ function evolve_simple_update_tensors(pair::Pair{T}, op_pair; axis, zeta=Inf) wh
     @tensoropt utenp[left ok ob; D η] := u1op[ok ob ik ib; η] * R[left; ik ib D]
     @tensoropt vtenp[D η; right ok ob] := v2op[ok ob ik ib; η] * L[ik ib D; right]
 
-
     u, s, v, err1 = tsvd(utenp * vtenp; trunc=truncdim(dim(D)))
     # u, s, v, err1 = tsvd(utenp * vtenp; trunc=truncspace(D))
 
@@ -606,10 +607,10 @@ function evolve_simple_update_tensors(pair::Pair{T}, op_pair; axis, zeta=Inf) wh
 
     if axis == 1
         @tensoropt unew[k b; e s w n] := Q1[s w n; left] * u[left k b; e]
-        @tensoropt vnew[k b; e s w n] := v[w; right k b] * Q2[right; e s n;] 
+        @tensoropt vnew[k b; e s w n] := v[w; right k b] * Q2[right; e s n]
     elseif axis == 2
         @tensoropt unew[k b; e s w n] := Q1[e w n; left] * u[left k b; s]
-        @tensoropt vnew[k b; e s w n] := v[n; right k b] * Q2[right; e s w;] 
+        @tensoropt vnew[k b; e s w n] := v[n; right k b] * Q2[right; e s w]
     end
 
     return unew => vnew, s
@@ -631,7 +632,6 @@ function simple_update_tensors(pair::Pair{T}; axis, zeta=Inf) where {T<:AbsTen{2
 
     u, s, v, err1 = tsvd!(R * L; trunc=truncdim(dim(D)))
     # u, s, v, err2 = tsvd!(R * L; trunc=truncspace(D))
-
 
     # println(s)
     maxnormalize!(s)
@@ -823,13 +823,9 @@ function cycle_entropy(iso, metric)
 end
 
 # Optimise the isometries `left` and `right` with respect to `metric`.
-function metricoptimise(left, right, metric::AbsTen{2,2}; 
-                        trunc,
-                        doreduction,
-                        xi,
-                        optalg,
-                        posapprox = true,
-                        )
+function metricoptimise(
+    left, right, metric::AbsTen{2,2}; trunc, doreduction, zeta, optalg, posapprox=false
+)
     gauge = optalg.gauge
 
     if doreduction
@@ -868,10 +864,9 @@ function metricoptimise(left, right, metric::AbsTen{2,2};
         return TruncationIsometries(metric, u, s, v)
     end
 
-
     stablizemetric!(Y, F0)
-    posapprox!(Y)
-    # posapprox && posapprox!(Y)
+
+    posapprox && posapprox!(Y)
 
     infidelity = (x, y) -> 1 - fidelity(x, y, Y, LR0)
 
@@ -888,8 +883,8 @@ function metricoptimise(left, right, metric::AbsTen{2,2};
     fixgauge!(iso, metric, gauge)
     # fixgauge!(iso, metric, WTG(skiptol=1e-14))
 
-    if xi < Inf
-        rescale!(iso, xi)
+    if zeta < Inf
+        rescale!(iso, zeta)
         fixgauge!(iso, metric, gauge)
     end
 
@@ -1010,7 +1005,7 @@ function dziarmaga(
     end
     # u, s, v = tsvd!(ui * vi; trunc=trunc)
 
-    @warn "From simple update:" minif
+    @debug "Simple update:" minif
 
     # Perform EAT if we want to.
     if EAT
@@ -1066,8 +1061,6 @@ function dziarmaga(
 
     @info "...done; iterations: $counter, ϵ: $ϵ"
 
-    println(s)
-
     return iso
 end
 
@@ -1120,7 +1113,7 @@ function isometryoptimise(cf, u, v, metric, u0, v0, method::EVB; trunc)
 end
 
 function isometryoptimise(cf, u, v, metric, u0, v0, method::EVBTrivial; trunc)
-    u,s,v = evenblytrivial(
+    u, s, v = evenblytrivial(
         metric;
         trunc,
         maxiter=100,
@@ -1128,7 +1121,7 @@ function isometryoptimise(cf, u, v, metric, u0, v0, method::EVBTrivial; trunc)
         eigentol=sqrt(eps(real(float(oneunit(scalartype(metric)))))),
         isotol=1e-8,
     )
-    iso = TruncationIsometries(metric, u,s, v)
+    iso = TruncationIsometries(metric, u, s, v)
 
     return iso
 end
@@ -1154,7 +1147,7 @@ function evenbly2(
     # @tensor pmetricN = metric[i, i, j, j]
     # metric /= pmetricN
     #
-    posapprox!(metric; tol=1e-3pinvtol)
+    # posapprox!(metric; tol=1e-3pinvtol)
 
     S = spacetype(metric)
 
@@ -1208,7 +1201,8 @@ function evenbly2(
     while numiter < maxiter
         totaltime += @elapsed begin
             @tensoropt B1[i j; k l] := ut[α; j] * metric[i α; k β] * (ut')[l; β]
-            @tensoropt P1[i j] := ut[α; j] * metric[i α; β1 β2] * cj(u0)[β2; β] * cj(v0)[β; β1] 
+            @tensoropt P1[i j] :=
+                ut[α; j] * metric[i α; β1 β2] * cj(u0)[β2; β] * cj(v0)[β; β1]
 
             axpby!(0.5, B1', 0.5, B1)
 
@@ -1218,10 +1212,11 @@ function evenbly2(
             R1 = permute(RM1, ((1,), (2,)))
             u1, s1, v1 = safetsvd!(R1)
 
-            copy!(vt, u1 * v1) 
+            copy!(vt, u1 * v1)
 
             @tensoropt B2[i j; k l] := (vt')[i; α] * metric[α j; β l] * vt[β; k]
-            @tensoropt P2[i j] := (vt')[i; α] * metric[α j; β1 β2] * cj(u0)[β2; β] * cj(v0)[β; β1] 
+            @tensoropt P2[i j] :=
+                (vt')[i; α] * metric[α j; β1 β2] * cj(u0)[β2; β] * cj(v0)[β; β1]
 
             # B1 is hermitian
             axpby!(0.5, B2', 0.5, B2)
@@ -1249,7 +1244,7 @@ function evenbly2(
         ϵ < isotol && break
     end
     @tensoropt B1[i j; k l] := ut[α; j] * metric[i α; k β] * (ut')[l; β]
-    @tensoropt P1[i j] := ut[α; j] * metric[i α; β1 β2] * cj(u0)[β2; β] * cj(v0)[β; β1] 
+    @tensoropt P1[i j] := ut[α; j] * metric[i α; β1 β2] * cj(u0)[β2; β] * cj(v0)[β; β1]
 
     axpby!(0.5, B1', 0.5, B1)
 
@@ -1262,7 +1257,6 @@ function evenbly2(
     # u = transpose(u)
     # s = transpose(s)
     # v = transpose(v)
-
 
     maxnormalize!(s)
     # As v is an isometry, we can avoid inverting `sqrt(s)` be instead calculating adjoint
@@ -1615,7 +1609,7 @@ function evenblytrivial(
     lt = TensorMap(l, χsp, Dsp)
     rt = TensorMap(permutedims(conj(r)), Dsp, χsp)
 
-    s = TensorMap(diagm(σ), Dsp,Dsp)
+    s = TensorMap(diagm(σ), Dsp, Dsp)
 
     println(s)
 
@@ -1834,7 +1828,7 @@ function isometries_to_WTG!(
     Rmin = minimum(abs.(DR.values))
     if (Lmin < 1e-14 || Rmin < 1e-14)
         @info "skipped gauge fixing"
-        return l,r,σ
+        return l, r, σ
     end
     xnI = DL.vectors * Diagonal((1 ./ sqrt.(abs.(DL.values))))
     ynI = Diagonal((1 ./ sqrt.(abs.(DR.values)))) * DR.vectors'
