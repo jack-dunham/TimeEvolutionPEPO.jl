@@ -13,7 +13,9 @@ function timestep!(pepo, truncator, stepper, truncalg; kwargs...)
 
     return pepo
 end
-function _timestep!(pepo::PEPO, truncator, stepper::LocalStepper, truncalg::SimpleUpdate; kwargs...)
+function _timestep!(
+    pepo::PEPO, truncator, stepper::LocalStepper, truncalg::SimpleUpdate; kwargs...
+)
     size(pepo) < (2, 2) && throw(ArgumentError(""))
 
     axis = stepper.axis
@@ -38,7 +40,9 @@ function _timestep!(pepo::PEPO, truncator, stepper::LocalStepper, truncalg::Simp
     return pepo
 end
 
-function timestep!(pepo!::PEPO, truncator, stepper::FullStepper, truncalg::SimpleUpdate; kwargs...)
+function timestep!(
+    pepo!::PEPO, truncator, stepper::FullStepper, truncalg::SimpleUpdate; kwargs...
+)
     isoms = newisometries(pepo!, stepper)
 
     newpepo = evolve(pepo!, stepper)
@@ -91,22 +95,14 @@ function timestep!(
 
     infidelity = 0
 
-    axisbonds = bonds(pepo, 1)
+    allbonds = bonds(pepo, 1)
 
-    checker = true
-
-    if checker
-        altbonds = circshift(axisbonds[:, 2], 1)
-        axisbonds = axisbonds[:, 1]
-    end
-
-    for (i, bond) in enumerate(axisbonds)
+    for bond in allbonds
         D = bondspace(pepo, bond)
 
         # Evolved the pair of tensors connected by `bond`, leaving the original pair
         # unmutated.
         pair = evolvemerge(pepo, stepper, bond)
-
 
         if false #truncalg.rankreduce
             init_weights = environment!(pepo.parent, SimpleUpdateState(), bond)
@@ -118,8 +114,7 @@ function timestep!(
 
             env = environment!(pepo, truncator[axis], bond)
             (u, v), s, _ = metric_isometries_from_simple_update!(
-                pair, initiso, env, bond;
-                D=D, optalg=truncalg.optalg, zeta=truncalg.zeta
+                pair, initiso, env, bond; D=D, optalg=truncalg.optalg, zeta=truncalg.zeta
             )
 
         else
@@ -152,20 +147,12 @@ function timestep!(
 
         pepo[bond] = newpair
 
-        if checker
-            altbond = altbonds[i]
-
-            pepo[altbond] = mapreduce(copy, =>, newpair)
-
-            setweight!(pepo, s, altbond; copy=false)
-        end
-
         setweight!(pepo, s, bond; copy=false)
-
-        normalize!(pepo)
-        hermitianize!(pepo)
     end
 
+
+    quicknormalize!(pepo)
+    hermitianize!(pepo)
     # if axis == 1
     #     simple_update_gauge!(pepo.parent; reset = true)
     # end
@@ -250,7 +237,7 @@ function timestep!(
 
     # This can happen in parallel
     Threads.@threads for bond in bonds(pepo, 1)
-    # isoms = map(bonds(pepo, 1)) do bond
+        # isoms = map(bonds(pepo, 1)) do bond
         D = bondspace(pepo, bond)
 
         env = environment!(evpepo, truncator[axis], bond)
@@ -263,7 +250,7 @@ function timestep!(
 
         setweight!(pepo, s, bond; copy=false)
 
-        isomu[first(bond)] = u 
+        isomu[first(bond)] = u
         isomv[last(bond)] = v
 
         # return u => v
@@ -345,7 +332,7 @@ function _timestep!(pepo::AxialPEPO, truncator, stepper, truncalg; kwargs...)
 
         realbond = axis == 2 ? transpose(bond) : bond
 
-setweight!(pepo, s, realbond; copy=false)
+        setweight!(pepo, s, realbond; copy=false)
 
         return (u, v)
     end
