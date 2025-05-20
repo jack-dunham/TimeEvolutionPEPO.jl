@@ -57,15 +57,15 @@ end
 function Base.show(io::IO, m::MIME"text/plain", sim::Simulation)
     # pepo = getpepo(sim)
     # map(b -> bondspace(pepo ,b ), uniquebonds(pepo)) |> display
-    println("METHOD")
-    println("≡≡≡≡≡≡")
+    println(io, "METHOD")
+    println(io, "≡≡≡≡≡≡")
     show(io, m, sim.method)
-    println("")
-    println("INFO")
-    print("≡≡≡≡")
+    println(io, "")
+    println(io, "INFO")
+    print(io, "≡≡≡≡")
     for name in fieldnames(SimulationInfo)
-        println("")
-        print(name, ": ", getfield(sim.info, name))
+        println(io, "")
+        print(io, name, ": ", getfield(sim.info, name))
     end
     return nothing
 end
