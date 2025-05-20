@@ -25,8 +25,8 @@ Base.iterate(model::Model, state = 1) = iterate(model.layers, state)
 Base.length(model::Model) = length(model.layers)
 
 function Base.show(io::IO, ::MIME"text/plain", model::Model)
-    print("$(typeof(model)) with $(length(model)) Trotter layer")
-    length(model) > 1 && print("s")
+    print(io, "$(typeof(model)) with $(length(model)) Trotter layer")
+    length(model) > 1 && print(io, "s")
     return nothing
 end
 
