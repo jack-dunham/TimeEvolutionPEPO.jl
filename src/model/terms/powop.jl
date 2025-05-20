@@ -85,8 +85,8 @@ function Base.show(io::IO, m::MIME"text/plain", term::PowOp{T}) where {T}
 
     print(io, "$n-term PowOp{$T} approximation to α = $(term.α)")
     for g in terms(term)
-        println()
-        print("  ")
+        println(io)
+        print(io, "  ")
         show(io, m, g)
     end
     return nothing

@@ -77,7 +77,7 @@ function shownested(io::IO, m::MIME"text/plain", sim::T) where {T}
 
     ion = IOContext(io, :nesting_level => level + 1)
     for name in fieldnames(T)
-        println("")
+        println(ion, "")
         print(ion, "  "^(level + 1), name, ": ")
         show(ion, m, getfield(sim, name))
     end
