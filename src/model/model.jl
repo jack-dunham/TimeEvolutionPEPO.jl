@@ -19,6 +19,10 @@ Model(H::Vector{T}) where {T} = Model{layertype(T)}(H)
 
 Base.eltype(::Model{HL}) where {HL} = HL
 
+function Base.promote_rule(::Type{<:AbstractTerm}, ::Type{<:Union{Dissipator,Liouvillian}})
+    return Liouvillian
+end
+
 # Model{T}(HL::Vararg) where {T} = Model{T}(collect(HL))
 
 Base.iterate(model::Model, state = 1) = iterate(model.layers, state)
