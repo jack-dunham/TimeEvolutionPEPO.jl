@@ -14,7 +14,7 @@ $(FIELDS)
 
 The following constructors can also be called with `PEPO{G} where {G<:AbstractUnitCellGeometry}`
 to dictate the unit-cell geometry of the output `PEPO` object. This will error if any of the 
-input arguments specify a geometry the conflicts with `G`.
+input arguments specify a unit-cell geometry the conflicts with `G`.
 
     PEPO(
         init::Union{T, AbstractMatrix{T}}, 
@@ -31,8 +31,8 @@ The type `T` can be one of the following:
 - `Array{6, <:Number}`: a tensor defining the pepo tensor for each lattice site
 
 Similarly, `phys`, `east` and `south` can be of type `Union{S, AbstractMatrix{S}` where
-`S<:Union{Int, IndexSpace}`. The size of the unitcell of the resulting `PEPO` object is 
-determined via `promote_shape` automatically through an internal call to `broadcast`.
+`S<:Union{Int, IndexSpace}`. The size of the unit-cell of the resulting `PEPO` object is 
+determined via `promote_shape` automatically through an internal call to `broadcast`. 
 
     PEPO(data::Union{T,AbstractMatrix{T}}) where {T<:TensorMap}
 
@@ -114,17 +114,32 @@ function PEPO{G}(
 
     return PEPO{G}(initmat, phys, east, south)
 end
+
+# Quick constructors (no phys space and same bond space on both axis)
+PEPO{G}(init, bondspace) where {G} = PEPO{G}(init, nothing, bondspace, nothing)
+function PEPO{G}(init::AbstractMatrix{<:Tuple}, ::Nothing, bondspace, ::Nothing) where {G}
+    return PEPO{G}(init, broadcast(_ -> ComplexSpace(2), init), bondspace, bondspace)
+end
+## These two methods are indentical but are required to avoid method ambiguities
 function PEPO{G}(
-    init::AbstractMatrix{<:Union{Tuple,ThermalState,Matrix{<:Number}}},
-    phys,
-    east,
-    south=east,
+    init::AbstractMatrix{<:Matrix{<:Number}}, ::Nothing, bondspace, ::Nothing
 ) where {G}
+    phys = broadcast(p -> ComplexSpace(size(p, 1)), init)
+    return PEPO{G}(init, phys, bondspace, bondspace)
+end
+function PEPO{G}(
+    init::AbstractMatrix{<:Array{6,<:Number}}, ::Nothing, bondspace, ::Nothing
+) where {G}
+    phys = broadcast(p -> ComplexSpace(size(p, 1)), init)
+    return PEPO{G}(init, phys, bondspace, bondspace)
+end
+##
+#
+
+function PEPO{G}(
+    init::AbstractMatrix{T}, phys, east, south=east
+) where {G,T<:Union{Tuple,ThermalState,Matrix{<:Number}}}
     init = UnitCell{G}(init)
-
-    spaces = pepospace(G, phys, east, south)
-
-    spaces[1] .⊗ spaces[2] .⊗ spaces[3]
 
     tensors = broadcast(init, pepospace(G, phys, east, south)...) do a, p, e, s, w, n
         arr = pepodata(a, p, e, s, w, n)
@@ -245,8 +260,6 @@ function expandspace(pepo::PEPO, space::IndexSpace)
         c = codomain(w)
         d = domain(w)
 
-        println(typeof(w))
-
         T = scalartype(w)
 
         u = TensorMap(delta(T, dim(space), dim(c)), space, c)
@@ -293,11 +306,11 @@ end
 Remove the symmetric structure of the underlying tensors in `pepo`. If `pepo` is already
 trivial, that is `spacetype(pepo)<:ComplexSpace`, then this function acts as the identity.
 """
-function unsymmetrise(pepo::PEPO{G,<:AbstractTensorMap{T,<:ComplexSpace}}) where {G,T}
-    return pepo
-end
 function unsymmetrise(pepo::PEPO)
-    newstate = broadcast(pepo.state) do symten
+    if spacetype(pepo) == ComplexSpace
+        return pepo
+    end
+    newstate = broadcast(pepo.data) do symten
         arr = convert(Array, symten)
 
         cod = mapreduce(ComplexSpace, *, dims(codomain(symten)))
