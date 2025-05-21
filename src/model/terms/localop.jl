@@ -22,6 +22,47 @@ struct LocalOp{N} <: AbstractSingleTerm
     end
 end
 
+function Base.show(io::IO, m::MIME"text/plain", op::LocalOp)
+    iotemp = IOBuffer()
+    strings = map(op.CAB) do mat
+        show(iotemp, "text/plain", mat)
+        io_temp_again = IOBuffer(String(take!(iotemp)))
+        lines = readlines(io_temp_again)
+        close(io_temp_again)
+        return lines
+    end
+    close(iotemp)
+
+    colwidth = map(str -> maximum(length, str), strings)
+    coeff = " $(op.a) × "
+
+    itr = zip(strings...)
+
+    println(io, typeof(op), ":")
+    for (row, tuple_of_lines) in enumerate(itr)
+        if row == 1
+            print(io, coeff)
+        else
+            print(io, "\n")
+            print(io, " "^(length(coeff)))
+        end
+
+        print(io, "| ")
+        for (col, (line, pad)) in enumerate(zip(tuple_of_lines, colwidth))
+            print(io, line)
+            print(io, " "^(pad - length(line)))
+            if col != length(colwidth)
+                if row == 1
+                    print(io, " | ⊗ | ")
+                else
+                    print(io, " |   | ")
+                end
+            end
+        end
+        print(io, " |")
+    end
+end
+
 terms(::LocalOp{1}) = ()
 
 oneterms(::AbstractTerm) = LocalOp{1}[]
