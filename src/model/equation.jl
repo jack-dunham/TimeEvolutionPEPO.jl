@@ -121,7 +121,7 @@ function tebdtensor(
     trunc = length(model) > 0  ? truncbelow(compresstol) : truncdim(1)
     u, s, v, err = tsvd(tensor; trunc=trunc)
 
-    @info "" err η = dim(domain(s))
+    @info "Compressed to η=$(dim(codomain(s))) with error $err"
 
     return u * sqrt(s), _transpose(sqrt(s) * v)
 end

@@ -36,13 +36,13 @@ ModelStyle(::Type{J1J2Heisenberg}) = IsGlobal()
 
 stepper_type(::Type{J1J2Heisenberg}, ::Type{<:ClusterPEPO}) = FullStepper
 
-function (M::Type{<:AbstractModel})(L...; kwargs...)
-    itr = map(L) do op
-        return op isa LindbladTerm ? op : lin(op)
-    end
-
-    return M(; L=collect(itr), kwargs...)
-end
+# function (M::Type{<:AbstractModel})(L...; kwargs...)
+#     itr = map(L) do op
+#         return op isa LindbladTerm ? op : lin(op)
+#     end
+#
+#     return M(; L=collect(itr), kwargs...)
+# end
 
 function paramkwargs(eqn::AbstractModel)
     rv = Pair{Symbol,Float64}[]
@@ -285,9 +285,6 @@ function tebdtensor(
 
     xi = dt * model.a
 
-    println(dt)
-    println(model.a)
-
     CB = model.CB
 
     @assert CB * CB ≈ one(CB)
@@ -330,7 +327,7 @@ function tebdtensor(
 
     u, s, v, err = tsvd(H; trunc=truncdim(rank))
 
-    @info "Compression error: $err for η=$(dim(codomain(s)))"
+    @info "Compressed to η=$(dim(codomain(s))) with error $err"
 
     U = u * sqrt(s)
     V = _transpose(sqrt(s) * v)
