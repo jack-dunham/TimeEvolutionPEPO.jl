@@ -244,6 +244,10 @@ function simulate!(
 
     info.finished = true
 
+    @info "Finished."
+    @info "Steady state convergence: $tol after $numiter iterations."
+    @info "Total iterations for this Simulation: $(info.iterations))."
+
     return sim
 end
 
