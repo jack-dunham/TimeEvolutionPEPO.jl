@@ -130,7 +130,10 @@ function _trotterise(physical, layers, method, localops, linops)
     return trotterlist
 end
 
-function _trotterise(physical, steps, method)
+function _trotterise(physical, steps, method, ::InReverse)
+    return _trotterise(physical, map(InReverse, steps), method)
+end
+function _trotterise(physical, steps, method, _=nothing)
     @debug "Trotterising over $(length(steps)) layers"
 
     trotterlist = map(steps) do modelstep
@@ -151,28 +154,32 @@ function _trotterise(physical, steps, method)
     return trotterlist
 end
 
-function trotterise(physical, model, method::Union{GlobalTEBD,GlobalClusterMPO})
+function trotterise(
+    physical, model, method::Union{GlobalTEBD,GlobalClusterMPO}, reverse=nothing
+)
     steps = combineaxial(model.layers)
 
-    trotterlist = _trotterise(physical, steps, method)
+    trotterlist = _trotterise(physical, steps, method, reverse)
 
     return trotterlist
 end
 
-function trotterise(physical, model, method::Union{TEBD,AxialTEBD,ClusterMPO})
+function trotterise(
+    physical, model, method::Union{TEBD,AxialTEBD,ClusterMPO}, reverse=nothing
+)
     @debug "seperating..."
     steps = seperateaxis(model.layers)
 
-    trotterlist = _trotterise(physical, steps, method)
+    trotterlist = _trotterise(physical, steps, method, reverse)
 
     return trotterlist
 end
 
-function trotterise(physical, model, method::ClusterPEPO)
+function trotterise(physical, model, method::ClusterPEPO, reverse=nothing)
 
     # oneloc = oneterms(model)
 
-    trotterlist = _trotterise(physical, model.layers, method)
+    trotterlist = _trotterise(physical, model.layers, method, reverse)
 
     return trotterlist
 end
@@ -232,16 +239,7 @@ end
 
 # TODO this is hacky and convoluted and needs more thought
 function newstepper(physical, model, method; timestep, order)
-    # model = Model(model)
-
-    # Apply wrappers etc as needed and makes sure everything is on matrices
-
-    # steps = processmodel(model, method)
-
-    # steps = trotterlayers(model)
-    steps = model
-
-    trotterlist = trotterise(physical, steps, method)
+    trotterlist = trotterise(physical, model, method)
 
     tau = timestep
 
@@ -251,12 +249,9 @@ function newstepper(physical, model, method; timestep, order)
         # in the list
         theop = only(only(trotterlist)(tau))
 
-        physicalspace = broadcast((p, _) -> p, physical, CartesianIndices(size(theop)))
-
         T = typeof(theop)
 
-        return TrotterDecomposition(T[], [theop], T[]; timestep=timestep, order=order),
-        physicalspace
+        return TrotterDecomposition(T[], [theop], T[]; timestep=timestep, order=order)
     end
 
     if order == 1
@@ -265,7 +260,7 @@ function newstepper(physical, model, method; timestep, order)
     elseif order == 2
         @info "Second-order trotter decomposition..."
         body = mapreduce(op -> op(tau / 2), vcat, trotterlist)
-        reversed = reverse(trotterise(physical, map(InReverse, steps), method))
+        reversed = reverse(trotterise(physical, model, method, InReverse))
         append!(body, mapreduce(op -> op(tau / 2), vcat, reversed))
     end
 
@@ -273,11 +268,9 @@ function newstepper(physical, model, method; timestep, order)
 
     oplist = TrotterDecomposition(T[], body, T[]; timestep=timestep, order=order)
 
-    physicalspace = broadcast((p, _) -> p, physical, CartesianIndices(size(first(oplist))))
-
     @info "...of $(length(body)) operators"
 
-    return oplist, physicalspace
+    return oplist
 end
 
 # function newstepper(physical, model::Liouvillian, method::TEBD)

@@ -105,9 +105,7 @@ function Simulation(
     storeall=true,
     order=1,
 )
-    stepper, _ = newstepper(
-        physicalspace(pepo), model, method; order=order, timestep=timestep
-    )
+    stepper = newstepper(physicalspace(pepo), model, method; order=order, timestep=timestep)
 
     state = newevolution(pepo, stepper, method)
 
@@ -184,7 +182,7 @@ function simulate!(
     if isdefined(sim, :stepper)
         stepper = sim.stepper
     else
-        stepper, _ = newstepper(physicalspace(pepo), model, method)
+        stepper = newstepper(physicalspace(pepo), model, method)
     end
 
     if isdefined(sim, :truncators)
