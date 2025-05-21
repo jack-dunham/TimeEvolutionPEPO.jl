@@ -1,20 +1,5 @@
 <!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Tutorial · TimeEvolutionPEPO.jl</title><meta name="title" content="Tutorial · TimeEvolutionPEPO.jl"/><meta property="og:title" content="Tutorial · TimeEvolutionPEPO.jl"/><meta property="twitter:title" content="Tutorial · TimeEvolutionPEPO.jl"/><meta name="description" content="Documentation for TimeEvolutionPEPO.jl."/><meta property="og:description" content="Documentation for TimeEvolutionPEPO.jl."/><meta property="twitter:description" content="Documentation for TimeEvolutionPEPO.jl."/><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.050/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../search_index.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><a class="docs-logo" href="../../"><img src="../../assets/logo.svg" alt="TimeEvolutionPEPO.jl logo"/></a><div class="docs-package-name"><span class="docs-autofit"><a href="../../">TimeEvolutionPEPO.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../../">Home</a></li><li><span class="tocitem">Manual</span><ul><li class="is-active"><a class="tocitem" href>Tutorial</a><ul class="internal"><li><a class="tocitem" href="#Constructing-Models"><span>Constructing Models</span></a></li><li><a class="tocitem" href="#Computing-Observables"><span>Computing Observables</span></a></li><li><a class="tocitem" href="#Running-Simulation"><span>Running Simulation</span></a></li></ul></li></ul></li><li><span class="tocitem">Library</span><ul><li><a class="tocitem" href="../../lib/models/">Models</a></li><li><a class="tocitem" href="../../lib/observables/">Observables</a></li><li><a class="tocitem" href="../../lib/simulations/">Simulations</a></li></ul></li><li><a class="tocitem" href="../../lib/">Index</a></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Manual</a></li><li class="is-active"><a href>Tutorial</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Tutorial</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/jack-dunham/TimeEvolutionPEPO.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/jack-dunham/TimeEvolutionPEPO.jl/blob/main/docs/src/man/tutorial.md" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="Tutorial"><a class="docs-heading-anchor" href="#Tutorial">Tutorial</a><a id="Tutorial-1"></a><a class="docs-heading-anchor-permalink" href="#Tutorial" title="Permalink"></a></h1><p>To get started, load TimeEvolutionPEPO.jl and the TensorKit package.jl</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; using TimeEvolutionPEPO</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; using TensorKit</code></pre><h2 id="Constructing-Models"><a class="docs-heading-anchor" href="#Constructing-Models">Constructing Models</a><a id="Constructing-Models-1"></a><a class="docs-heading-anchor-permalink" href="#Constructing-Models" title="Permalink"></a></h2><p>One of the strengths of tensor network methods is that, by working directly with state vectors and matrix representations of time-evolution operators, they do not require deriving specific equations for different models. Provided one can express the generator of the time evolution as a sum of terms amenable to a tensor network representation with respect to some tensor product of local Hilbert spaces, the methods in described in this thesis can be used. That is <em>not</em> to say that the tensor network will necessarily capture the dynamics of the quantum state accurrately, or even allow for stable evolution, but the handle can nevertheless be turned.</p><p>Models are generated by appending objects that are subtypes of <code>AbstractTerm</code> to an instance of the <code>Model</code> type. Each element in the iterable <code>Model</code> represents a operator appearing in a Suzuki-Trotter decomposition, represented by the <code>TrotterLayer</code> type. Multiple terms can appear in the same <code>TrotterLayer</code> indicating that these terms are <em>not</em> trotterised over, i.e. the sum of these terms are exponentiated.</p><p>As an example, consider the spin-<span>$1/2$</span> Heisenberg model with dissipation and dephasing. This model can be constructing using the following code:</p><pre><code class="language-julia hljs">function heisenberg(;Jx = 0.0, Jy = 0.0, Jz = 0.0, γ = 1.0)
-    # Get the Pauli matrices
-    X,Y,Z = PAULI
-
-    # Initialise an instance of the model object
-    model = Model{Liouvillian}()
-
-    push!(model, Jx * LocalOp(X,X))
-    push!(model, Jy * LocalOp(Y,Y))
-    push!(model, Jz * LocalOp(Z,Z))
-
-    # Add the dissipator
-    push!(model, Dissipator(γ * Z, 1 / 2 * (X - im * Y)))
-
-    return model
-end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">heisenberg (generic function with 1 method)</code></pre><p>To demonstrate this in more detail, it is useful to work directly in the Julia REPL. First, define some useful variables:</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; X,Y,Z = PAULI; # Get the Pauli matrices</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; XX = LocalOp(X,X);</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; YY = LocalOp(Y,Y);</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; ZZ = LocalOp(Z,Z);</code></pre><p>Each of <code>XX</code>, <code>YY</code> and <code>ZZ</code> are objects in the following type hierarchy:</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; typeof(XX) &lt;: LocalOp{2} &lt;: AbstractSingleTerm &lt;: AbstractTerm</code><code class="nohighlight hljs ansi" style="display:block;">true</code></pre><p>Adding terms together results in <code>Hamiltonian</code> objects:</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; H = XX + YY + ZZ;</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; H isa Hamiltonian</code><code class="nohighlight hljs ansi" style="display:block;">true</code></pre><p>and adding a <code>Dissipator</code> to a <code>Hamiltonian</code> constructs a <code>Liouvillian</code> object:</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; L = H + Dissipator(Z, 0.5 * (X - im * Y));</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; L isa Liouvillian</code><code class="nohighlight hljs ansi" style="display:block;">true</code></pre><p>A <code>Dissipator</code> can be constructed with any number of Lindblad jump operators as positional arguments to the constructor. Optionally, a <code>Model</code> object can be constructed which allows greater control over the Suzuki-Trotter decomposition of the time-evolution operator. Layers can be added to a <code>Model</code> both at time of construction and later using <code>push!</code>.</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; model = Model(XX, YY);</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; push!(model, ZZ);</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; length(model)</code><code class="nohighlight hljs ansi" style="display:block;">3</code></pre><p>If the second argument to <code>push!</code> is a layer of purely one-local terms (including terms of type <code>Dissipator</code> as TimeEvolutionPEPO.jl currently supports on-site dissipation only), then this layer is distributed evenly amongst all <em>existing</em> layers in <code>model</code>, multiplied by the appropriate prefector. If this is undesired, then either add the one-local terms to the model first, or explicitly construct a <code>Hamiltonian</code> or <code>Liouvillian</code> containing these local terms before pushing this to <code>model</code>.</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; model = Model(XX, YY);</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; push!(model, LocalOp(X));</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; length(model) # No additional layer has been added</code><code class="nohighlight hljs ansi" style="display:block;">2</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; push!(model, zero(Hamiltonian) + LocalOp(X));</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; length(model)</code><code class="nohighlight hljs ansi" style="display:block;">3</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; push!(model, Hamiltonian(LocalOp(X)));</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; length(model)</code><code class="nohighlight hljs ansi" style="display:block;">4</code></pre><p>Note, if one wishes to eventually <code>push!</code> a dissipator to an object of type <code>Model</code>, then it is best to explicitly specify the type parameter at construction as pushing a <code>Dissipator</code> or <code>Liouvillian</code> onto a <code>Model{Hamiltonian}</code> will result in an error.</p><h2 id="Computing-Observables"><a class="docs-heading-anchor" href="#Computing-Observables">Computing Observables</a><a id="Computing-Observables-1"></a><a class="docs-heading-anchor-permalink" href="#Computing-Observables" title="Permalink"></a></h2><p>To calculate expectation values of observables, one must first construct a reduced density matrix from the tensor network. To do this, a boundary algorithm (and associated boundary bond dimension) must be chosen to compute the partial trace of the environment around those lattice sites to be left untraced. Such an object is represented by the <code>DensityMatrix</code> struct. A <code>DensityMatrix</code> can the be used to compute reduced density matrices.</p><pre><code class="language-julia hljs">function magnetisation(pepo::PEPO; alg = VUMPS(bonddim = 16, verbose=false))
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Quick start · TimeEvolutionPEPO.jl</title><meta name="title" content="Quick start · TimeEvolutionPEPO.jl"/><meta property="og:title" content="Quick start · TimeEvolutionPEPO.jl"/><meta property="twitter:title" content="Quick start · TimeEvolutionPEPO.jl"/><meta name="description" content="Documentation for TimeEvolutionPEPO.jl."/><meta property="og:description" content="Documentation for TimeEvolutionPEPO.jl."/><meta property="twitter:description" content="Documentation for TimeEvolutionPEPO.jl."/><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.050/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../search_index.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><a class="docs-logo" href="../../"><img src="../../assets/logo.svg" alt="TimeEvolutionPEPO.jl logo"/></a><div class="docs-package-name"><span class="docs-autofit"><a href="../../">TimeEvolutionPEPO.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../../">Home</a></li><li><span class="tocitem">Manual</span><ul><li class="is-active"><a class="tocitem" href>Quick start</a><ul class="internal"><li><a class="tocitem" href="#Computing-Observables"><span>Computing Observables</span></a></li><li><a class="tocitem" href="#Running-Simulation"><span>Running Simulation</span></a></li></ul></li><li><a class="tocitem" href="../states/">State representation using the <code>PEPO</code> type</a></li><li><a class="tocitem" href="../models/">Constructing models</a></li></ul></li><li><span class="tocitem">Library</span><ul><li><a class="tocitem" href="../../lib/models/">Models</a></li><li><a class="tocitem" href="../../lib/observables/">Observables</a></li><li><a class="tocitem" href="../../lib/simulations/">Simulations</a></li></ul></li><li><a class="tocitem" href="../../lib/">Index</a></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Manual</a></li><li class="is-active"><a href>Quick start</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Quick start</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/jack-dunham/TimeEvolutionPEPO.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/jack-dunham/TimeEvolutionPEPO.jl/blob/main/docs/src/man/tutorial.md" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="Quick-start"><a class="docs-heading-anchor" href="#Quick-start">Quick start</a><a id="Quick-start-1"></a><a class="docs-heading-anchor-permalink" href="#Quick-start" title="Permalink"></a></h1><p>To get started, load TimeEvolutionPEPO.jl and the TensorKit package.jl</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; using TimeEvolutionPEPO</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; using TensorKit</code></pre><h2 id="Computing-Observables"><a class="docs-heading-anchor" href="#Computing-Observables">Computing Observables</a><a id="Computing-Observables-1"></a><a class="docs-heading-anchor-permalink" href="#Computing-Observables" title="Permalink"></a></h2><p>To calculate expectation values of observables, one must first construct a reduced density matrix from the tensor network. To do this, a boundary algorithm (and associated boundary bond dimension) must be chosen to compute the partial trace of the environment around those lattice sites to be left untraced. Such an object is represented by the <code>DensityMatrix</code> struct. A <code>DensityMatrix</code> can the be used to compute reduced density matrices.</p><pre><code class="language-julia hljs">function magnetisation(pepo::PEPO; alg = CTMRG(bonddim = 16, tol = 1e-8, verbose=false))
     dm = DensityMatrix(pepo, alg)
     rdm = partialtrace(dm, (1,1))
 
@@ -23,13 +8,13 @@ end</code></pre><pre class="documenter-example-output"><code class="nohighlight 
     return real(M)
 end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">magnetisation (generic function with 1 method)</code></pre><p>In practice it is useful to save the <code>DensityMatrix</code> object rather than running the boundary renormalization every time one wishes to compute a local observable. The correlation length of a state can be directly accessed directly from the <code>DensityMatrix</code> object without first needing to compute a partial trace:</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; pepo = PEPO((0,0,-1), ℂ^2, ℂ^4);</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; dm = DensityMatrix(pepo, VUMPS(bonddim = 16))</code><code class="nohighlight hljs ansi" style="display:block;"><span class="sgr36"><span class="sgr1">┌ Info: </span></span>Running algorithm:
 <span class="sgr36"><span class="sgr1">└ </span></span>  algorithm = VUMPS(16, 100, 1.0e-12, true)
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Convergence ≈ 1.0765512910322548 after 1 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Convergence ≈ 1.4763528539607674e-6 after 2 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Convergence ≈ 2.851014144173605e-17 after 3 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Convergence: 2.851014144173605e-17
+<span class="sgr36"><span class="sgr1">[ Info: </span></span>Convergence ≈ 1.0406268456397239 after 1 iterations.
+<span class="sgr36"><span class="sgr1">[ Info: </span></span>Convergence ≈ 4.258111438806506e-9 after 2 iterations.
+<span class="sgr36"><span class="sgr1">[ Info: </span></span>Convergence ≈ 2.2601839972406004e-17 after 3 iterations.
+<span class="sgr36"><span class="sgr1">[ Info: </span></span>Convergence: 2.2601839972406004e-17
 <span class="sgr36"><span class="sgr1">[ Info: </span></span>Algorithm convergenced to within tolerance 1.0e-12 after 3 iterations
 DensityMatrix of unit cell size (1, 1) normalized using:
-VUMPS(16, 100, 1.0e-12, true)</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; correlationlength(dm)</code><code class="nohighlight hljs ansi" style="display:block;">12.033064249552563</code></pre><p>It is also possible to compute arbitrary <span>$n$</span>-point observables be computing reduced density matrices over multiple sites:</p><pre><code class="language-julia hljs">function cx13(dm::DensityMatrix)
+VUMPS(16, 100, 1.0e-12, true)</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; correlationlength(dm)</code><code class="nohighlight hljs ansi" style="display:block;">13.921995698479643</code></pre><p>It is also possible to compute arbitrary <span>$n$</span>-point observables be computing reduced density matrices over multiple sites:</p><pre><code class="language-julia hljs">function cx13(dm::DensityMatrix)
     X = PAULI[1]
     id = one(X)
 
@@ -37,211 +22,60 @@ VUMPS(16, 100, 1.0e-12, true)</code><br/><code class="language-julia-repl hljs" 
     cx13 = expval(rdm13, X, X) - expval(rdm13, kron(X, id)) * expval(rdm13, kron(id, X))
 
     return cx13
-end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">cx13 (generic function with 1 method)</code></pre><h2 id="Running-Simulation"><a class="docs-heading-anchor" href="#Running-Simulation">Running Simulation</a><a id="Running-Simulation-1"></a><a class="docs-heading-anchor-permalink" href="#Running-Simulation" title="Permalink"></a></h2><p>Simulations must first be initialised:</p><pre><code class="language-julia hljs">function newsim(model)
-    # Set initial state to a product state of spins pointing down along the z-axis
-    ρ = (1,0,0)
-
-    # Use a two-by-two unit cell.
-    s = fill(ℂ^2,2,2)
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">cx13 (generic function with 1 method)</code></pre><h2 id="Running-Simulation"><a class="docs-heading-anchor" href="#Running-Simulation">Running Simulation</a><a id="Running-Simulation-1"></a><a class="docs-heading-anchor-permalink" href="#Running-Simulation" title="Permalink"></a></h2><p>Simulations must first be initialised using three arguments. First, a tensor network representation of an initial state must be defined.  This can be one obtained from a different <code>Simulation</code> object by calling the function <a href="../../lib/simulations/#TimeEvolutionPEPO.quantumstate"><code>quantumstate</code></a> on this object to return the <code>PEPO</code> associated with that simulation.</p><pre><code class="language-julia hljs">function newsim(model)
+    # Set initial state to a product state of spins pointing down along the z-axis on a two-by-two
+    # unit-cell
+    ρ = fill((0,0,-1), 2, 2)
 
     # Set the bond dimension equal to 4
-    D = ℂ^4
+    D = 4
 
     # Initialise using the TEBD (with default options)
     method = TEBD()
 
-    # Construct the tensor network
-    state = PEPO(ρ, s, D)
+    # Construct the tensor network. We enforce a checkerboard lattice using
+    # the `SquareSymmetric` type parameter
+    state = PEPO{SquareSymmetric}(ρ, 4)
 
-    sim = Simulation(state, model, method; timestep=0.1)
+    sim = Simulation(state, model, method; timestep=0.025)
 
     return sim
 end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">newsim (generic function with 1 method)</code></pre><p>We can then run the simulation be calling <code>simulate!</code>.</p><pre><code class="language-julia hljs">function runsim!(sim)
-    # Execute 50 time steps without a callback function.
-    simulate!(sim; numsteps = 50)
+    magn = Float64[]
+    time = Float64[]
 
-    M = Float64[]
+    # This custom function is executed at regular intervals during the simulation
+    callback = sim -&gt; begin
+        # Get some useful simulation information
+        info = simulationinfo(sim)
 
-    # Execute an additional 50 time steps, computing the magnetisation at every 5th time step
-    simulate!(sim; numsteps = 50, maxshots = 10) do sim
-        push!(M, quantumstate(sim) |&gt; magnetisation)
-        return nothing
+        # Get tge `PEPO` object contained in `sim`
+        state = quantumstate(sim)
+
+        push!(magn, magnetisation(state))
+        push!(time, info.simtime)
     end
 
-    return M
-end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">runsim! (generic function with 1 method)</code></pre><p>As an example, consider the nearest-neighbour Ising model:</p><p class="math-container">\[H = \frac{J}{4} \sum_{i,j} \sigma^{z}_i \sigma^{z}_j\]</p><p>with transverse dissipation <span>$L_j = \frac{\sqrt{\gamma}}{2}(\sigma^y_j - i\sigma^z_j)$</span>.  This model can be constructed by using the following code (where we have chosen <span>$\gamma = 1$</span>:</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; X, Y, Z = PAULI</code><code class="nohighlight hljs ansi" style="display:block;">(ComplexF64[0.0 + 0.0im 1.0 + 0.0im; 1.0 + 0.0im 0.0 + 0.0im], ComplexF64[0.0 + 0.0im 0.0 - 1.0im; 0.0 + 1.0im 0.0 + 0.0im], ComplexF64[1.0 + 0.0im 0.0 + 0.0im; 0.0 + 0.0im -1.0 + 0.0im])</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; model = J -&gt; Model(J / 4 * LocalOp(Z,Z) + Dissipator(0.5 * (Y - im * Z)))</code><code class="nohighlight hljs ansi" style="display:block;">#5 (generic function with 1 method)</code></pre><p>This can then be passed into the functions we have defined previously.</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; sim = newsim(model(1.5));</code><code class="nohighlight hljs ansi" style="display:block;"><span class="sgr36"><span class="sgr1">[ Info: </span></span>First-order trotter decomposition...
-<span class="sgr36"><span class="sgr1">┌ Info: </span></span>
-<span class="sgr36"><span class="sgr1">│ </span></span>  err = 3.960260552778272e-18
-<span class="sgr36"><span class="sgr1">└ </span></span>  η = 11
-<span class="sgr36"><span class="sgr1">┌ Info: </span></span>
-<span class="sgr36"><span class="sgr1">│ </span></span>  err = 3.960260552778272e-18
-<span class="sgr36"><span class="sgr1">└ </span></span>  η = 11
-<span class="sgr36"><span class="sgr1">┌ Info: </span></span>
-<span class="sgr36"><span class="sgr1">│ </span></span>  err = 3.960260552778272e-18
-<span class="sgr36"><span class="sgr1">└ </span></span>  η = 11
-<span class="sgr36"><span class="sgr1">┌ Info: </span></span>
-<span class="sgr36"><span class="sgr1">│ </span></span>  err = 3.960260552778272e-18
-<span class="sgr36"><span class="sgr1">└ </span></span>  η = 11
-<span class="sgr36"><span class="sgr1">┌ Info: </span></span>
-<span class="sgr36"><span class="sgr1">│ </span></span>  err = 3.960260552778272e-18
-<span class="sgr36"><span class="sgr1">└ </span></span>  η = 11
-<span class="sgr36"><span class="sgr1">┌ Info: </span></span>
-<span class="sgr36"><span class="sgr1">│ </span></span>  err = 3.960260552778272e-18
-<span class="sgr36"><span class="sgr1">└ </span></span>  η = 11
-<span class="sgr36"><span class="sgr1">┌ Info: </span></span>
-<span class="sgr36"><span class="sgr1">│ </span></span>  err = 3.960260552778272e-18
-<span class="sgr36"><span class="sgr1">└ </span></span>  η = 11
-<span class="sgr36"><span class="sgr1">┌ Info: </span></span>
-<span class="sgr36"><span class="sgr1">│ </span></span>  err = 3.960260552778272e-18
-<span class="sgr36"><span class="sgr1">└ </span></span>  η = 11
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>...of 2 operators</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; obs = runsim!(sim)</code><code class="nohighlight hljs ansi" style="display:block;"><span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 4.55159509824294 after 1 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.22753533870234482 after 2 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.2106538076754036 after 3 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.15961185253507884 after 4 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.1711499725940626 after 5 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.05766230491967841 after 6 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.14724863130926405 after 7 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.16237795424531243 after 8 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.13640556846849464 after 9 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.11806977930754557 after 10 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.10095929539174316 after 11 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.09668748014921287 after 12 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.11073226545522126 after 13 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.11062077932609331 after 14 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.10384961184219475 after 15 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.09690139568723995 after 16 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.2421394099334961 after 17 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.3146971111365422 after 18 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.23898316506364503 after 19 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.19221321905335767 after 20 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.16093454585325878 after 21 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.42859349949067477 after 22 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.07556948195116492 after 23 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.09317109557393331 after 24 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.10958222753455389 after 25 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.2609451635211506 after 26 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.08238281620895437 after 27 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.0813596283520071 after 28 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.0722823027874293 after 29 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.1156981533267613 after 30 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.34609014040339553 after 31 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.19074797970595186 after 32 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.15987560427122202 after 33 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.17671809272021627 after 34 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.07625718610850063 after 35 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.08905060046083639 after 36 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.07674751872357409 after 37 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.05940202602615884 after 38 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.10947429595357903 after 39 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.052279939278135366 after 40 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.21340844636695677 after 41 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.22229010572878005 after 42 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.07465850486053366 after 43 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.06723862829469283 after 44 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.08407753190398112 after 45 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.07493596070858811 after 46 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.10267371752465995 after 47 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.07611849390748035 after 48 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.20628955393607276 after 49 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.1393410169891102 after 50 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.2384657362395263 after 1 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.25650082864145457 after 2 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.06341107899403642 after 3 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.08586144185223465 after 4 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.48840890514309043 after 5 iterations.
-<span class="sgr36"><span class="sgr1">┌ Info: </span></span>Running algorithm:
-<span class="sgr36"><span class="sgr1">└ </span></span>  algorithm = VUMPS(16, 100, 1.0e-12, false)
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Convergence: 6.382306008055675e-15
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Algorithm convergenced to within tolerance 1.0e-12 after 4 iterations
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.20026489494384023 after 6 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.07931643538838737 after 7 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.10888727592692216 after 8 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.0834871632485851 after 9 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.062430382491230105 after 10 iterations.
-<span class="sgr36"><span class="sgr1">┌ Info: </span></span>Running algorithm:
-<span class="sgr36"><span class="sgr1">└ </span></span>  algorithm = VUMPS(16, 100, 1.0e-12, false)
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Convergence: 2.8971942381830954e-16
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Algorithm convergenced to within tolerance 1.0e-12 after 4 iterations
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.1538044655313923 after 11 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.3396369191936135 after 12 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.08725215352583822 after 13 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.16763670946965367 after 14 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.07106963008126253 after 15 iterations.
-<span class="sgr36"><span class="sgr1">┌ Info: </span></span>Running algorithm:
-<span class="sgr36"><span class="sgr1">└ </span></span>  algorithm = VUMPS(16, 100, 1.0e-12, false)
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Convergence: 2.4569611001604705e-16
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Algorithm convergenced to within tolerance 1.0e-12 after 4 iterations
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.05192399616968907 after 16 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.11079138984270587 after 17 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.13050693214303222 after 18 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.14933215611541703 after 19 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.13198488519994045 after 20 iterations.
-<span class="sgr36"><span class="sgr1">┌ Info: </span></span>Running algorithm:
-<span class="sgr36"><span class="sgr1">└ </span></span>  algorithm = VUMPS(16, 100, 1.0e-12, false)
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Convergence: 2.4594591712848243e-16
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Algorithm convergenced to within tolerance 1.0e-12 after 4 iterations
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.19982865901781868 after 21 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.036109072307923026 after 22 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.09366078798393955 after 23 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.18067479889545676 after 24 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.23459930375981505 after 25 iterations.
-<span class="sgr36"><span class="sgr1">┌ Info: </span></span>Running algorithm:
-<span class="sgr36"><span class="sgr1">└ </span></span>  algorithm = VUMPS(16, 100, 1.0e-12, false)
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Convergence: 1.5060676019018822e-15
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Algorithm convergenced to within tolerance 1.0e-12 after 4 iterations
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.08248149302974146 after 26 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.21380502193133233 after 27 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.0889575222513103 after 28 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.23362112058075732 after 29 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.07872919737101422 after 30 iterations.
-<span class="sgr36"><span class="sgr1">┌ Info: </span></span>Running algorithm:
-<span class="sgr36"><span class="sgr1">└ </span></span>  algorithm = VUMPS(16, 100, 1.0e-12, false)
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Convergence: 4.200291145390997e-15
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Algorithm convergenced to within tolerance 1.0e-12 after 4 iterations
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.08785465445700993 after 31 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.07173582534332208 after 32 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.06245473880823255 after 33 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.12159330765354716 after 34 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.14389075821587752 after 35 iterations.
-<span class="sgr36"><span class="sgr1">┌ Info: </span></span>Running algorithm:
-<span class="sgr36"><span class="sgr1">└ </span></span>  algorithm = VUMPS(16, 100, 1.0e-12, false)
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Convergence: 5.4671521053748045e-15
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Algorithm convergenced to within tolerance 1.0e-12 after 4 iterations
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.07009866074545222 after 36 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.040775779460479174 after 37 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.1746534280205351 after 38 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.07296903819682725 after 39 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.07646744165604395 after 40 iterations.
-<span class="sgr36"><span class="sgr1">┌ Info: </span></span>Running algorithm:
-<span class="sgr36"><span class="sgr1">└ </span></span>  algorithm = VUMPS(16, 100, 1.0e-12, false)
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Convergence: 4.660581264647913e-14
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Algorithm convergenced to within tolerance 1.0e-12 after 4 iterations
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.08218340722989599 after 41 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.05158576169657605 after 42 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.06627251251160164 after 43 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.17238591814897816 after 44 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.2053394674501095 after 45 iterations.
-<span class="sgr36"><span class="sgr1">┌ Info: </span></span>Running algorithm:
-<span class="sgr36"><span class="sgr1">└ </span></span>  algorithm = VUMPS(16, 100, 1.0e-12, false)
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Convergence: 7.00906024219408e-14
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Algorithm convergenced to within tolerance 1.0e-12 after 4 iterations
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.32723495572057315 after 46 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.10074820869885814 after 47 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.28353312271868475 after 48 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.22932091364937757 after 49 iterations.
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.18654083611781427 after 50 iterations.
-<span class="sgr36"><span class="sgr1">┌ Info: </span></span>Running algorithm:
-<span class="sgr36"><span class="sgr1">└ </span></span>  algorithm = VUMPS(16, 100, 1.0e-12, false)
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Convergence: 8.199265801983552e-15
-<span class="sgr36"><span class="sgr1">[ Info: </span></span>Algorithm convergenced to within tolerance 1.0e-12 after 4 iterations
-10-element Vector{Float64}:
- -0.515829734691806
- -0.5383134071810891
- -0.5341016087817071
- -0.5246632659197308
- -0.5389151670763523
- -0.5527004220969942
- -0.5314327863465351
- -0.5150421621231133
- -0.509706711516718
- -0.5404757381641709</code></pre><p>Note the <code>Simulation</code> object <code>sim</code> mutates in the process.  Some information pertaining to a given <code>Simulation</code> object can be obtained by calling:</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; simulationinfo(sim)</code><code class="nohighlight hljs ansi" style="display:block;">(converged = false, convergence = 0.18654083611781427, iterations = 100, finished = true, simtime = 10.0, walltime = 5.266020059585571)</code></pre><p>which can also be accessed in the callback function.</p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../../">« Home</a><a class="docs-footer-nextpage" href="../../lib/models/">Models »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.11.4 on <span class="colophon-date" title="Wednesday 21 May 2025 07:58">Wednesday 21 May 2025</span>. Using Julia version 1.11.5.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+    # Initially, dynamics are faster, so execute callback every time step
+    simulate!(callback, sim; numsteps = 50, maxshots = 50, verbose=false)
+
+    # Sample only every 3rd time step for another 150 steps
+    simulate!(callback, sim; numsteps = 150, maxshots = 50, verbose=false)
+
+    return magn, time
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">runsim! (generic function with 1 method)</code></pre><p>As an example, consider the nearest-neighbour Ising model:</p><p class="math-container">\[H = \frac{J}{4} \sum_{\langle i,j \rangle} \sigma^{z}_i \sigma^{z}_j\]</p><p>with transverse dissipation <span>$L_j = \frac{\sqrt{\gamma}}{2}(\sigma^y_j - i\sigma^z_j)$</span>.  This model can be constructed by using the following code (where we have chosen <span>$\gamma = 1$</span>:</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; X, Y, Z = PAULI</code><code class="nohighlight hljs ansi" style="display:block;">(ComplexF64[0.0 + 0.0im 1.0 + 0.0im; 1.0 + 0.0im 0.0 + 0.0im], ComplexF64[0.0 + 0.0im 0.0 - 1.0im; 0.0 + 1.0im 0.0 + 0.0im], ComplexF64[1.0 + 0.0im 0.0 + 0.0im; 0.0 + 0.0im -1.0 + 0.0im])</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; model = J -&gt; Model(J / 4 * LocalOp(Z,Z) + Dissipator(0.5 * (Y - im * Z)))</code><code class="nohighlight hljs ansi" style="display:block;">#6 (generic function with 1 method)</code></pre><p>This can then be passed into the functions we have defined previously.</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; sim = newsim(model(3.0));</code><code class="nohighlight hljs ansi" style="display:block;"><span class="sgr36"><span class="sgr1">[ Info: </span></span>First-order trotter decomposition...
+<span class="sgr36"><span class="sgr1">[ Info: </span></span>Compressed to η=11 with error 1.2850557985325083e-18
+<span class="sgr36"><span class="sgr1">[ Info: </span></span>Compressed to η=11 with error 1.2850557985325083e-18
+<span class="sgr36"><span class="sgr1">[ Info: </span></span>Compressed to η=11 with error 1.2850557985325083e-18
+<span class="sgr36"><span class="sgr1">[ Info: </span></span>Compressed to η=11 with error 1.2850557985325083e-18
+<span class="sgr36"><span class="sgr1">[ Info: </span></span>Compressed to η=11 with error 1.2850557985325083e-18
+<span class="sgr36"><span class="sgr1">[ Info: </span></span>Compressed to η=11 with error 1.2850557985325083e-18
+<span class="sgr36"><span class="sgr1">[ Info: </span></span>Compressed to η=11 with error 1.2850557985325083e-18
+<span class="sgr36"><span class="sgr1">[ Info: </span></span>Compressed to η=11 with error 1.2850557985325083e-18
+<span class="sgr36"><span class="sgr1">[ Info: </span></span>...of 2 operators</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; magn, time = runsim!(sim)</code><code class="nohighlight hljs ansi" style="display:block;"><span class="sgr36"><span class="sgr1">[ Info: </span></span>Finished.
+<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.0142954112717258 after 50 iterations.
+<span class="sgr36"><span class="sgr1">[ Info: </span></span>Total iterations for this Simulation: 50).
+<span class="sgr36"><span class="sgr1">[ Info: </span></span>Finished.
+<span class="sgr36"><span class="sgr1">[ Info: </span></span>Steady state convergence: 0.00318987513875332 after 150 iterations.
+<span class="sgr36"><span class="sgr1">[ Info: </span></span>Total iterations for this Simulation: 200).
+([0.0, -0.02459882360593509, -0.04806384447047939, -0.06995080252877849, -0.08988940163523651, -0.10758582906160438, -0.12282329049052511, -0.1354607166501927, -0.1454298260944128, -0.15273075042456763  …  -0.30054252997782704, -0.30168197735283603, -0.3027315112043331, -0.303693748694053, -0.3045757214084473, -0.3053873553495132, -0.30613969263212004, -0.30684323156669224, -0.3075066647256481, -0.308136166073379], [0.0, 0.025, 0.05, 0.07500000000000001, 0.1, 0.125, 0.15000000000000002, 0.17500000000000002, 0.2, 0.225  …  4.325, 4.4, 4.475, 4.550000000000001, 4.625, 4.7, 4.775, 4.85, 4.925000000000001, 5.0])</code></pre><p>Note the <code>Simulation</code> object <code>sim</code> mutates in the process.  Some information pertaining to a given <code>Simulation</code> object can be obtained by calling:</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; simulationinfo(sim)</code><code class="nohighlight hljs ansi" style="display:block;">(converged = false, convergence = 0.00318987513875332, iterations = 200, finished = true, simtime = 5.0, walltime = 44.887104749679565)</code></pre><p>which can also be accessed in the callback function. Lets plot the results of the simulation using the Plots.jl package.</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; using Makie, CairoMakie # Make sure this is `add`ed to you environment!</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; scatterlines(time, magn)</code><code class="nohighlight hljs ansi" style="display:block;">FigureAxisPlot()</code></pre><p><img src="../quick-start-magn-plot.svg" alt="Magnetisation plot"/></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../../">« Home</a><a class="docs-footer-nextpage" href="../states/">State representation using the <code>PEPO</code> type »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.11.4 on <span class="colophon-date" title="Wednesday 21 May 2025 12:04">Wednesday 21 May 2025</span>. Using Julia version 1.11.5.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
