@@ -5,7 +5,11 @@ makedocs(
     sitename="TimeEvolutionPEPO.jl",
     pages=[
         "Home" => "index.md",
-        "Manual" => ["man/tutorial.md"],
+        "Manual" => [
+            "man/tutorial.md",
+            "man/states.md",
+            "man/models.md",
+        ],
         "Library" => [
             "lib/models.md",
             "lib/observables.md",
