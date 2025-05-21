@@ -31,6 +31,7 @@ export PEPOKit
 ## Essential ITC reexports
 export UnitCell, Square, SquareSymmetric
 export VUMPS, CTMRG
+export tensortype
 #
 
 export delta
@@ -151,41 +152,36 @@ include("dev/vidalgauge.jl")
 using PrecompileTools: @setup_workload, @compile_workload
 
 @setup_workload begin
-    X,Y,Z = PAULI
+    X, Y, Z = PAULI
     @compile_workload begin
-
         warnlogger = ConsoleLogger(stderr, Logging.Warn)
         oldlogger = global_logger(warnlogger)
 
-        model = Model(1.5 / 4 * LocalOp(Z,Z) + Dissipator(0.5 * (Y - im * Z)))
+        model = Model(1.5 / 4 * LocalOp(Z, Z) + Dissipator(0.5 * (Y - im * Z)))
 
         sim = Simulation(
-            PEPO{SquareSymmetric}(
-                (0,0,-1),
-                fill(ℂ^2,2,2),
-                ℂ^1
-            ),
+            PEPO{SquareSymmetric}((0, 0, -1), fill(ℂ^2, 2, 2), ℂ^1),
             model,
             TEBD();
-            timestep=1e-1
+            timestep=1e-1,
         )
 
         simulate!(sim; numsteps=1)
 
-        dmc = DensityMatrix(quantumstate(sim), CTMRG(bonddim=1))
-        dmv = DensityMatrix(quantumstate(sim), VUMPS(bonddim=1))
-        dmp = PurifiedDensityMatrix(quantumstate(sim), VUMPS(bonddim=1))
+        dmc = DensityMatrix(quantumstate(sim), CTMRG(; bonddim=1))
+        dmv = DensityMatrix(quantumstate(sim), VUMPS(; bonddim=1))
+        dmp = PurifiedDensityMatrix(quantumstate(sim), VUMPS(; bonddim=1))
 
         # `partialtrace` calls a generated function, so compile the common use cases
-        partialtrace(dmc,(1,1))
-        partialtrace(dmc,(1,1),(2,1))
-        partialtrace(dmc,(1,1),(1,2))
-        partialtrace(dmc,(1,1),(2,2))
+        partialtrace(dmc, (1, 1))
+        partialtrace(dmc, (1, 1), (2, 1))
+        partialtrace(dmc, (1, 1), (1, 2))
+        partialtrace(dmc, (1, 1), (2, 2))
 
-        partialtrace(dmv,(1,1))
-        partialtrace(dmv,(2,1))
+        partialtrace(dmv, (1, 1))
+        partialtrace(dmv, (2, 1))
 
-        partialtrace(dmp,(1,1))
+        partialtrace(dmp, (1, 1))
 
         global_logger(oldlogger)
     end

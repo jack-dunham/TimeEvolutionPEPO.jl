@@ -6,7 +6,7 @@ $(TYPEDEF)
 struct Model{HL<:Union{Hamiltonian,Liouvillian,Ising}} <: AbstractModel
     layers::Vector{TrotterLayer{HL}}
     function Model{T}(terms::Vector) where {T}
-        layers = map(TrotterLayer,terms)
+        layers = map(TrotterLayer, terms)
         return new{T}(layers)
     end
     Model{T}() where {T} = new{T}([])
@@ -25,7 +25,7 @@ end
 
 # Model{T}(HL::Vararg) where {T} = Model{T}(collect(HL))
 
-Base.iterate(model::Model, state = 1) = iterate(model.layers, state)
+Base.iterate(model::Model, state=1) = iterate(model.layers, state)
 Base.length(model::Model) = length(model.layers)
 
 function Base.show(io::IO, ::MIME"text/plain", model::Model)
@@ -48,7 +48,7 @@ function Base.push!(model::Model{T}, layer::TrotterLayer) where {T}
         if e isa MethodError
             if e.f === convert
                 type, value = e.args
-                if all(S -> S<:TrotterLayer{Hamiltonian}, (type, TrotterLayer{T}))
+                if all(S -> S <: TrotterLayer{Hamiltonian}, (type, TrotterLayer{T}))
                     if value isa Union{TrotterLayer{Liouvillian},TrotterLayer{Dissipator}}
                         @error "Failed to `push!` term of type `$(typeof(value))` to `$(typeof(model))`. You should instead construct an instance of the type `Model{Liouvillian}` to add terms of type `Dissipator` and `Liouvillian`."
                     end
@@ -59,8 +59,7 @@ function Base.push!(model::Model{T}, layer::TrotterLayer) where {T}
     end
     return model
 end
-function Base.push!(model::Model, layer::TrotterLayer{<:Union{Dissipator, LocalOp{1}}})
-
+function Base.push!(model::Model, layer::TrotterLayer{<:Union{Dissipator,LocalOp{1}}})
     l = length(model)
 
     broadcast!(+, model.layers, model.layers, 1 / l * layer)
@@ -73,7 +72,7 @@ function Base.append!(m1::Model, m2::Model)
     end
     return m1
 end
-function Base.push!(model::Model, term::AbstractTerm) 
+function Base.push!(model::Model, term::AbstractTerm)
     if isexpandable(term)
         for subterm in expandterm(term)
             push!(model, expandterm(subterm))

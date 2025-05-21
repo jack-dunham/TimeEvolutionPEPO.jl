@@ -50,14 +50,14 @@ LocalOp(D::AbstractMatrix) = LocalOp((D,))
 Construct a local axial term as a `LocalOp` with ``A^{[1]} = A^{[2]} =`` `A`
 """
 function LocalOp(C, B, A=one(C); l::Int=1)
-    
     if l < 1
         if l == 0
             throw(
                 ArgumentError(
-                "onsite (one-local) terms should be constructed using the " *
-                    "single argument method `LocalOp(D::AbstractMatrix)`"
-                        ))
+                    "onsite (one-local) terms should be constructed using the " *
+                    "single argument method `LocalOp(D::AbstractMatrix)`",
+                ),
+            )
         else
             throw(ArgumentError("distance `l` must be positive; got l = $l"))
         end
