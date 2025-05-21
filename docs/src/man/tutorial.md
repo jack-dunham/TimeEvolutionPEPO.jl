@@ -68,7 +68,7 @@ function newsim(model)
     # the `SquareSymmetric` type parameter
     state = PEPO{SquareSymmetric}(ρ, 4)
 
-    sim = Simulation(state, model, method; timestep=0.1)
+    sim = Simulation(state, model, method; timestep=0.025)
 
     return sim
 end
@@ -76,17 +76,30 @@ end
 We can then run the simulation be calling `simulate!`.
 ```@example
 function runsim!(sim)
-    M = Float64[]
+    magn = Float64[]
+    time = Float64[]
 
-    # Execute 100 time steps, computing the magnetisation at every other time step
-    simulate!(sim; numsteps = 50, maxshots = 50) do sim
+    # This custom function is executed at regular intervals during the simulation
+    callback = sim -> begin
+        # Get some useful simulation information 
+        info = simulationinfo(sim)
+
+        # Get tge `PEPO` object contained in `sim`
+        state = quantumstate(sim)
+
         with_logger(NullLogger()) do # hide
-        push!(M, quantumstate(sim) |> magnetisation)
+        push!(magn, magnetisation(state))
         end # hide
-        return nothing
+        push!(time, info.simtime)
     end
 
-    return M
+    # Initially, dynamics are faster, so execute callback every time step
+    simulate!(callback, sim; numsteps = 50, maxshots = 50, verbose=false)
+
+    # Sample only every 3rd time step for another 150 steps
+    simulate!(callback, sim; numsteps = 150, maxshots = 50, verbose=false)
+
+    return magn, time
 end
 ```
 As an example, consider the nearest-neighbour Ising model:
@@ -102,7 +115,7 @@ model = J -> Model(J / 4 * LocalOp(Z,Z) + Dissipator(0.5 * (Y - im * Z)))
 This can then be passed into the functions we have defined previously.
 ```@repl
 sim = newsim(model(3.0));
-obs = runsim!(sim)
+magn, time = runsim!(sim)
 ```
 Note the `Simulation` object `sim` mutates in the process. 
 Some information pertaining to a given `Simulation` object can be obtained by calling:
@@ -112,8 +125,8 @@ simulationinfo(sim)
 which can also be accessed in the callback function.
 Lets plot the results of the simulation using the Plots.jl package.
 ```@repl
-using PyPlot # Make sure this is `add`ed to you environment!
-plot(obs)
-savefig("quick-start-magn-plot.svg"); nothing # hide
+using Makie, CairoMakie # Make sure this is `add`ed to you environment!
+scatterlines(time, magn)
+save("quick-start-magn-plot.svg", current_figure()); nothing # hide
 ```
 ![Magnetisation plot](quick-start-magn-plot.svg)
