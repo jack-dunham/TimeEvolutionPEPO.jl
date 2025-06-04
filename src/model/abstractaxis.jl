@@ -76,6 +76,23 @@ stepper_type(::IsLocal) = LocalStepper
 stepper_type(::IsAxial) = AxialStepper
 stepper_type(::IsGlobal) = FullStepper
 
+stepper_type(method, physical) = stepper_type(UpdateStyle(method), physical)
+function stepper_type(::IsLocal, physical)
+    T = tensormaptype(eltype(physical), 4, 1, ComplexF64)
+    G = geometrytype(physical)
+    return LocalStepper{G,T}
+end
+function stepper_type(::IsAxial, physical)
+    T = tensormaptype(eltype(physical), 4, 2, ComplexF64)
+    G = geometrytype(physical)
+    return AxialStepper{G,T}
+end
+function stepper_type(::IsGlobal, physical)
+    T = tensormaptype(eltype(physical), 4, 4, ComplexF64)
+    G = geometrytype(physical)
+    return FullStepper{G,T}
+end
+
 UpdateStyle(a) = UpdateStyle(typeof(a))
 UpdateStyle(::Type{<:AbstractMatrix{T}}) where {T} = UpdateStyle(T)
 UpdateStyle(::Type) = IsGlobal()
@@ -88,7 +105,6 @@ function process_model(model)
     return process_model(vec)
 end
 function process_model(invec::Vector)
-
     outvec = map(m -> [m;;], invec)
 
     T = eltype(eltype((outvec)))

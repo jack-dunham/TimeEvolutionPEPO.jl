@@ -133,6 +133,7 @@ end
 function _trotterise(physical, steps, method, ::InReverse)
     return _trotterise(physical, map(InReverse, steps), method)
 end
+
 function _trotterise(physical, steps, method, _=nothing)
     @debug "Trotterising over $(length(steps)) layers"
 
@@ -242,6 +243,7 @@ function newstepper(physical, model, method; timestep, order)
     trotterlist = trotterise(physical, model, method)
 
     tau = timestep
+    T = stepper_type(method, physical)
 
     if length(trotterlist) == 1 && method isa ClusterPEPO
         # No trotterisation required if we have made it this far with only one operator 
@@ -249,9 +251,7 @@ function newstepper(physical, model, method; timestep, order)
         # in the list
         theop = only(only(trotterlist)(tau))
 
-        T = typeof(theop)
-
-        return TrotterDecomposition(T[], [theop], T[]; timestep=timestep, order=order)
+        return TrotterDecomposition(T[], T[theop], T[]; timestep=timestep, order=order)
     end
 
     if order == 1
@@ -263,8 +263,6 @@ function newstepper(physical, model, method; timestep, order)
         reversed = reverse(trotterise(physical, model, method, InReverse))
         append!(body, mapreduce(op -> op(tau / 2), vcat, reversed))
     end
-
-    T = eltype(body)
 
     oplist = TrotterDecomposition(T[], body, T[]; timestep=timestep, order=order)
 
