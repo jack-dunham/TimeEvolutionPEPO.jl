@@ -337,6 +337,7 @@ function Base.convert(::Type{PEPO{Square}}, pepo)
     return PEPO(news, neww)
 end
 
+dealias(data::UnitCell{Square}) = data
 function dealias(data::UnitCell{SquareSymmetric})
     A = similar(ITC.getdata(data), size(data))
 
