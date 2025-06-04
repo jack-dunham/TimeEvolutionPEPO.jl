@@ -2,7 +2,11 @@ newtruncators(::AxialPEPO, _, ::SimpleUpdate) = (SimpleUpdateState(), SimpleUpda
 newtruncators(::AxialPEPO, _, ::SVDU) = (SimpleUpdateState(), SimpleUpdateState())
 
 function timestep!(
-    pepo::PEPO, truncator, stepper::LocalStepper, truncalg::Union{SimpleUpdate,SVDU}; kwargs...
+    pepo::PEPO,
+    truncator,
+    stepper::LocalStepper,
+    truncalg::Union{SimpleUpdate,SVDU};
+    kwargs...,
 )
 
     # Evolve and then truncate each bond in sequence
@@ -39,7 +43,11 @@ function timestep!(
 end
 
 function _timestep!(
-    pepo::PEPO{Square}, truncator, stepper::LocalStepper, truncalg::Union{SimpleUpdate,SVDU}; kwargs...
+    pepo::PEPO{Square},
+    truncator,
+    stepper::LocalStepper,
+    truncalg::Union{SimpleUpdate,SVDU};
+    kwargs...,
 )
 
     # Evolve and then truncate each bond in sequence
@@ -106,7 +114,7 @@ function isometries!(pair::Pair, pepo::AbstractPEPO, bond::Bond, truncalg::Simpl
 
     trunc = truncspace(D)
 
-    xi = truncalg.zeta
+    zeta = truncalg.zeta
 
     iso, s, infid = simpleupdate!(pair, weights(pepo), bond; trunc=trunc, zeta=zeta)
 
@@ -121,7 +129,7 @@ function isometries(
 )
     trunc = truncspace(D)
 
-    xi = truncalg.zeta
+    zeta = truncalg.zeta
 
     iso, s, infid = simpleupdate(pair, weights, bond; axial=axial, trunc=trunc, zeta=zeta)
 
@@ -129,7 +137,9 @@ function isometries(
 end
 
 # For updating in parellel
-function parallelisometries(pepo::AbstractPEPO, bond::Bond, truncalg::SimpleUpdate; kwargs...)
+function parallelisometries(
+    pepo::AbstractPEPO, bond::Bond, truncalg::SimpleUpdate; kwargs...
+)
     a, b = pepo[bond]
 
     pair = copy(a) => copy(b)
@@ -137,7 +147,9 @@ function parallelisometries(pepo::AbstractPEPO, bond::Bond, truncalg::SimpleUpda
     return isometries!(pair, pepo, bond, truncalg)
 end
 
-function parallelisometries(pair::Pair, pepo::AbstractPEPO, bond::Bond, truncalg::SimpleUpdate)
+function parallelisometries(
+    pair::Pair, pepo::AbstractPEPO, bond::Bond, truncalg::SimpleUpdate
+)
     return isometries(pair, pepo, bond, truncalg)
 end
 # Sequential simple update
@@ -183,7 +195,7 @@ function simple_update_svd!(pair; axis, kwargs...)
     return iso, s, infid
 end
 
-function isometries_from_svd(P, Q, u0, v0; zeta=Inf, trunc=notrunc(), absorb=true, axis)
+function isometries_from_svd(P, Q, u0, v0; zeta=Inf, trunc, absorb=true, axis)
     # u, s, v, err2 = safetsvd!(normalize(u0 * v0); trunc=trunc)
     u, s, v, err2 = safetsvd!(u0 * v0; trunc=trunc)
 
@@ -193,10 +205,10 @@ function isometries_from_svd(P, Q, u0, v0; zeta=Inf, trunc=notrunc(), absorb=tru
     uv = u => v
 
     if absorb
-        uv, s = applyweight(uv, s, xi)
+        uv, s = applyweight(uv, s, zeta)
         f = localfidelity(u, v, P, Q, u0, v0; axis=axis)
     else
-        xi < Inf && rescale!(s, copy(s), xi)
+        zeta < Inf && rescale!(s, copy(s), zeta)
         # f = fidelity(u * sqrt(s), sqrt(s) * v, P, Q, u0, v0)
     end
     f = 0

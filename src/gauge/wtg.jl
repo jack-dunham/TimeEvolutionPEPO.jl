@@ -30,8 +30,8 @@ function fixgauge!(iso, metric, gauge::WTG)
     return iso
 end
 
-function rescale!(iso, xi; verbose=true)
-    verbose && @info "Rescaling singular values with xi = $(xi)..."
+function rescale!(iso, zeta; verbose=true)
+    verbose && @info "Rescaling singular values with zeta = $(zeta)..."
     s = iso.s
     D = dim(codomain(s))
 
@@ -40,11 +40,11 @@ function rescale!(iso, xi; verbose=true)
 
     sclm = zeros(scalartype(s), D)
 
-    if iszero(xi)
+    if iszero(zeta)
         sclm[begin] = 1
     else
         for i in eachindex(sclm)
-            p = -(i - 1) / xi
+            p = -(i - 1) / zeta
             sclm[i] = exp(p)
         end
     end
@@ -62,21 +62,21 @@ function rescale!(iso, xi; verbose=true)
     return iso
 end
 
-function applyweight(uv, s, xi; verbose=true)
+function applyweight(uv, s, zeta; verbose=true)
     u0, v0 = uv
 
-    if xi < Inf
-        verbose && @info "Rescaling singular values with xi = $(xi)..."
+    if zeta < Inf
+        verbose && @info "Rescaling singular values with zeta = $(zeta)..."
 
         D = dim(codomain(s))
 
         sclm = zeros(scalartype(s), D)
 
-        if iszero(xi)
+        if iszero(zeta)
             sclm[begin] = 1
         else
             for i in eachindex(sclm)
-                p = -(i - 1) / xi
+                p = -(i - 1) / zeta
                 sclm[i] = exp(p)
             end
         end

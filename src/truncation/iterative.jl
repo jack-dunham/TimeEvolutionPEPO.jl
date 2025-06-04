@@ -121,7 +121,7 @@ Base.getindex(isoms::Isometries, bond::Bond) = isoms[first(bond)] => isoms[last(
 
 # stripped down version
 function iterative_simple_update!(pepo!::PEPO, isometries!, stepper, truncalg::IterativeSU)
-    oldweights = deepcopy(weights(pepo))
+    oldweights = deepcopy(weights(pepo!))
 
     i = 0
 
@@ -230,7 +230,7 @@ function iterative_simple_update_prototype!(
     sequential,
     recycle,
     gauge,
-    xi,
+    zeta,
     check_fidelity=false,
 )
     mode = :none
@@ -596,12 +596,12 @@ function iterative_simple_update_prototype!(
         dst = pepo![I]
         op = stepper[I]
         let (e, s, w, n) = isoms[I]
-            if xi < Inf
+            if zeta < Inf
                 @info "rescaling " xi
-                e = e * sqrt(rescale!(id(domain(e)), id(domain(e)), xi))
-                s = s * sqrt(rescale!(id(domain(s)), id(domain(s)), xi))
-                w = sqrt(rescale!(id(codomain(w)), id(codomain(w)), xi)) * w
-                n = sqrt(rescale!(id(codomain(n)), id(codomain(n)), xi)) * n
+                e = e * sqrt(rescale!(id(domain(e)), id(domain(e)), zeta))
+                s = s * sqrt(rescale!(id(domain(s)), id(domain(s)), zeta))
+                w = sqrt(rescale!(id(codomain(w)), id(codomain(w)), zeta)) * w
+                n = sqrt(rescale!(id(codomain(n)), id(codomain(n)), zeta)) * n
             end
 
             truncateto!(dst, copy(dst), op, e, s, w, n)
