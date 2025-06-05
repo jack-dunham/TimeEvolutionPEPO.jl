@@ -1,4 +1,4 @@
-abstract type AbstractModel  end #<: AbstractLindbladEquation end
+abstract type AbstractModel end #<: AbstractLindbladEquation end
 abstract type Abstract1DModel <: AbstractModel end
 abstract type Abstract2DModel <: AbstractModel end
 
@@ -7,17 +7,13 @@ abstract type Abstract2DModel <: AbstractModel end
     Jy::Float64 = 0.0
     Jz::Float64 = 0.0
     hx::Float64 = 0.0
-hy::Float64 = 0.0
+    hy::Float64 = 0.0
     hz::Float64 = 0.0
     L::Dissipator
 end
 
 ModelStyle(::Type{<:Heisenberg}) = IsAxial()
 ModelStyle(::Type) = IsGlobal()
-
-stepper_type(::Type{Heisenberg}, ::Type{<:TEBD}) = LocalStepper
-stepper_type(::Type{Heisenberg}, ::Type{<:AxialTEBD}) = AxialStepper
-stepper_type(::Type, ::Type{<:GlobalTEBD}) = FullStepper
 
 @kwdef struct J1J2Heisenberg <: Abstract2DModel
     Jx::Float64 = 0.0
@@ -75,7 +71,9 @@ function broadcastmodel(::Type{Combine}, model, physical, method::GlobalTEBD; kw
 
     return rv
 end
-function broadcastmodel(::Type{Combine}, model, physical, method::GlobalClusterMPO; kwargs...)
+function broadcastmodel(
+    ::Type{Combine}, model, physical, method::GlobalClusterMPO; kwargs...
+)
     model = unwrap(model)
 
     rv =
@@ -256,9 +254,7 @@ function tebdtimestepper(
     return steps
 end
 
-function tebdtensor(
-    model::Ising, p1::IndexSpace, p2::IndexSpace, dt; kwargs...
-)
+function tebdtensor(model::Ising, p1::IndexSpace, p2::IndexSpace, dt; kwargs...)
     X, Y, Z = PAULI
 
     ops = Matrix{ComplexF64}[]
@@ -297,7 +293,7 @@ function tebdtensor(
     # TODO: this is not generic atm.
     rank = dim(p1 * p1')
 
-    id  = one(X)
+    id = one(X)
 
     lop = kron(zero(id), zero(id))
     lop = kron(lop, lop)
@@ -306,12 +302,11 @@ function tebdtensor(
         h = term.a
         A = term.D
 
-
         # Make two-local
         hA = 1 / 2 * (kron(id, A) + kron(A, id))
 
         # Then vectorise k1 k2 ; b1 b2
-        lop += h * ( c1 * kron(hA, one(hA)) + c2 * kron(one(hA), transpose(hA)))
+        lop += h * (c1 * kron(hA, one(hA)) + c2 * kron(one(hA), transpose(hA)))
     end
 
     if !isnothing(model.dissipator)
@@ -332,7 +327,7 @@ function tebdtensor(
     U = u * sqrt(s)
     V = _transpose(sqrt(s) * v)
 
-    return U,V
+    return U, V
 end
 
 function tebdtensor(
@@ -390,16 +385,15 @@ function tebdtensor(
     # TODO: this is not generic atm.
     rank = dim(p1 * p1')
 
-    id  = one(X)
+    id = one(X)
 
     lop = kron(zero(id), zero(id))
     lop = kron(lop, lop)
 
     for (h, A) in zip((model.hx, model.hy, model.hz), PAULI)
-
         op = 1 / 2 * (kron(id, A) + kron(A, id))
 
-        lop += h * ( c1 * kron(op, one(op)) + c2 * kron(one(op), transpose(op)))
+        lop += h * (c1 * kron(op, one(op)) + c2 * kron(one(op), transpose(op)))
     end
 
     # Local operators
@@ -446,17 +440,16 @@ function tebdtensor(model::Ising, p::IndexSpace, method::AbstractTEBD, dt; kwarg
 
     space = p * p' * p' * p
 
-    id  = one(X)
+    id = one(X)
 
     # Local operators
     lop = kron(zero(id), zero(id))
 
     for term in model.onterms
-
         A = term.D
         h = term.a
 
-        lop += h / 2 * ( c1 * kron(A, id) + c2 * kron(id, transpose(A)))
+        lop += h / 2 * (c1 * kron(A, id) + c2 * kron(id, transpose(A)))
     end
 
     # Local operators
@@ -514,12 +507,12 @@ function tebdtensor(model::Heisenberg, p::IndexSpace, method::AbstractTEBD, dt; 
 
     space = p * p' * p' * p
 
-    id  = one(X)
+    id = one(X)
 
     lop = kron(zero(id), zero(id))
 
     for (h, A) in zip((model.hx, model.hy, model.hz), PAULI)
-        lop += h / (4 * numops) * ( c1 * kron(A, id) + c2 * kron(id, transpose(A)))
+        lop += h / (4 * numops) * (c1 * kron(A, id) + c2 * kron(id, transpose(A)))
     end
 
     # Local operators

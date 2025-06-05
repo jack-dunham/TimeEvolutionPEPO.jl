@@ -18,24 +18,36 @@ Dissipator(ops::Vararg{AbstractMatrix}) = Dissipator(collect(ops))
 # Mutliplying the whole dissipator by a can be achieved by multiplying each
 # Lindblad operator by sqrt(a)
 Base.:*(a::Number, D::Dissipator) = Dissipator(map(t -> sqrt(a) * t, terms(D)))
-Base.:+(D1::Dissipator,D2::Dissipator) = Dissipator(vcat(D1.terms,D2.terms))
-Base.:+(D::Dissipator,h::AbstractTerm) = zero(Hamiltonian) + h + D
+Base.:+(D1::Dissipator, D2::Dissipator) = Dissipator(vcat(D1.terms, D2.terms))
+Base.:+(D::Dissipator, h::AbstractTerm) = zero(Hamiltonian) + h + D
 
 terms(D::Dissipator) = D.terms
 
 isaxial(::Dissipator) = false
 
-function vectorise(dissipator::Dissipator, locality = 2)
+function vectorise(dissipator::Dissipator, locality=2)
+    if isempty(dissipator)
+        throw(
+            ArgumentError(
+                "cannot vectorise a `Dissipator` containing no Lindblad operators"
+            ),
+        )
+    end
+
     anticomm = L -> kron(L' * L, one(L)) + kron(one(L), transpose(L' * L))
 
     vec_local = L -> kron(L, transpose(L')) - 1 / 2 * anticomm(L)
-    
+
     if locality == 1
         f = vec_local
     elseif locality == 2
         f = twolocal(vec_local)
     else
-        throw(ArgumentError("vectorising a `Dissipator` over $locality sites not yet supported"))
+        throw(
+            ArgumentError(
+                "vectorising a `Dissipator` over $locality sites not yet supported"
+            ),
+        )
     end
 
     matrix = sum(f, dissipator)
@@ -62,7 +74,6 @@ hamiltonian(L::Liouvillian) = L.hamiltonian
 terms(L::Liouvillian) = terms(L.hamiltonian)
 oneterms(L::Liouvillian) = oneterms(L.hamiltonian)
 
-
 """
     $(FUNCTIONNAME)(H::Hamiltonian)
 
@@ -81,10 +92,9 @@ Liouvillian(H::Hamiltonian, ops::Vararg{<:Matrix}) = Liouvillian(H, collect(ops)
 
 Base.convert(::Type{Liouvillian}, H::Hamiltonian) = Liouvillian(H)
 Base.convert(::Type{Liouvillian}, term) = Liouvillian(convert(Hamiltonian, term))
-Base.convert(::Type{Liouvillian}, term::Dissipator) = Liouvillian(zero(Hamiltonian),term)
+Base.convert(::Type{Liouvillian}, term::Dissipator) = Liouvillian(zero(Hamiltonian), term)
 
-function scalelocal(L::Liouvillian, a) 
-
+function scalelocal(L::Liouvillian, a)
     @reset L.hamiltonian.oneterms .*= a
     @reset L.dissipator *= a
 
@@ -92,7 +102,6 @@ function scalelocal(L::Liouvillian, a)
 end
 
 function Base.show(io::IO, ::MIME"text/plain", eqn::Liouvillian)
-
     n1 = length(oneterms(eqn))
     n2 = length(terms(eqn))
 
@@ -105,7 +114,6 @@ function Base.show(io::IO, ::MIME"text/plain", eqn::Liouvillian)
     return print(io, "  $nd lindblad operator(s)")
 end
 
-Base.:+(L::Liouvillian, H::AbstractTerm)= Liouvillian(L.hamiltonian + H, L.dissipator)
-Base.:+(H::Hamiltonian, D::Dissipator)= Liouvillian(H, D)
-Base.:+(L::Liouvillian, D::Dissipator)= Liouvillian(L.hamiltonian, dissipator(L) + D)
-
+Base.:+(L::Liouvillian, H::AbstractTerm) = Liouvillian(L.hamiltonian + H, L.dissipator)
+Base.:+(H::Hamiltonian, D::Dissipator) = Liouvillian(H, D)
+Base.:+(L::Liouvillian, D::Dissipator) = Liouvillian(L.hamiltonian, dissipator(L) + D)
