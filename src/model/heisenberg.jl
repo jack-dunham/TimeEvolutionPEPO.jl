@@ -1,69 +1,3 @@
-abstract type AbstractModel end #<: AbstractLindbladEquation end
-abstract type Abstract1DModel <: AbstractModel end
-abstract type Abstract2DModel <: AbstractModel end
-
-@kwdef struct Heisenberg <: Abstract1DModel
-    Jx::Float64 = 0.0
-    Jy::Float64 = 0.0
-    Jz::Float64 = 0.0
-    hx::Float64 = 0.0
-    hy::Float64 = 0.0
-    hz::Float64 = 0.0
-    L::Dissipator
-end
-
-ModelStyle(::Type{<:Heisenberg}) = IsAxial()
-ModelStyle(::Type) = IsGlobal()
-
-@kwdef struct J1J2Heisenberg <: Abstract2DModel
-    Jx::Float64 = 0.0
-    Jy::Float64 = 0.0
-    Jz::Float64 = 0.0
-    Kx::Float64 = 0.0
-    Ky::Float64 = 0.0
-    Kz::Float64 = 0.0
-    hx::Float64 = 0.0
-    hy::Float64 = 0.0
-    hz::Float64 = 0.0
-    L::Dissipator
-end
-
-ModelStyle(::Type{J1J2Heisenberg}) = IsGlobal()
-
-stepper_type(::Type{J1J2Heisenberg}, ::Type{<:ClusterPEPO}) = FullStepper
-
-# function (M::Type{<:AbstractModel})(L...; kwargs...)
-#     itr = map(L) do op
-#         return op isa LindbladTerm ? op : lin(op)
-#     end
-#
-#     return M(; L=collect(itr), kwargs...)
-# end
-
-function paramkwargs(eqn::AbstractModel)
-    rv = Pair{Symbol,Float64}[]
-    for name in fieldnames(typeof(eqn))
-        if name === :L
-            continue
-        end
-        push!(rv, (name => getfield(eqn, name)))
-    end
-    return rv
-end
-
-getparams(eqn) = map(last, paramkwargs(eqn))
-
-linops(eqn::AbstractModel) = eqn.L
-function broadcastmodel(
-    ::Type{<:Heisenberg}, model, physical, method::AbstractTEBD; kwargs...
-)
-    model = unwrap(model)
-
-    rv = timestep -> exact_tebd_time_stepper(model, physical, method, timestep; kwargs...)
-
-    return rv
-end
-
 function broadcastmodel(::Type{Combine}, model, physical, method::GlobalTEBD; kwargs...)
     model = unwrap(model)
 
@@ -96,48 +30,6 @@ function broadcastmodel(
 
     return rv
 end
-function (model::Union{J1J2Heisenberg,Heisenberg})(physical, method::ClusterPEPO; kwargs...)
-    kw = paramkwargs(model)
-
-    L = linops(model)
-
-    rv =
-        timestep -> begin
-            fsmheisenberg(Matrix.(L), physical, timestep; extend=method.extend, kw...)
-        end
-
-    return rv
-end
-
-# function (model::Heisenberg)(physical, method::AxialTEBD; kwargs...)
-#     return dt -> tebdtensor(model, physical, method, dt)
-# end
-
-function J1J2Heisenberg(L...; Jx=0, Jy=0, Jz=0, Kx=0, Ky=0, Kz=0, hx=0, hy=0, hz=0)
-    return J1J2Heisenberg(Jx, Jy, Jz, Kx, Ky, Kz, hx, hy, hz, L...)
-end
-
-# function J1J2Heisenberg(
-#     Jx,
-#     Jy,
-#     Jz,
-#     Kx,
-#     Ky,
-#     Kz,
-#     hx,
-#     hy,
-#     hz,
-#     L::Vararg
-# )
-#     itr = map(L) do op
-#         return op isa LindbladTerm ? op : lin(op)
-#     end
-#
-#     return J1J2Heisenberg(Jx, Jy, Jz, Kx, Ky, Kz, hx, hy, hz, collect(itr))
-# end
-
-getparams(hm::J1J2Heisenberg) = (hm.Jx, hm.Jy, hm.Jz, hm.Kx, hm.Ky, hm.Kz)
-twolocalequal(H1, H2) = getparams(H1) === getparams(H2)
 
 function _exppp(t)
     C0 = zeros(ComplexF64, 2, 2)
@@ -330,101 +222,12 @@ function tebdtensor(model::Ising, p1::IndexSpace, p2::IndexSpace, dt; kwargs...)
     return U, V
 end
 
-function tebdtensor(
-    model::Heisenberg, p1::IndexSpace, p2::IndexSpace, method::TEBD, dt; kwargs...
-)
-    X, Y, Z = PAULI
-
-    ops = Matrix{ComplexF64}[]
-
-    linops = model.L
-
-    if isempty(linops)
-        thermal = true
-        c1 = -1
-        c2 = -1
-        dt = dt / 2
-    else
-        c1 = -im
-        c2 = im
-    end
-
-    Jx, Jy, Jz = getparams(model)
-
-    expf = (xi, A) -> begin
-        return cosh(xi) * kron(one(A), one(A)) + sinh(xi) * kron(A, A)
-    end
-
-    expfv = (xi, A) -> begin
-        return kron(expf(c1 * xi, A), expf(c2 * xi, transpose(A)))
-    end
-
-    if !iszero(Jx)
-        xi = dt * Jx
-        # push!(ops, vectorise(Jx / 4 * ham(X, X)))
-        push!(ops, expfv(xi, X))
-    end
-
-    if !iszero(Jy)
-        xi = dt * Jy
-        # push!(ops, vectorise(Jy / 4 * ham(Y, Y)))
-        push!(ops, expfv(xi, Y))
-    end
-
-    if !iszero(Jz)
-        xi = dt * Jz
-        # push!(ops, vectorise(Jz / 4 * ham(Z, Z)))
-        push!(ops, expfv(xi, Z))
-    end
-
-    numops = length(ops)
-
-    # ket bra ket bra
-    space = p1 * p2 * p1' * p2'
-
-    # TODO: this is not generic atm.
-    rank = dim(p1 * p1')
-
-    id = one(X)
-
-    lop = kron(zero(id), zero(id))
-    lop = kron(lop, lop)
-
-    for (h, A) in zip((model.hx, model.hy, model.hz), PAULI)
-        op = 1 / 2 * (kron(id, A) + kron(A, id))
-
-        lop += h * (c1 * kron(op, one(op)) + c2 * kron(one(op), transpose(op)))
-    end
-
-    # Local operators
-    lop += sum(vectorise, model.L; init=zero(lop))
-
-    L = exp(dt / (4 * numops) * lop)
-
-    rv = map(ops) do op
-        tensor = TensorMap(L * op * L, space, space)
-
-        H = permute(tensor, (1, 3, 5, 7), (2, 4, 6, 8))
-
-        u, s, v, err = tsvd(H; trunc=truncdim(rank))
-
-        @info "Compression error: $err for η=$(dim(codomain(s)))"
-
-        U = u * sqrt(s)
-        V = _transpose(sqrt(s) * v)
-
-        return U, V
-    end
-
-    return rv
-end
-
 function tebdtensor(model::Ising, p::IndexSpace, method::AbstractTEBD, dt; kwargs...)
     X, Y, Z = PAULI
 
     D = model.dissipator
 
-    if length(L) == 0
+    if length(D) == 0
         thermal = true
         c1 = -1
         c2 = -1
@@ -445,7 +248,7 @@ function tebdtensor(model::Ising, p::IndexSpace, method::AbstractTEBD, dt; kwarg
     # Local operators
     lop = kron(zero(id), zero(id))
 
-    for term in model.onterms
+    for term in model.oneterms
         A = term.D
         h = term.a
 
@@ -468,73 +271,6 @@ function tebdtensor(model::Ising, p::IndexSpace, method::AbstractTEBD, dt; kwarg
     D2 = mapreduce(ComplexSpace, ⊕, ones(Int, η2))
 
     return TensorMap(data, space, D1 * D2')
-end
-
-function tebdtensor(model::Heisenberg, p::IndexSpace, method::AbstractTEBD, dt; kwargs...)
-    X, Y, Z = PAULI
-
-    ops = Array{ComplexF64,6}[]
-
-    linops = model.L
-
-    if isempty(linops)
-        thermal = true
-        c1 = -1
-        c2 = -1
-        dt = dt / 2
-    else
-        thermal = false
-        c1 = -im
-        c2 = im
-    end
-
-    if !iszero(model.Jx)
-        data = vectorise(dt * model.Jx, X, transpose(X); thermal=thermal)
-        push!(ops, data)
-    end
-
-    if !iszero(model.Jy)
-        data = vectorise(dt * model.Jy, Y, transpose(Y); thermal=thermal)
-        push!(ops, data)
-    end
-
-    if !iszero(model.Jz)
-        data = vectorise(dt * model.Jz, Z, transpose(Z); thermal=thermal)
-        push!(ops, data)
-    end
-
-    numops = length(ops)
-
-    space = p * p' * p' * p
-
-    id = one(X)
-
-    lop = kron(zero(id), zero(id))
-
-    for (h, A) in zip((model.hx, model.hy, model.hz), PAULI)
-        lop += h / (4 * numops) * (c1 * kron(A, id) + c2 * kron(id, transpose(A)))
-    end
-
-    # Local operators
-    lop += sum(model.L; init=zero(lop)) do op
-        return localvectorise(op) / (4 * numops)
-    end
-
-    lop = reshape(exp(dt * lop), dims(space))
-
-    rv = map(ops) do op
-        @tensor data[ok ob ik ib; e w] :=
-            lop[ok ob; ook oob] * op[ook oob iik iib; e w] * lop[iik iib; ik ib]
-
-        _, _, _, _, η1, η2 = size(op)
-
-        D1 = mapreduce(ComplexSpace, ⊕, ones(Int, η1))
-        D2 = mapreduce(ComplexSpace, ⊕, ones(Int, η2))
-
-        return TensorMap(data, space, D1 * D2')
-    end
-
-    return rv
 end
 
 function exact_tebd_time_stepper(model, physical, method, tau; axis, inreverse=false)
