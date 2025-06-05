@@ -591,19 +591,11 @@ function evolve_simple_update_tensors(
     @tensoropt utenp[left ok ob; D η] := u1op[ok ob ik ib; η] * R[left; ik ib D]
     @tensoropt vtenp[D η; right ok ob] := v2op[ok ob ik ib; η] * L[ik ib D; right]
 
-    u, s, v, err1 = tsvd(utenp * vtenp; trunc=truncdim(dim(D)))
-    # u, s, v, err1 = tsvd(utenp * vtenp; trunc=truncspace(D))
-
-    # u, s, v, err2 = tsvd!(R * L; trunc=truncspace(D))
-
-    # println(err2)
+    u, s, v, err1 = safetsvd!(normalize!(utenp * vtenp); trunc=truncdim(dim(D)))
 
     maxnormalize!(s)
 
     (u, v), s = applyweight(u => v, s, zeta; verbose=false)
-
-    # Q1p = Q1 * u
-    # Q2p = v * Q2
 
     if axis == 1
         @tensoropt unew[k b; e s w n] := Q1[s w n; left] * u[left k b; e]
@@ -630,7 +622,7 @@ function simple_update_tensors(pair::Pair{T}; axis, zeta=Inf) where {T<:AbsTen{2
         L, Q2 = rightorth(vten, (6, 7), (1, 2, 3, 4, 5))
     end
 
-    u, s, v, err1 = tsvd!(R * L; trunc=truncdim(dim(D)))
+    u, s, v, err1 = tsvd!(normalize!(R * L); trunc=truncdim(dim(D)))
     # u, s, v, err2 = tsvd!(R * L; trunc=truncspace(D))
 
     # println(s)

@@ -36,7 +36,7 @@ function timestep!(
     end
 
     # simple_update_gauge!(pepo; reset=false, verbose=true)
-    # quicknormalize!(pepo)
+    quicknormalize!(pepo)
     hermitianize!(pepo)
     #
     return pepo, infidelity
@@ -196,8 +196,7 @@ function simple_update_svd!(pair; axis, kwargs...)
 end
 
 function isometries_from_svd(P, Q, u0, v0; zeta=Inf, trunc, absorb=true, axis)
-    # u, s, v, err2 = safetsvd!(normalize(u0 * v0); trunc=trunc)
-    u, s, v, err2 = safetsvd!(u0 * v0; trunc=trunc)
+    u, s, v, err2 = safetsvd!(normalize(u0 * v0); trunc=trunc)
 
     # rmul!(s, 1 / tr(s))
     maxnormalize!(s)
