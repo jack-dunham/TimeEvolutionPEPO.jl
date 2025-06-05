@@ -76,7 +76,9 @@ stepper_type(::IsLocal) = LocalStepper
 stepper_type(::IsAxial) = AxialStepper
 stepper_type(::IsGlobal) = FullStepper
 
-stepper_type(method, physical) = stepper_type(UpdateStyle(method), physical)
+function stepper_type(method::AbstractTimeEvolution, physical::AbstractUnitCell)
+    return stepper_type(UpdateStyle(method), physical)
+end
 function stepper_type(::IsLocal, physical)
     T = tensormaptype(eltype(physical), 4, 1, ComplexF64)
     G = geometrytype(physical)
