@@ -32,7 +32,7 @@ end
 
 bondentropy(weights; kwargs...) = broadcast(w -> bondentropy(w; kwargs...), weights)
 function bondentropy(w::AbstractTensorMap; normalised=false)
-    w = maxnormalize!(copy(w))
+    w = tracenormalize!(copy(w))
 
     wvec = diag(convert(Array, w))
 
