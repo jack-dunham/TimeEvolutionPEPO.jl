@@ -578,7 +578,7 @@ function wtgisometries!(isoms, pepo, stepper; maxiter=100, tol=1e-8, verbose=fal
                 end
             end
 
-            env = weightenvironment(temppepo[bond], weights(pepo), bond)
+            env = weightenvironment(temppepo[bond], bondweights(pepo), bond)
 
             if bondaxis(bond) == 1
                 (u, _, _, _), (_, _, v, _) = isoms[bond]
@@ -586,11 +586,11 @@ function wtgisometries!(isoms, pepo, stepper; maxiter=100, tol=1e-8, verbose=fal
                 (_, u, _, _), (_, _, _, v) = isoms[bond]
             end
 
-            s = weights(pepo)[bond]
+            s = bondweights(pepo)[bond]
 
-            oldS = bondentropy(weights(pepo))[1, 1][bondaxis(bond)]
+            oldS = bondentropy(bondweights(pepo))[1, 1][bondaxis(bond)]
             barewtg!(u, s, v, env)
-            conv = abs(bondentropy(weights(pepo))[1, 1][bondaxis(bond)] - oldS)
+            conv = abs(bondentropy(bondweights(pepo))[1, 1][bondaxis(bond)] - oldS)
         end
 
         verbose && println(conv)

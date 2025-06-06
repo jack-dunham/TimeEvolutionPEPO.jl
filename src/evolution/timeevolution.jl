@@ -172,7 +172,7 @@ function timestep!(
 
     infidelity = similar(ITC.getdata(pepo))
 
-    inweights = axis == 1 ? deepcopy(weights(pepo)) : permutedims(weights(pepo))
+    inweights = axis == 1 ? deepcopy(bondweights(pepo)) : permutedims(bondweights(pepo))
 
     evpepo = evolve(pepo, stepper)
 
@@ -184,9 +184,9 @@ function timestep!(
         else
             simple_update_gauge!(evpepo)
         end
-        inweights = weights(evpepo)
+        inweights = bondweights(evpepo)
     else
-        inweights = weights(pepo)
+        inweights = bondweights(pepo)
     end
 
     isoms = map(bonds(pepo, 1)) do bond

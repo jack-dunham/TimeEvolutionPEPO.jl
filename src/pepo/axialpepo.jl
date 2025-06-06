@@ -19,7 +19,7 @@ function getaxis(axp::AxialPEPO, axis)
     end
 end
 
-weights(axp::AxialPEPO) = weights(axp.parent)
+bondweights(axp::AxialPEPO) = bondweights(axp.parent)
 
 function setaxis!(pepo::AxialPEPO, axis::Int)
     oldaxis = currentaxis(pepo)

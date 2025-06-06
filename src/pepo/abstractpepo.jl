@@ -11,7 +11,7 @@ end
 quicknormalize!(pepo::AbstractPEPO) = normalize!.(pepo)
 
 function setweight!(pepo::AbstractPEPO, value, bond::Bond; kwargs...)
-    setweight!(weights(pepo), value, bond; kwargs...)
+    setweight!(bondweights(pepo), value, bond; kwargs...)
     return pepo
 end
 
@@ -40,7 +40,7 @@ function weights2identity!(pepo::AbstractPEPO)
     DH = domain.(pepo, 1)
     DV = domain.(pepo, 2)
 
-    w = weights(pepo)
+    w = bondweights(pepo)
 
     WH = id.(DH)
     WV = id.(DV)

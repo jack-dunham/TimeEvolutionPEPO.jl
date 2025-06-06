@@ -121,7 +121,7 @@ Base.getindex(isoms::Isometries, bond::Bond) = isoms[first(bond)] => isoms[last(
 
 # stripped down version
 function iterative_simple_update!(pepo!::PEPO, isometries!, stepper, truncalg::IterativeSU)
-    oldweights = deepcopy(weights(pepo!))
+    oldweights = deepcopy(bondweights(pepo!))
 
     i = 0
 
@@ -133,14 +133,14 @@ function iterative_simple_update!(pepo!::PEPO, isometries!, stepper, truncalg::I
 
             pair = evolvedpepo[bond]
 
-            newiso, newweight = simpleupdate(pair, weights(pepo!), bond; trunc=trunc)
+            newiso, newweight = simpleupdate(pair, bondweights(pepo!), bond; trunc=trunc)
 
             isometries[bond] = newiso
             setweight!(pepo!, newweight, bond; copy=false)
         end
 
         # Check convergence of singular values 
-        conv = tolerance!(oldweights, weights(pepo!))
+        conv = tolerance!(oldweights, bondweights(pepo!))
 
         conv < truncalg.tol && break
     end
@@ -207,7 +207,7 @@ function iterative_simple_update_step(pepo, stepper, isometries, bond; kwargs...
     D = bondspace(pepo, bond)
 
     (u, v), s, infid = simpleupdate(
-        reducedpair, weights(pepo), bond; trunc=truncspace(D), kwargs...
+        reducedpair, bondweights(pepo), bond; trunc=truncspace(D), kwargs...
     )
 
     return (u, v), s, infid
@@ -283,7 +283,7 @@ function iterative_simple_update_prototype!(
 
     # Buffers 
     newisoms = similar(isoms)
-    newweights = deepcopy(weights(pepo!))
+    newweights = deepcopy(bondweights(pepo!))
 
     S0 = bondentropy(newweights)
 
@@ -317,7 +317,7 @@ function iterative_simple_update_prototype!(
             end
 
             new = newweights
-            old = weights(pepo!)
+            old = bondweights(pepo!)
 
         else
             Threads.@threads for bond in collect(bonds)
@@ -430,7 +430,7 @@ function iterative_simple_update_prototype!(
                 newweights[bond] = s
             end
 
-            new = weights(pepo!)
+            new = bondweights(pepo!)
             old = newweights
 
             elcopy!(isoms, newisoms)
@@ -534,7 +534,7 @@ function iterative_simple_update_prototype!(
         isoms = Isometries(UnitCell(isoms))
 
         foreach(eachbond(buff)) do bond
-            s = weights(temppepo)[bond]
+            s = bondweights(temppepo)[bond]
             setweight!(pepo!, s, bond; copy=true)
         end
     end
@@ -685,7 +685,7 @@ function iterative_neighbourhood_update!(pepo, truncator, stepper)
     ep, sp, wp, np = map(permutedims, unpack(xisoms))
     yisoms = Isometries(sp, ep, np, wp)
 
-    weightsbuff = deepcopy(weights(pepo))
+    weightsbuff = deepcopy(bondweights(pepo))
 
     tol = Inf
 
@@ -792,7 +792,7 @@ function iterative_neighbourhood_update!(pepo, truncator, stepper)
             ),
         )
 
-        tol = tolerance!(weightsbuff, weights(pepo), 1.0)
+        tol = tolerance!(weightsbuff, bondweights(pepo), 1.0)
         @warn "isometries converged to $tol after $numiter"
 
         # if numiter == maxiter && tol > 1e-10

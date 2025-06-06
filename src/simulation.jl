@@ -173,7 +173,7 @@ function simulate!(
     tol = Inf
 
     # Need to copy the weights otherwise they will mutate
-    prev_weights = deepcopy(weights(pepo))
+    prev_weights = deepcopy(bondweights(pepo))
 
     # Only do the first callback if the simulation is just starting, otherwise it will
     # duplicate
@@ -204,7 +204,7 @@ function simulate!(
             timestep!(pepo, trunc, step, truncalg)
         end
         # Calculate the difference in pepo singular values between timesteps
-        tol = tolerance!(prev_weights, weights(pepo), timestep)
+        tol = tolerance!(prev_weights, bondweights(pepo), timestep)
 
         numiter += 1
         verbose && @info "Steady state convergence: $tol after $numiter iterations."

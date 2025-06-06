@@ -3,7 +3,7 @@ function simple_update_gauge!(
 )
     reset && weights2identity!(pepo)
 
-    prevweights = deepcopy(weights(pepo))
+    prevweights = deepcopy(bondweights(pepo))
 
     ϵ = Inf
     numiter = 0
@@ -24,7 +24,7 @@ function simple_update_gauge!(
             simple_update_gauge_step!(pepo, buffer; inreverse=reverse)
         end
 
-        ϵ = tolerance!(prevweights, weights(pepo), 1.0)
+        ϵ = tolerance!(prevweights, bondweights(pepo), 1.0)
 
         verbose && @info ϵ
 
@@ -39,7 +39,7 @@ function simple_update_gauge_parallel!(
 )
     reset && weights2identity!(pepo)
 
-    prevweights = deepcopy(weights(pepo))
+    prevweights = deepcopy(bondweights(pepo))
 
     ϵ = Inf
     numiter = 0
@@ -49,7 +49,7 @@ function simple_update_gauge_parallel!(
 
         simple_update_gauge_parallel_step!(pepo)
 
-        ϵ = tolerance!(prevweights, weights(pepo), 1.0)
+        ϵ = tolerance!(prevweights, bondweights(pepo), 1.0)
 
         verbose && @info ϵ
 
@@ -63,7 +63,7 @@ function simple_update_gauge_isometries!(
 )
     # weights2identity!(pepo)
 
-    prevweights = deepcopy(weights(pepo))
+    prevweights = deepcopy(bondweights(pepo))
 
     ϵ = Inf
     numiter = 0
@@ -83,7 +83,7 @@ function simple_update_gauge_isometries!(
             simple_update_gauge_step!(pepo, buffer; inreverse=reverse)
         end
 
-        ϵ = tolerance!(prevweights, weights(pepo), 1.0)
+        ϵ = tolerance!(prevweights, bondweights(pepo), 1.0)
 
         verbose && @info ϵ
 
@@ -122,7 +122,7 @@ function simple_update_gauge_step!(pepo, buffer; inreverse=false, absorb=true)
         pair = simple_update_gauge_get_pair(pepo, buffer, bond)
 
         iso, s, infid = simpleupdate!(
-            pair, weights(pepo), bond; absorb=absorb, trunc=notrunc()
+            pair, bondweights(pepo), bond; absorb=absorb, trunc=notrunc()
         )
 
         # if abs(infid) > 1e-14
@@ -144,7 +144,7 @@ function simple_update_gauge_step!(pepo, buffer; inreverse=false, absorb=true)
 end
 
 function simple_update_gauge_parallel_isometries!(pepo)
-    newweights = deepcopy(weights(pepo))
+    newweights = deepcopy(bondweights(pepo))
 
     isomh, isomv = map((1:2)) do axis
         thebonds = bonds(pepo, axis)
@@ -152,7 +152,7 @@ function simple_update_gauge_parallel_isometries!(pepo)
         isom = map(thebonds) do bond
 
             # l, s, r, infid = simpleupdate!(axispepo, bond; trunc=notrunc())
-            iso, s, infid = simpleupdate(pepo[bond], weights(pepo), bond; trunc=notrunc())
+            iso, s, infid = simpleupdate(pepo[bond], bondweights(pepo), bond; trunc=notrunc())
 
             # if abs(infid) > 1e-14
             #     @warn infid
@@ -197,7 +197,7 @@ function simple_update_gauge_parallel_step!(pepo)
         # mergeinto!(dst, spten)
     end
 
-    tolerance!(weights(pepo), newweights, 1.0)
+    tolerance!(bondweights(pepo), newweights, 1.0)
 
     quicknormalize!(pepo)
     hermitianize!(pepo)
@@ -209,7 +209,7 @@ function truncate_bond_matrices!(pepo)
         isoms = broadcast(axisbonds) do bond
             D = bondspace(pepo, bond)
 
-            w = weights(pepo)[bond]
+            w = bondweights(pepo)[bond]
 
             sqrtw = sqrt(w)
 
@@ -245,7 +245,7 @@ function truncate_bond_matrices!(dstpepo, srcpepo, isoms)
     for bond in eachbond(dstpepo)
         D = bondspace(dstpepo, bond)
 
-        w = weights(srcpepo)[bond]
+        w = bondweights(srcpepo)[bond]
 
         sqrtw = sqrt(w)
 

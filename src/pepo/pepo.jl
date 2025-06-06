@@ -56,8 +56,8 @@ ITC.getdata(pepo::PEPO) = pepo.data
 
 latticetype(::PEPO{G,P}) where {G,P} = UnitCell{G,P,Matrix{P}}
 
-weights(pepo::PEPO) = pepo.weights
-getweight(pepo::PEPO, bond) = weights(pepo)[bond]
+bondweights(pepo::PEPO) = pepo.weights
+getweight(pepo::PEPO, bond) = bondweights(pepo)[bond]
 
 # Base.getindex(p::PEPO, bond::Bond) = getaxis(p)[bond]
 
@@ -256,7 +256,7 @@ function expandspace(pepo::PEPO, space::IndexSpace)
         return expandspace(p, s)
     end
 
-    new_bond_weights = broadcast(weights(pepo)) do w
+    new_bond_weights = broadcast(bondweights(pepo)) do w
         c = codomain(w)
         d = domain(w)
 
@@ -337,6 +337,7 @@ function Base.convert(::Type{PEPO{Square}}, pepo)
     return PEPO(news, neww)
 end
 
+# TODO: excise to ITC
 dealias(data::UnitCell{Square}) = data
 function dealias(data::UnitCell{SquareSymmetric})
     A = similar(ITC.getdata(data), size(data))

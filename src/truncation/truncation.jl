@@ -334,7 +334,7 @@ end
 newtruncators(tensors, st::SimpleUpdateState) = st
 newtruncators(st::SimpleUpdateState) = st
 
-environment!(pepo, ::SimpleUpdateState, ::Bond) = weights(pepo)
+environment!(pepo, ::SimpleUpdateState, ::Bond) = bondweights(pepo)
 environment!(pepo, ::NTUState, bond::Bond) = pair -> ntu_total(pair, pepo, bond)
 
 function environment!(pepo, truncator::RenormalizationProblem, ::Bond)

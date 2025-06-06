@@ -116,13 +116,13 @@ function isometries!(pair::Pair, pepo::AbstractPEPO, bond::Bond, truncalg::Simpl
 
     zeta = truncalg.zeta
 
-    iso, s, infid = simpleupdate!(pair, weights(pepo), bond; trunc=trunc, zeta=zeta)
+    iso, s, infid = simpleupdate!(pair, bondweights(pepo), bond; trunc=trunc, zeta=zeta)
 
     return iso, s, infid
 end
 
 function isometries(pair::Pair, pepo::AbstractPEPO, bond::Bond, truncalg::SimpleUpdate)
-    return isometries(pair, weights(pepo), bond, truncalg; D=bondspace(pepo, bond))
+    return isometries(pair, bondweights(pepo), bond, truncalg; D=bondspace(pepo, bond))
 end
 function isometries(
     pair::Pair, weights::UnitCellBonds, bond::Bond, truncalg::SimpleUpdate; D, axial=false
