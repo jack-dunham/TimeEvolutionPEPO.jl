@@ -647,3 +647,7 @@ truncstyle(method::ClusterPEPO) = Global()
 function showheader(::Type{<:ClusterPEPO})
     return "Time-evolving projected entangled pair super-operator (ClusterPEPO)"
 end
+
+function stepper_type(method::AbstractTimeEvolution, physical::AbstractUnitCell)
+    return stepper_type(UpdateStyle(method), physical)
+end

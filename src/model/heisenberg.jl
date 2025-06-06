@@ -139,13 +139,6 @@ function vec_hopping(τ::Float64, V::Float64)
     return reshape(Hzz, (4, 4, 4, 4))
 end
 
-function tebdtimestepper(
-    style, model::AbstractUnitCell{G,L}, physical::AbstractUnitCell; kwargs...
-) where {G,L<:J1J2Heisenberg}
-    steps = exact_tebd_time_stepper(style, model, physical; kwargs...)
-    return steps
-end
-
 function tebdtensor(model::Ising, p1::IndexSpace, p2::IndexSpace, dt; kwargs...)
     X, Y, Z = PAULI
 
