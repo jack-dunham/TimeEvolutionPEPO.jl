@@ -1061,20 +1061,20 @@ function stablizemetric!(metric, norm=@tensor N = metric[i i; j j])
     return metric
 end
 
-# function maxnormalize!(s)
-#     max = 0.0
-#
-#     for (_, v) in blocks(s)
-#         vmax = maximum(abs.(v))
-#         if vmax > max
-#             max = vmax
-#         end
-#     end
-#
-#     rmul!(s, 1 / max)
-#     return s
-# end
-maxnormalize!(s) = rmul!(s, 1 / tr(s))
+function maxnormalize!(s)
+    max = 0.0
+
+    for (_, v) in blocks(s)
+        vmax = maximum(abs.(v))
+        if vmax > max
+            max = vmax
+        end
+    end
+
+    rmul!(s, 1 / max)
+    return s
+end
+tracenormalize!(s) = rmul!(s, 1 / tr(s))
 
 function isometryoptimise(cf, u, v, metric, u0, v0, method::EVB; trunc)
     iso = evenbly2(
