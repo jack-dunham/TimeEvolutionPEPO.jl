@@ -16,12 +16,11 @@ function FSM(localdim::Int)
     rules = FSM(T(), T(), T(), T(), 1, 1)
 
     # Every FSM needs at least these set
-    rules.A[1, 1, 1, 1] = kron(Id,Id)
-    rules.D[1, 1, 1, 1] = zero(kron(Id,Id))
+    rules.A[1, 1, 1, 1] = kron(Id, Id)
+    rules.D[1, 1, 1, 1] = zero(kron(Id, Id))
 
     return rules
 end
-
 
 function fsmadd!(rules, hamiltonian::Hamiltonian; kwargs...)
     for term in oneterms(hamiltonian)
@@ -70,8 +69,7 @@ function fsmadd!(rules, term::LocalOp{1}; thermal=false)
     return rules
 end
 
-function fsmset!(rules, term::GaussOp2d; thermal = false)
-
+function fsmset!(rules, term::GaussOp2d; thermal=false)
     ms = map(t -> t.a, terms(term.gx))
     λs = map(t -> t.λ, terms(term.gx))
 
@@ -99,7 +97,7 @@ function fsmset!(rules, term::GaussOp2d; thermal = false)
     return rules
 end
 
-function fsmset!(rules, term::LocalOp{2}; thermal = false)
+function fsmset!(rules, term::LocalOp{2}; thermal=false)
     a = term.a
 
     C = term.C
@@ -124,12 +122,7 @@ function fsmset!(rules, term::LocalOp{2}; thermal = false)
 
     return rules
 end
-function fsm_add_ising!(
-    rules::FSM,
-    a::Number,
-    C::AbstractMatrix,
-    B::AbstractMatrix,
-)
+function fsm_add_ising!(rules::FSM, a::Number, C::AbstractMatrix, B::AbstractMatrix)
     h = rules.h + 1
     v = rules.v + 1
 
@@ -145,7 +138,7 @@ function fsm_add_ising!(
     return rules
 end
 
-function fsmset!(rules, term::J1J2SymmetricOp; thermal = false)
+function fsmset!(rules, term::J1J2SymmetricOp; thermal=false)
     a = term.a
     k = term.k
     CB = term.CB
@@ -166,12 +159,7 @@ function fsmset!(rules, term::J1J2SymmetricOp; thermal = false)
 
     return rules
 end
-function fsm_add_j1j2_symmetric!(
-    rules::FSM,
-    a::Number,
-    k::Number,
-    CB::AbstractMatrix,
-)
+function fsm_add_j1j2_symmetric!(rules::FSM, a::Number, k::Number, CB::AbstractMatrix)
     a = ComplexF64(a)
 
     h = rules.h + 1
@@ -185,10 +173,10 @@ function fsm_add_j1j2_symmetric!(
     # Need this for the NN terms only
     if iszero(a)
         @debug "a = 0"
-         a = 1
+        a = 1
     else
-        rules.C[1,1,hu,1] = sqrt(a) * CB
-        rules.C[1,1,1,vu] = sqrt(a) * CB
+        rules.C[1, 1, hu, 1] = sqrt(a) * CB
+        rules.C[1, 1, 1, vu] = sqrt(a) * CB
     end
 
     # Theres four different ways to generate each diagonal rule
@@ -202,8 +190,8 @@ function fsm_add_j1j2_symmetric!(
     rules.B[1, 1, h, 1] = sqrt(a) * CB
     rules.B[1, 1, 1, v] = sqrt(a) * CB
 
-    rules.B[hu,1,1,1] = sqrt(a) * CB
-    rules.B[1,vu,1,1] = sqrt(a) * CB
+    rules.B[hu, 1, 1, 1] = sqrt(a) * CB
+    rules.B[1, vu, 1, 1] = sqrt(a) * CB
 
     rules.h += 2
     rules.v += 2
@@ -211,13 +199,10 @@ function fsm_add_j1j2_symmetric!(
     return rules
 end
 
+#TODO: This is currently not general in the sense of different approximations along different
+# lattice directions
 function fsm_add_gaussian!(
-    rules::FSM,
-    a::Number,
-    C::AbstractMatrix,
-    B::AbstractMatrix,
-    mks,
-    lks,
+    rules::FSM, a::Number, C::AbstractMatrix, B::AbstractMatrix, mks, lks
 )
     # Convenience
     Id = one(C)
@@ -273,15 +258,17 @@ function fsm_add_gaussian!(
     return rules
 end
 
-function fsm_add_jl1j2_symmetric(C, B, a, k, space, dt; extend=true, L = LADDER[1])
+# Old
+function fsm_add_jl1j2_symmetric(C, B, a, k, space, dt; extend=true, L=LADDER[1])
     # Need two levels per term
     T = Dict{NTuple{4,Int},Matrix{ComplexF64}}
     rules = (A=T(), B=T(), C=T(), D=T())
 
-    D = kron(L, transpose(L')) - 1 / 2 * (kron(L' * L, one(L)) + kron(one(L), transpose(L' * L)))
+    D =
+        kron(L, transpose(L')) -
+        1 / 2 * (kron(L' * L, one(L)) + kron(one(L), transpose(L' * L)))
 
-    X,_,Z = PAULI
-
+    X, _, Z = PAULI
 
     Id2 = one(D)
     # D += -im * 0.5 * (kron(Z, one(Z)) - kron(one(Z), transpose(Z)))
@@ -295,14 +282,14 @@ function fsm_add_jl1j2_symmetric(C, B, a, k, space, dt; extend=true, L = LADDER[
     f2 = O -> kron(one(O), transpose(O))
 
     if isempty(L)
-        ts = (-1/2, -1/2)
+        ts = (-1 / 2, -1 / 2)
     else
         ts = (-im, im)
     end
 
     ts = (-im, im)
 
-    for (ti,f) in zip(ts, (f1,f2))
+    for (ti, f) in zip(ts, (f1, f2))
         t = sqrt(0.5 * ti * a)
         # t = 1 * ti * im * a
 
@@ -315,18 +302,17 @@ function fsm_add_jl1j2_symmetric(C, B, a, k, space, dt; extend=true, L = LADDER[
         rules.C[1, 1, u, 1] = t * f(C)
         rules.C[1, 1, 1, u] = t * f(C)
 
-
         rules.B[1, 1, c, 1] = t * f(B)
         rules.B[1, 1, 1, c] = t * f(B)
 
         rules.B[u, 1, 1, 1] = t * f(B)
         rules.B[1, u, 1, 1] = t * f(B)
 
-        rules.A[u, u, 1, 1] = k/(40 * a) * Id2
-        rules.A[1, 1, c, c] = k/(40 * a) * Id2
+        rules.A[u, u, 1, 1] = k / (40 * a) * Id2
+        rules.A[1, 1, c, c] = k / (40 * a) * Id2
 
-        rules.A[u, 1, 1, c] = k/(40 * a) * Id2
-        rules.A[1, u, c, 1] = k/(40 * a) * Id2
+        rules.A[u, 1, 1, c] = k / (40 * a) * Id2
+        rules.A[1, u, c, 1] = k / (40 * a) * Id2
 
         i += 2
     end
@@ -343,10 +329,8 @@ function fsm_add_jl1j2_symmetric(C, B, a, k, space, dt; extend=true, L = LADDER[
     D = reduce(oplus, fill(oneunit(d), i))
 
     return TensorMap(data, d * d' * d' * d, D * D * D' * D')
-
 end
 function fsmpepo(rules::FSM, space::IndexSpace, timestep::Real; kwargs...)
-
     d = dim(space)
 
     h = rules.h
@@ -354,6 +338,7 @@ function fsmpepo(rules::FSM, space::IndexSpace, timestep::Real; kwargs...)
 
     data = zeros(ComplexF64, d, d, d, d, h, v, h, v)
 
+    # Symmetric version
     fsmpepo2!(data, rules, timestep; kwargs...)
 
     s = space
@@ -448,7 +433,6 @@ function fsmpepo2!(tensor::AbstractArray{<:Number,8}, rules, timestep::Real; ext
 
     if !extend
         for type in rule_types
-
             if type == :A
                 pref = 1
             elseif type in (:C, :B)
@@ -478,8 +462,7 @@ function fsmpepo2!(tensor::AbstractArray{<:Number,8}, rules, timestep::Real; ext
                 # Check for the special case of product of the identity rule with itself
                 if (type1 == :A && type2 == :A)
                     # Two identities. Only occurs once in this loop.
-                    if ind1 == (1,1,1,1) && ind2 == (1,1,1,1)
-
+                    if ind1 == (1, 1, 1, 1) && ind2 == (1, 1, 1, 1)
                         @assert isone(rule1)
                         @assert isone(rule2)
 
@@ -490,7 +473,7 @@ function fsmpepo2!(tensor::AbstractArray{<:Number,8}, rules, timestep::Real; ext
                 end
 
                 # See defn of methods for this function for explanations
-                pref = fsmprefactor(Val(type1), Val(type2); t = timestep)
+                pref = fsmprefactor(Val(type1), Val(type2); t=timestep)
                 incr!(ind, pref * rule1 * rule2)
             end
         end
