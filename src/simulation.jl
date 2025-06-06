@@ -232,15 +232,20 @@ function simulate!(
 
         if wall_time_delta > maxtime
             @info "Maximum simulation time $wall_time_delta > $maxtime exceeded after $numiter iterations."
+
             pepo isa AxialPEPO && setaxis!(pepo, 1)
             callback(sim)
-            break
+
+            # Return early
+            return sim
         elseif info.convergence < breaktol
             info.converged = true
-            info.finished = true
-            @info "Simulation reached break tolerance $(info.convergence) < $breaktol after $numiter iterations"
+
+            @info "Converged."
+
             pepo isa AxialPEPO && setaxis!(pepo, 1)
             callback(sim)
+
             break
         end
     end
