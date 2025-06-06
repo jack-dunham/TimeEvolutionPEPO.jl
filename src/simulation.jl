@@ -135,6 +135,8 @@ executed during every shot (default behaviour results in a shot at the end of ea
     at evenly spaced intervals throughout the time evolution
 - `maxtime::Float64=Inf`: maximum wall clock time allowed. If the wall clock time since the
     start `simulate` was called exceeds this value, then no more iterations occur.
+- `numinit::Integer=0`: skip this many iterations. Useful if you are resuming a simulation but wish 
+    to maintain the same sot schedule
 - `verbose::Bool=true`: if `true`, log simulation progress at the `@info` log level
 
 See also: [`Simulation`](@ref).
@@ -148,6 +150,7 @@ function simulate!(
     maxtime::Float64=Inf,
     breaktol::Float64=0.0,
     verbose::Bool=true,
+    numinit::Integer=0,
 )
     initial_wall_time = time()
 
@@ -169,9 +172,6 @@ function simulate!(
     r = range(; start=0, step=round(Int, numsteps / maxshots, RoundUp), stop=numsteps)
     shotsat = collect(r)
 
-    numiter = 0
-    tol = Inf
-
     # Need to copy the weights otherwise they will mutate
     prev_weights = deepcopy(bondweights(pepo))
 
@@ -192,6 +192,9 @@ function simulate!(
     end
 
     timestep = sim.stepper.timestep
+
+    numiter = 0 + numinit
+    tol = Inf
 
     while numiter < numsteps
         for (i, step) in enumerate(stepper)
@@ -229,12 +232,14 @@ function simulate!(
 
         if wall_time_delta > maxtime
             @info "Maximum simulation time $wall_time_delta > $maxtime exceeded after $numiter iterations."
+            pepo isa AxialPEPO && setaxis!(pepo, 1)
             callback(sim)
             break
         elseif info.convergence < breaktol
             info.converged = true
             info.finished = true
             @info "Simulation reached break tolerance $(info.convergence) < $breaktol after $numiter iterations"
+            pepo isa AxialPEPO && setaxis!(pepo, 1)
             callback(sim)
             break
         end
