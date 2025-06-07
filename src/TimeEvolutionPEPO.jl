@@ -44,13 +44,16 @@ export PAULI, LADDER, SPIN1
 export UnitCellBonds
 export ThermalState
 
-export AbstractPEPO, PEPO, expandspace, subpepo, unsymmetrise, bondweights
+export AbstractPEPO, PEPO, expandspace, subpepo, unsymmetrise, bondweights, bondentropy
 export Bond
 
 export TEBD, AxialTEBD, GlobalTEBD, ClusterMPO, GlobalTEBD, ClusterPEPO
 export LocalUpdate, GlobalUpdate
 export SimpleUpdate, SVDU, NTU, FET, IterativeSU
-export Simulation, simulate!, quantumstate, simulationinfo
+
+export Simulation
+export simulate!, updatetimestep!
+export quantumstate, timestep, trotterorder, simulationinfo
 
 export EVB, DZM, WTG, MCF, NoGauge
 

@@ -46,8 +46,8 @@ struct Simulation{E<:AbstractTimeEvolution,P<:AbstractPEPO,L<:AbstractTimeSteppe
         method::E,
         model::M,
         state::P,
-        stepper::TrotterDecomposition{L},
-        truncators::Tuple{T,T},
+        ::TrotterDecomposition{L},
+        ::Tuple{T,T},
         ::Nothing,
     ) where {E,P,L,M,T}
         return new{E,P,L,M,T}(info, method, model, state)
@@ -55,8 +55,10 @@ struct Simulation{E<:AbstractTimeEvolution,P<:AbstractPEPO,L<:AbstractTimeSteppe
 end
 
 function Base.show(io::IO, m::MIME"text/plain", sim::Simulation)
-    # pepo = getpepo(sim)
-    # map(b -> bondspace(pepo ,b ), uniquebonds(pepo)) |> display
+    println(io, "SIMULATION")
+    println(io, "≡≡≡≡≡≡≡≡≡≡")
+    println(io, "size: $(size(quantumstate(sim)))")
+    println(io, "timestep: $(timestep(sim))")
     println(io, "METHOD")
     println(io, "≡≡≡≡≡≡")
     show(io, m, sim.method)
@@ -267,15 +269,15 @@ end
 Return `sim` with the time step mutated to `timestep`.
 """
 function updatetimestep!(sim::Simulation, timestep::Float64)
-    space = physicalspace(sim)
+    space = physicalspace(quantumstate(sim))
 
-    head, body, tail = newstepper(
+    new_decomposition = newstepper(
         space, sim.model, sim.method; order=trotterorder(sim), timestep=timestep
     )
 
-    sim.stepper.head = head
-    sim.stepper.body = body
-    sim.stepper.tail = tail
+    sim.stepper.head = new_decomposition.head
+    sim.stepper.body = new_decomposition.body
+    sim.stepper.tail = new_decomposition.tail
 
     sim.stepper.timestep = timestep
 
@@ -296,6 +298,9 @@ Return the quantum state associated with object `obj`.
 quantumstate(s::Simulation) = quantumstate(getfield(s, :state))
 quantumstate(p::PEPO) = p
 quantumstate(p::AxialPEPO) = p.parent
+
+trotterorder(sim) = sim.stepper.order
+timestep(sim) = sim.stepper.timestep
 
 function simulationinfo(s::Simulation)
     info = getfield(s, :info)
