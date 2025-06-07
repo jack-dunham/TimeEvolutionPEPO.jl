@@ -193,9 +193,9 @@ function simulate!(
         truncator = newtruncators(pepo, stepper, truncalg)
     end
 
-    timestep = sim.stepper.timestep
+    numinit > 0 && @info "Resuming simulation from $numinit iterations."
+    numiter = numinit
 
-    numiter = 0 + numinit
     tol = Inf
 
     while numiter < numsteps
@@ -209,7 +209,7 @@ function simulate!(
             timestep!(pepo, trunc, step, truncalg)
         end
         # Calculate the difference in pepo singular values between timesteps
-        tol = tolerance!(prev_weights, bondweights(pepo), timestep)
+        tol = tolerance!(prev_weights, bondweights(pepo), timestep(sim))
 
         numiter += 1
         verbose && @info "Steady state convergence: $tol after $numiter iterations."
@@ -220,7 +220,7 @@ function simulate!(
         # We compute the delta's like this to avoid floating point rounding errors you would obtain if
         # incrementing the total times. Less important for wall time, but for sim time you often expect 
         # an exact final time.
-        sim_time_delta = numiter * timestep
+        sim_time_delta = (numiter - numinit) * timestep(sim)
         info.simtime = sim_time_delta + total_sim_duration
 
         wall_time_delta = time() - initial_wall_time
