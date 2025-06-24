@@ -12,7 +12,7 @@ function timestep!(
     # Evolve and then truncate each bond in sequence
     size(pepo) < (2, 2) && throw(ArgumentError(""))
 
-    infidelity = similar(ITC.getdata(pepo))
+    infidelity = similar(TRGroups.getdata(pepo))
 
     allbonds = bonds(pepo, stepper.axis)
 
@@ -53,7 +53,7 @@ function _timestep!(
     # Evolve and then truncate each bond in sequence
     size(pepo) < (2, 2) && throw(ArgumentError(""))
 
-    infidelity = similar(ITC.getdata(pepo))
+    infidelity = similar(TRGroups.getdata(pepo))
 
     allbonds = bonds(pepo, stepper.axis)
 

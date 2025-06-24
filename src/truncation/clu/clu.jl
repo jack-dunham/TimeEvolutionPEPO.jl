@@ -16,7 +16,7 @@ function Base.getindex(ntu::NTUTensors, bond::Bond)
     return t, b, lc, rc
 end
 
-struct NTUState{NN<:NTUTensors,MType<:ITC.AbstractNetwork}
+struct NTUState{NN<:NTUTensors,MType<:TRGroups.AbstractNetwork}
     tensors::NN
     network::MType
 end

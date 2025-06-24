@@ -4,7 +4,7 @@ struct LocalUpdate <: AbstractUpdateStyle end
 struct GlobalUpdate <: AbstractUpdateStyle end
 
 abstract type AbstractTimeStepper{G,PType} <: AbstractUnitCell{G,PType,Matrix{PType}} end
-ITC.getdata(s::AbstractTimeStepper) = s.data
+TRGroups.getdata(s::AbstractTimeStepper) = s.data
 
 abstract type AbstractTrotterizedTimeStepper{G,PType} <: AbstractTimeStepper{G,PType} end
 
@@ -12,7 +12,7 @@ bondaxis(s::AbstractTrotterizedTimeStepper) = s.axis
 isreversed(s::AbstractTrotterizedTimeStepper) = s.isreversed
 
 function Base.reverse(s::S) where {S<:AbstractTrotterizedTimeStepper}
-    return S(ITC.getdata(s), bondaxis(s), !isreversed(s))
+    return S(TRGroups.getdata(s), bondaxis(s), !isreversed(s))
 end
 
 struct LocalStepper{G,MType} <: AbstractTrotterizedTimeStepper{G,MType}

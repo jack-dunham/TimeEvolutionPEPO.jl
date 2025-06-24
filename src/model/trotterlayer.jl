@@ -81,7 +81,7 @@ unwrap(model::TrotterLayer) = model.data
 changeaxis(t::TrotterLayer, axis; a = 1.0) = TrotterLayer(scalelocal.(t.data, a), axis)
 
 function broadcastmodel(
-    G::Type{<:ITC.AbstractUnitCellGeometry}, model::TrotterLayer, physical, method; inreverse=false,kwargs...
+    G::Type{<:TRGroups.AbstractUnitCellGeometry}, model::TrotterLayer, physical, method; inreverse=false,kwargs...
 )
 
     return broadcastmodel(
@@ -138,7 +138,7 @@ function (model::Combine)(G, physical, method, dt; inreverse=false, kwargs...)
 end
 
 function broadcastmodel(
-    G::Type{<:ITC.AbstractUnitCellGeometry}, model::Combine, physical, method; kwargs...
+    G::Type{<:TRGroups.AbstractUnitCellGeometry}, model::Combine, physical, method; kwargs...
 )
     return dt -> onlattice(G, model(G, physical, method, dt; kwargs...))
 end

@@ -3,7 +3,7 @@ CurrentModule = TimeEvolutionPEPO
 ShareDefaultModule = true
 ```
 ```@setup
-using TimeEvolutionPEPO, TensorKit, InfiniteTensorContractions
+using TimeEvolutionPEPO, TensorKit, TensorRenormalizationGroups
 ```
 # State representation using the `PEPO` type
 
@@ -46,9 +46,9 @@ In the above, the products state defined by the input density matrix is not U(1)
 
 ## Interface
 
-Objects of type `PEPO` subtype the `AbstractUnitCell` abstract type from the InfiniteTensorContractions.jl backend package, i.e.
+Objects of type `PEPO` subtype the `AbstractUnitCell` abstract type from the TensorRenormalizationGroups.jl backend package, i.e.
 ```@repl
-PEPO <: InfiniteTensorContractions.AbstractUnitCell
+PEPO <: TensorRenormalizationGroups.AbstractUnitCell
 ```
 and therefore can be indexed similarly (with periodic boundary conditions).
 While it is unlikely that you will need to work with the `PEPO` object directly, there are some convenience functions that maybe be useful in this case. 

@@ -6,12 +6,12 @@ of type `T`.
 
 See also: [`trace`](@ref), and [`partialtrace`](@ref).
 """
-struct DensityMatrix{P<:AbstractUnitCell,T<:RenormalizationProblem}
+struct DensityMatrix{P<:AbstractUnitCell,T<:Renormalization}
     data::P
     environment::T
     function DensityMatrix(
         data::P, env::T
-    ) where {P<:AbstractUnitCell,T<:RenormalizationProblem}
+    ) where {P<:AbstractUnitCell,T<:Renormalization}
         # data = deepcopy(dealias(data))
         data = deepcopy(data)
         # tracenormalize!(data, env)
@@ -40,12 +40,12 @@ environment of type `T`, i.e. a density matrix of the form ``\\rho = X^{\\dagger
 
 See also: [`DensityMatrix`](@ref), [`trace`](@ref), and [`partialtrace`](@ref).
 """
-struct PurifiedDensityMatrix{P<:HilbertSchmidt,T<:RenormalizationProblem}
+struct PurifiedDensityMatrix{P<:HilbertSchmidt,T<:Renormalization}
     data::P
     environment::T
     function PurifiedDensityMatrix(
         data::P, env::T
-    ) where {P<:HilbertSchmidt,T<:RenormalizationProblem}
+    ) where {P<:HilbertSchmidt,T<:Renormalization}
         data = deepcopy(data)
         # data = deepcopy(delalias(data))
         # tracenormalize!(data, env)
@@ -94,7 +94,7 @@ function tracenormalize!(tensors::AbstractUnitCell, boundary)
     return tensors
 end
 
-ITC.getdata(rho::DensityMatrix) = rho.data
+TRGroups.getdata(rho::DensityMatrix) = rho.data
 
 function DensityMatrix(
     pepo::Union{AbstractPEPO,Simulation,DensityMatrix},
@@ -102,26 +102,26 @@ function DensityMatrix(
     kwargs...,
 )
     if alg isa CTMRG
-        data = dealias(ITC.getdata(pepo))
+        data = dealias(TRGroups.getdata(pepo))
     else
-        data = ITC.getdata(pepo)
+        data = TRGroups.getdata(pepo)
     end
     return DensityMatrix(data, alg; kwargs...)
 end
 
 function DensityMatrix(
     pepo::Union{AbstractPEPO,Simulation,DensityMatrix},
-    env::RenormalizationProblem,
+    env::Renormalization,
     kwargs...,
 )
-    data = ITC.getdata(pepo)
-    ITC.renormalize!(env, contractphysical(data))
+    data = TRGroups.getdata(pepo)
+    TRGroups.renormalize!(env, contractphysical(data))
     return DensityMatrix(data, env)
 end
 
 function DensityMatrix(tensors::AbstractUnitCell, alg::AbstractBoundaryAlgorithm; kwargs...)
-    env = newrenormalization(contractphysical(tensors); alg=alg, kwargs...)
-    ITC.renormalize!(env)
+    env = Renormalization(contractphysical(tensors), alg; kwargs...)
+    TRGroups.renormalize!(env)
     return DensityMatrix(tensors, env)
 end
 
@@ -130,7 +130,7 @@ function PurifiedDensityMatrix(
     alg::AbstractBoundaryAlgorithm;
     kwargs...,
 )
-    data = ITC.getdata(pepo)
+    data = TRGroups.getdata(pepo)
     return PurifiedDensityMatrix(data, alg; kwargs...)
 end
 
@@ -139,8 +139,8 @@ function PurifiedDensityMatrix(
 )
     data = hilbertschmidt(tensors)
 
-    env = newrenormalization(data; alg=alg, kwargs...)
-    ITC.renormalize!(env)
+    env = Renormalization(data, alg; kwargs...)
+    TRGroups.renormalize!(env)
 
     return PurifiedDensityMatrix(data, env)
 end
@@ -151,10 +151,10 @@ $(TYPEDSIGNATURES)
 Renormalize the environment associated to `rho`, and use the result to normalize the density
 matric to unit trace.
 """
-function ITC.renormalize!(rho::DensityMatrix)
+function TRGroups.renormalize!(rho::DensityMatrix)
     tensors = rho.data
     env = rho.environment
-    ITC.renormalize!(rho.environment, contractphysical(tensors))
+    TRGroups.renormalize!(rho.environment, contractphysical(tensors))
     tracenormalize!(tensors, env)
     return rho
 end
@@ -396,7 +396,7 @@ function _partialtrace(
     return trval
 end
 
-function get_contraction_boundary(con::RenormalizationProblem, xr::UnitRange, yr::UnitRange)
+function get_contraction_boundary(con::Renormalization, xr::UnitRange, yr::UnitRange)
     return get_contraction_boundary(con.runtime, xr, yr)
 end
 function get_contraction_boundary(vumps::VUMPSRuntime, xr::UnitRange, yr::UnitRange)
@@ -409,7 +409,7 @@ function get_contraction_boundary(vumps::VUMPSRuntime, xr::UnitRange, yr::UnitRa
     l = first(xr)
     r = last(xr)
 
-    _, _, AR, AC = ITC.unpack(vumps.mps)
+    _, _, AR, AC = TRGroups.unpack(vumps.mps)
 
     fixed_points = vumps.fixedpoints
 
@@ -696,7 +696,7 @@ function contract(vumps::VUMPSRuntime, network, i1::UnitRange, i2::UnitRange)
         i2 = i2[begin]
     end
 
-    _, _, AR, AC = ITC.unpack(vumps.mps)
+    _, _, AR, AC = TRGroups.unpack(vumps.mps)
 
     fixed_points = vumps.fixedpoints
 
@@ -755,7 +755,7 @@ end
 end
 
 function lefteigen(TMS, A, M, numeigs=1, which=:LM; kwargs...)
-    fl = ITC._initfixedpoints(rand, A[1, 1], M[1, 1], :left)
+    fl = TRGroups._initfixedpoints(rand, A[1, 1], M[1, 1], :left)
     return eigsolve(fl, numeigs, which; kwargs...) do x0
         fl = x0
         for tm in TMS
@@ -875,15 +875,15 @@ function testCFconv(; D=4)
     return Js, xvals, clens
 end
 
-function ITC.TransferMatrix(dm::DensityMatrix, yind=1)
-    AL, _, _, _ = ITC.unpack(dm.environment.runtime.mps)
+function TRGroups.TransferMatrix(dm::DensityMatrix, yind=1)
+    AL, _, _, _ = TRGroups.unpack(dm.environment.runtime.mps)
     bulk = contractphysical.(dm.data)
-    tms = ITC.TransferMatrix.(AL[:, yind], bulk[:, yind], AL[:, yind + 1])
+    tms = TRGroups.TransferMatrix.(AL[:, yind], bulk[:, yind], AL[:, yind + 1])
     return tms
 end
-function ITC.TransferMatrix(dm::PurifiedDensityMatrix, yind=1)
-    AL, _, _, _ = ITC.unpack(dm.environment.runtime.mps)
-    tms = ITC.TransferMatrix.(AL[:, yind], dm.data[:, yind], AL[:, yind + 1])
+function TRGroups.TransferMatrix(dm::PurifiedDensityMatrix, yind=1)
+    AL, _, _, _ = TRGroups.unpack(dm.environment.runtime.mps)
+    tms = TRGroups.TransferMatrix.(AL[:, yind], dm.data[:, yind], AL[:, yind + 1])
     return tms
 end
 
@@ -896,15 +896,15 @@ end
 function transferspectrum(bulk, rt::VUMPSRuntime, n::Int=3)
     mps = rt.mps
 
-    AL, _, _, _ = ITC.unpack(mps)
+    AL, _, _, _ = TRGroups.unpack(mps)
 
     if eltype(bulk) <: TensorMap
         bulk = contractphysical.(bulk)
     end
 
-    tms = ITC.TransferMatrix.(AL[:, 1], bulk[:, 1], AL[:, 2])
+    tms = TRGroups.TransferMatrix.(AL[:, 1], bulk[:, 1], AL[:, 2])
 
-    fl = ITC.initfixedpoint(rand, AL[1, 1], bulk[1, 1], :left)
+    fl = TRGroups.initfixedpoint(rand, AL[1, 1], bulk[1, 1], :left)
 
     xis, _, _ = eigsolve(fl, n, :LM) do x0
         fl = x0

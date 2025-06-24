@@ -22,9 +22,9 @@ function _transpose(tsrc::AbsTen{N,M}) where {N,M}
     return permute(tsrc, p1, p2)
 end
 
-# TODO move to ITC
+# TODO move to TRGroups
 function permutecod(t::CompositeTensor{2}, p::NTuple{M,Int}) where {M}
-    return CompositeTensor(ITC.mapbefore(i -> permutecod(i, p), t))
+    return CompositeTensor(TRGroups.mapbefore(i -> permutecod(i, p), t))
 end
 
 function permutecod(t::AbsTen{N,M}, p::NTuple{N,Int}) where {N,M}
@@ -37,9 +37,9 @@ function permutecod!(tdst, tsrc::AbsTen{N,M}, p::NTuple{N,Int}) where {N,M}
     return permute!(tdst, tsrc, (p, p2))
 end
 
-# TODO move to ITC
+# TODO move to TRGroups
 function permutedom(t::CompositeTensor{2}, p::NTuple{M,Int}) where {M}
-    return CompositeTensor(ITC.mapbefore(i -> permutedom(i, p), t))
+    return CompositeTensor(TRGroups.mapbefore(i -> permutedom(i, p), t))
 end
 
 function permutedom(t::AbsTen{N,M}, p::NTuple{M,Int}) where {N,M}
@@ -78,11 +78,11 @@ function _rightorth(t::AbsTen{N,2}) where {N}
     return l_out, t_out
 end
 
-function contractphysical(tsrc::ITC.AbsTen{2,4,S}) where {S}
+function contractphysical(tsrc::TRGroups.AbsTen{2,4,S}) where {S}
     tdst = similar(tsrc, one(S), domain(tsrc))
     return contractphysical!(tdst, tsrc)
 end
-function contractphysical(tsrc_1::ITC.AbsTen{2,4,S}, tsrc_2::ITC.AbsTen{4,2,S}) where {S}
+function contractphysical(tsrc_1::TRGroups.AbsTen{2,4,S}, tsrc_2::TRGroups.AbsTen{4,2,S}) where {S}
     DomType = ProductSpace{S,8}
 
     outdom = DomType(map((x, y) -> x * y', domain(tsrc_1), codomain(tsrc_2)))
@@ -98,7 +98,7 @@ function contractphysical!(tdst::AbsTen{0,4}, tsrc::AbsTen{2,4})
     return tdst
 end
 
-function mergevirtual(t::ITC.AbsTen{0,8,S}) where {S}
+function mergevirtual(t::TRGroups.AbsTen{0,8,S}) where {S}
     DomType = ProductSpace{S,4}
 
     outdom = DomType(map(i -> fuse(domain(t, i) * domain(t, i + 1)), 1:2:8))

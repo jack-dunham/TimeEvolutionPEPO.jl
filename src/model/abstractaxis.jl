@@ -45,14 +45,14 @@ function broadcastmodel(::Type, model, physical, method; kwargs...)
 end
 # Entry point
 function broadcastmodel(
-    G::Type{<:ITC.AbstractUnitCellGeometry}, model, physical, method; kwargs...
+    G::Type{<:TRGroups.AbstractUnitCellGeometry}, model, physical, method; kwargs...
 )
     @assert model isa AbstractMatrix
     rv = broadcastmodel(eltype(model), model, physical, method; kwargs...)
     return x -> onlattice(G, rv(x))
 end
 function broadcastmodel(
-    G::Type{<:ITC.AbstractUnitCellGeometry}, model::InReverse, physical, method; kwargs...
+    G::Type{<:TRGroups.AbstractUnitCellGeometry}, model::InReverse, physical, method; kwargs...
 )
     return broadcastmodel(G, model.model, physical, method; inreverse=true, kwargs...)
 end

@@ -8,14 +8,14 @@ function latticetype(
     return UnitCellBonds{G,ElType,A}
 end
 
-ITC.getdata(lat::UnitCellBonds) = lat.data
+TRGroups.getdata(lat::UnitCellBonds) = lat.data
 
-Base.similar(lat::L) where {L<:UnitCellBonds} = L(similar(ITC.getdata(lat)))
+Base.similar(lat::L) where {L<:UnitCellBonds} = L(similar(TRGroups.getdata(lat)))
 function Base.similar(lat::L, dims::Tuple) where {L<:UnitCellBonds}
-    return L(similar(ITC.getdata(lat), dims))
+    return L(similar(TRGroups.getdata(lat), dims))
 end
 function Base.similar(lat::UnitCellBonds{G}, ::Type{T}) where {G,T}
-    return UnitCellBonds{G}(similar(ITC.getdata(lat), T))
+    return UnitCellBonds{G}(similar(TRGroups.getdata(lat), T))
 end
 
 function UnitCellBonds(X::AbstractUnitCell, Y::AbstractUnitCell)
@@ -87,7 +87,7 @@ end
 
 adjacent(edgelat, bond) = mapadjacent(identity, edgelat, bond)
 
-struct UnitCellBondsStyle{G,A} <: ITC.AbstractUnitCellStyle{G,A} end
+struct UnitCellBondsStyle{G,A} <: TRGroups.AbstractUnitCellStyle{G,A} end
 
 function Base.BroadcastStyle(::Type{UnitCellBonds{G,ElType,A}}) where {G,ElType,A}
     return UnitCellBondsStyle{G,typeof(Base.BroadcastStyle(A))}()
@@ -101,10 +101,10 @@ function Base.similar(
     return UnitCellBonds{G}(data)
 end
 
-Base.BroadcastStyle(::UnitCellBondsStyle, L::ITC.UnitCellStyle) = L
+Base.BroadcastStyle(::UnitCellBondsStyle, L::TRGroups.UnitCellStyle) = L
 
 function Base.Broadcast.broadcasted(::UnitCellBondsStyle{G,A}, f, args...) where {G,A}
-    data = map(ITC.getdata, args)
+    data = map(TRGroups.getdata, args)
 
     rv = broadcast(data...) do ucs...
         h = f(broadcast(first, ucs)...)

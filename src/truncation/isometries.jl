@@ -39,7 +39,7 @@
 #     while numiter < 10
 #         numiter += 1
 #
-#         x0 = ITC.randnt!(similar(ut))
+#         x0 = TRGroups.randnt!(similar(ut))
 #
 #         Rm, _ = optimize(ut * s2, optimizer; inner=(_, x, y) -> real(dot(x, y))) do R0
 #             rv = withgradient(u -> infid(u, vt), R0)
@@ -51,7 +51,7 @@
 #         # mul!(ut, u, v)
 #         mul!(ut, u, s1)
 #
-#         x0 = ITC.randnt!(similar(vt))
+#         x0 = TRGroups.randnt!(similar(vt))
 #
 #         Rm, f1, _ = optimize(s1 * vt, optimizer; inner=(_, x, y) -> real(dot(x, y))) do R0
 #             rv = withgradient(v -> infid(ut, v), R0)
@@ -80,7 +80,7 @@
 #         ϵ < 1e-3 && break
 #     end
 #
-#     # x0 = ITC.randnt!(similar(ut))
+#     # x0 = TRGroups.randnt!(similar(ut))
 #     # #
 #     # Rm, _ = optimize(ut * s2, optimizer; inner=(_, x, y) -> real(dot(x, y))) do R0
 #     #     rv = withgradient(u -> infid(u, vt), R0)
@@ -148,7 +148,7 @@ function autodiffoptimise(
     ut = u * sqrt(s2)
     vt = sqrt(s2) * v
 
-    x0 = ITC.randn!(similar(ut * vt))
+    x0 = TRGroups.randn!(similar(ut * vt))
 
     D = dim(codomain(s2))
 
@@ -223,7 +223,7 @@ function autodiffoptimise(left, right, metric::AbsTen{2,2}; trunc, rankreduce, x
 
     f1old = Inf
 
-    x0 = ITC.randn!(similar(ut * vt))
+    x0 = TRGroups.randn!(similar(ut * vt))
 
     D = dim(codomain(s2))
 
@@ -1015,11 +1015,11 @@ function dziarmaga(
     vt = similar(v)
     ut = similar(u)
 
-    # u = (1 - randomness) * u * sqrt(s) + randomness * ITC.randnt!(similar(u))
-    # v = randomness * ITC.randnt!(similar(v)) + (1 - randomness) * sqrt(s) * v
+    # u = (1 - randomness) * u * sqrt(s) + randomness * TRGroups.randnt!(similar(u))
+    # v = randomness * TRGroups.randnt!(similar(v)) + (1 - randomness) * sqrt(s) * v
 
-    # u = (1 - randomness) * u + randomness * ITC.randn!(similar(u))
-    # v = randomness * ITC.randn!(similar(v)) + (1 - randomness) * v
+    # u = (1 - randomness) * u + randomness * TRGroups.randn!(similar(u))
+    # v = randomness * TRGroups.randn!(similar(v)) + (1 - randomness) * v
 
     while counter < maxiter && ϵ ≥ isotol
         s_old = s

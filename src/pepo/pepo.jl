@@ -52,7 +52,7 @@ struct PEPO{G,PType<:TenAbs{4},CType} <: AbstractPEPO{G,PType}
     weights::UnitCellBonds{G,CType,Matrix{NTuple{2,CType}}}
 end
 
-ITC.getdata(pepo::PEPO) = pepo.data
+TRGroups.getdata(pepo::PEPO) = pepo.data
 
 latticetype(::PEPO{G,P}) where {G,P} = UnitCell{G,P,Matrix{P}}
 
@@ -278,7 +278,7 @@ end
 """
     $(FUNCTIONNAME)(pepo::PEPO, x, y; weights=false) -> PEPO
 
-Return a PEPO over the smaller unitcell specified by indices `x` and `y`. If `weights=true`,
+Return a PEPO over the smaller UnitCell specified by indices `x` and `y`. If `weights=true`,
 the PEPO is constructed with the weights of the chosen lattice sites, otherwise they are
 initilised to identities. Arguments `x` and `y` can be of type `Union{Int, UnitRange{Int}, Colon}`.
 """
@@ -332,15 +332,15 @@ function unsymmetrise(pepo::PEPO)
 end
 
 function Base.convert(::Type{PEPO{Square}}, pepo)
-    news = UnitCell(ITC._remove_symmetry(pepo.data))
-    neww = UnitCellBonds(UnitCell(ITC._remove_symmetry(pepo.weights.data)))
+    news = UnitCell(TRGroups._remove_symmetry(pepo.data))
+    neww = UnitCellBonds(UnitCell(TRGroups._remove_symmetry(pepo.weights.data)))
     return PEPO(news, neww)
 end
 
-# TODO: excise to ITC
+# TODO: excise to TRGroups
 dealias(data::UnitCell{Square}) = data
 function dealias(data::UnitCell{SquareSymmetric})
-    A = similar(ITC.getdata(data), size(data))
+    A = similar(TRGroups.getdata(data), size(data))
 
     foreach(eachindex(A)) do ind
         setindex!(A, deepcopy(data[ind]), ind)

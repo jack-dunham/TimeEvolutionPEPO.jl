@@ -4,7 +4,7 @@ import TensorKit.AdjointTensorMap
 import TensorKit.IndexTuple
 
 using Combinatorics
-using InfiniteTensorContractions
+using TensorRenormalizationGroups
 using KrylovKit
 using LinearAlgebra
 using Random
@@ -19,16 +19,16 @@ using Accessors
 using DocStringExtensions
 using Logging
 
-const ITC = InfiniteTensorContractions
+const TRGroups = TensorRenormalizationGroups
 const PEPOKit = TimeEvolutionPEPO
 
-import InfiniteTensorContractions: AbsTen
-import InfiniteTensorContractions: TenAbs
-import InfiniteTensorContractions: SquareSymmetric
+import TensorRenormalizationGroups: AbsTen
+import TensorRenormalizationGroups: TenAbs
+import TensorRenormalizationGroups: SquareSymmetric
 
 export PEPOKit
 
-## Essential ITC reexports
+## Essential TRGroups reexports
 export UnitCell, Square, SquareSymmetric
 export VUMPS, CTMRG
 export tensortype

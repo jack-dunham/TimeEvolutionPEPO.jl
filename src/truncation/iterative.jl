@@ -348,15 +348,15 @@ function iterative_simple_update_prototype!(
                         end,
                     )
 
-                    vumps = ITC.newrenormalization(overlap; alg=alg)
+                    vumps = TRGroups.Renormalization(overlap, alg)
 
-                    ITC.renormalize!(vumps)
+                    TRGroups.renormalize!(vumps)
 
                     vumps = vumps.runtime
 
                     mps = vumps.mps
 
-                    AC = ITC.getcentral(mps)
+                    AC = TRGroups.getcentral(mps)
 
                     FL = vumps.fixedpoints.left
                     FR = vumps.fixedpoints.right
@@ -371,14 +371,14 @@ function iterative_simple_update_prototype!(
                         end,
                     )
 
-                    vumps = ITC.newrenormalization(overlap; alg=alg)
-                    ITC.renormalize!(vumps)
+                    vumps = TRGroups.Renormalization(overlap, alg)
+                    TRGroups.renormalize!(vumps)
 
                     vumps = vumps.runtime
 
                     mps = vumps.mps
 
-                    AC = ITC.getcentral(mps)
+                    AC = TRGroups.getcentral(mps)
 
                     FL = vumps.fixedpoints.left
                     FR = vumps.fixedpoints.right
@@ -398,14 +398,14 @@ function iterative_simple_update_prototype!(
                         end,
                     )
 
-                    vumps = ITC.newrenormalization(overlap; alg=alg)
-                    ITC.renormalize!(vumps)
+                    vumps = TRGroups.Renormalization(overlap, alg)
+                    TRGroups.renormalize!(vumps)
 
                     vumps = vumps.runtime
 
                     mps = vumps.mps
 
-                    AC = ITC.getcentral(mps)
+                    AC = TRGroups.getcentral(mps)
 
                     FL = vumps.fixedpoints.left
                     FR = vumps.fixedpoints.right

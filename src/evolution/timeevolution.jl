@@ -170,7 +170,7 @@ function timestep!(
         setaxis!(pepo, axis)
     end
 
-    infidelity = similar(ITC.getdata(pepo))
+    infidelity = similar(TRGroups.getdata(pepo))
 
     inweights = axis == 1 ? deepcopy(bondweights(pepo)) : permutedims(bondweights(pepo))
 

@@ -78,13 +78,17 @@ unitcellsize(_) = (1, 1)
 similar_matrix(A::AbstractMatrix, outsize) = Matrix{eltype(A)}(undef, outsize)
 similar_matrix(A, outsize) = Matrix{typeof(A)}(undef, outsize)
 
-geometrytype(::Type{G}) where {G<:ITC.AbstractUnitCellGeometry} = G
+geometrytype(::Type{G}) where {G<:TRGroups.AbstractUnitCellGeometry} = G
 geometrytype(::Type{<:AbstractUnitCell{G}}) where {G} = G
 geometrytype(::Type{<:AbstractMatrix}) = Square
 geometrytype(T::DataType) = Square
 geometrytype(g) = geometrytype(typeof(g))
 
-promote_geometry_type(A::Type{G}, B::Type{G}) where {G<:ITC.AbstractUnitCellGeometry} = G
+function promote_geometry_type(
+    A::Type{G}, B::Type{G}
+) where {G<:TRGroups.AbstractUnitCellGeometry}
+    return G
+end
 promote_geometry_type(args...) = mapreduce(geometrytype, promote_geometry_type, args)
 function promote_geometry(A::Type, B::Type)
     throw(ErrorException("TODO: incompatible lattice geometries"))
@@ -121,7 +125,7 @@ function Simulation(
 end
 
 function initenvironment(network, alg::AbstractBoundaryAlgorithm; kwargs...)
-    return ITC.initialize(alg, network; kwargs...)
+    return Renormalization(network, alg; kwargs...)
 end
 
 """
@@ -363,7 +367,7 @@ function measurehook!(output::Vector, sim, args...)
 
     # alg = CTMRG(; tol=1e-8, maxiter=200, bonddim=16, verbose=true)
     # alg = VUMPS(; tol=1e-10, maxiter=200, bonddim=20, verbose=true)
-    alg = CTMRG(; tol=1e-10, maxiter=100, bonddim=16, verbose=true, randinit=true)
+    alg = CTMRG(; tol=1e-10, maxiter=100, bonddim=16, verbose=true, randinit=false)
 
     env = nothing #newcontraction(alg, contractphysical(tensors))
     # runcontraction!(env)

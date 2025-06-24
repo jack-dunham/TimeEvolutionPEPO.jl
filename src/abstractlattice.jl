@@ -1,6 +1,6 @@
 copyindex!(lat, val, bondind) = copy!(lat[bondind], val)
 
-using InfiniteTensorContractions: SquareSymmetric
+using TensorRenormalizationGroups: SquareSymmetric
 struct Bond
     data::Pair{CartesianIndex{2},CartesianIndex{2}}
     function Bond(data::Pair{CartesianIndex{2},CartesianIndex{2}})

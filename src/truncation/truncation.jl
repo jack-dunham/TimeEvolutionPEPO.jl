@@ -1,6 +1,6 @@
 abstract type AbstractIsometryOptimisation{G<:Union{NoGauge,WTG}} end
 
-using InfiniteTensorContractions: newrenormalization, RenormalizationProblem
+using TensorRenormalizationGroups: Renormalization, Renormalization
 function Base.show(io::IO, m::MIME"text/plain", sim::AbstractIsometryOptimisation)
     return shownested(io, m, sim)
 end
@@ -309,16 +309,16 @@ end
 
 ## 
 
-function ITC.newrenormalization(net::HilbertSchmidt; alg=alg, kwargs...)
-    return newrenormalization(net.data; alg=alg, kwargs...)
+function TRGroups.Renormalization(net::HilbertSchmidt, alg::AbstractRenormalizationAlgorithm; kwargs...)
+    return Renormalization(net.data, alg; kwargs...)
 end
 
 ## Initalialize truncators for lattice of tensors
 newtruncators(bulk, fet::FET) = newtruncators(bulk, fet.alg)
-newtruncators(bulk, conalg::RenormalizationProblem) = newtruncators(bulk, conalg.alg)
+newtruncators(bulk, conalg::Renormalization) = newtruncators(bulk, conalg.alg)
 
-function newtruncators(bulk, conalg::AbstractBoundaryAlgorithm)
-    return newrenormalization(hilbertschmidt(bulk); alg=conalg)
+function newtruncators(bulk, alg::AbstractBoundaryAlgorithm)
+    return Renormalization(hilbertschmidt(bulk), alg)
 end
 
 function newtruncators(bulk, ::NTU)
@@ -337,29 +337,29 @@ newtruncators(st::SimpleUpdateState) = st
 environment!(pepo, ::SimpleUpdateState, ::Bond) = bondweights(pepo)
 environment!(pepo, ::NTUState, bond::Bond) = pair -> ntu_total(pair, pepo, bond)
 
-function environment!(pepo, truncator::RenormalizationProblem, ::Bond)
+function environment!(pepo, truncator::Renormalization, ::Bond)
     hs = hilbertschmidt(pepo)
     truncs = newtruncators(pepo, truncator.alg)
-    return ITC.renormalize!(truncs, hs)
+    return TRGroups.renormalize!(truncs, hs)
     return truncator
 end
 
-function ITC.renormalize!(env::RenormalizationProblem, network)
-    ITC.recycle!(env, network)
-    ITC.renormalize!(env)
+function TRGroups.renormalize!(env::Renormalization, network)
+    TRGroups.recycle!(env, network)
+    TRGroups.renormalize!(env)
     return env
 end
 
-# function ITC.renormalize!(env::RenormalizationProblem)
-#     ITC.reset!(env)
-#     ITC.runcontraction!(env)
+# function TRGroups.renormalize!(env::Renormalization)
+#     TRGroups.reset!(env)
+#     TRGroups.runcontraction!(env)
 #     return env
 # end
 
-ITC.renormalize!(st::NTUState) = calculate_neighbourhood!(st)
-ITC.renormalize!(st::SimpleUpdateState) = st
+TRGroups.renormalize!(st::NTUState) = calculate_neighbourhood!(st)
+TRGroups.renormalize!(st::SimpleUpdateState) = st
 
-function ITC.renormalize(tensors, truncalg)
+function renormalize(tensors, truncalg)
     truncs = newtruncators(tensors, truncalg)
     renormalize!(truncs)
     return truncs
@@ -400,7 +400,7 @@ function metric(pair::Pair, env, bond)
     left, right = pair
     return _metric(left, right, env, bond)
 end
-function _metric(left, right, env::RenormalizationProblem, bond::Bond)
+function _metric(left, right, env::Renormalization, bond::Bond)
     return _metric(left, right, env.runtime, bond)
 end
 function _metric(left, right, env::NTUState, bond::Bond)

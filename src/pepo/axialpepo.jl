@@ -4,14 +4,14 @@ mutable struct AxialPEPO{G,PType,CType} <: AbstractPEPO{G,PType}
     currentaxis::Int
 end
 
-AxialPEPO(pepo) = AxialPEPO(pepo, permutetranspose(ITC.getdata(pepo)), 1)
+AxialPEPO(pepo) = AxialPEPO(pepo, permutetranspose(TRGroups.getdata(pepo)), 1)
 
 currentaxis(axp::AxialPEPO) = axp.currentaxis
 
-ITC.getdata(axp::AxialPEPO) = getaxis(axp, currentaxis(axp))
+TRGroups.getdata(axp::AxialPEPO) = getaxis(axp, currentaxis(axp))
 function getaxis(axp::AxialPEPO, axis)
     if axis == 1
-        return ITC.getdata(axp.parent)
+        return TRGroups.getdata(axp.parent)
     elseif axis == 2
         return axp.vstate
     else

@@ -9,10 +9,10 @@
 ## Installation
 
 This package is unregistered (and currently private). 
-It also depends on another unregistered package [InfiniteTensorContractions.jl](https://github.com/jack-dunham/InfiniteTensorContractions.jl), which should be installed first.
+It also depends on another unregistered package [TensorRenormalizationGroups.jl](https://github.com/jack-dunham/TensorRenormalizationGroups.jl), which should be installed first.
 From the Pkg REPL, accessed by typing the `]` character from the Julia prompt, run
 ```
-pkg> add https://github.com/jack-dunham/InfiniteTensorContractions.jl#dev
+pkg> add https://github.com/jack-dunham/TensorRenormalizationGroups.jl#dev
 ```
 to install the development version of this package.
 You should then run:
@@ -35,7 +35,7 @@ using TimeEvolutionPEPO
 using TensorKit
 ```
 which can be executed in the Julia REPL, or included at the top of a script. 
-Loading [InfiniteTensorContractions.jl](https://github.com/jack-dunham/InfiniteTensorContractions.jl) is optional, as TimeEvolutionPEPO.jl exports most of it's relevent functionality.
+Loading [TensorRenormalizationGroups.jl](https://github.com/jack-dunham/TensorRenormalizationGroups.jl) is optional, as TimeEvolutionPEPO.jl exports most of it's relevent functionality.
 
 ## Related packages
 
