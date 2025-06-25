@@ -8,10 +8,9 @@ are internal and not part of the public API.
 
     $(FUNCTIONNAME)(pepo::PEPO, model, method::AbstractMethod; timestep::Float64, kwargs...)
 
-Initialise a `Simulation` of the model `model` with initial quantum state defined by `rho`,
-as any valid input into the constructor `PEPO(rho, physical, virtual, virtual_vertical)`, or
-given by a pre-existing `PEPO` object `pepo`. A `method` and `timestep` must be supplied as keyword 
-arguments. An addition, the following optional keywords can also be used:
+Initialise a `Simulation` of the model `model` using `method` with initial quantum state 
+defined by `pepo`. A `timestep` must be supplied as a keyword argument. An addition, the 
+following optional keywords can also be used:
 
 ## Optional Keywords
 
@@ -295,17 +294,34 @@ end
 
 ## INTERFACE
 """
-    quantumstate(obj) -> PEPO
+    $(TYPEDSIGNATURES)
 
-Return the quantum state associated with object `obj`.
+Return the quantum state associated with object a simulation.
 """
 quantumstate(s::Simulation) = quantumstate(getfield(s, :state))
 quantumstate(p::PEPO) = p
 quantumstate(p::AxialPEPO) = p.parent
 
-trotterorder(sim) = sim.stepper.order
-timestep(sim) = sim.stepper.timestep
+"""
+    $(TYPEDSIGNATURES)
 
+Return the order of the Trotter decomposition of a simulation.
+"""
+trotterorder(sim::Simulation) = sim.stepper.order
+
+"""
+    $(TYPEDSIGNATURES)
+
+Return the time step used by a simulation.
+"""
+timestep(sim::Simulation) = sim.stepper.timestep
+
+"""
+    $(TYPEDSIGNATURES)
+
+Return a named tuple containing simulation information. See [`SimulationInfo`](@ref)
+for details of the containted fields.
+"""
 function simulationinfo(s::Simulation)
     info = getfield(s, :info)
 

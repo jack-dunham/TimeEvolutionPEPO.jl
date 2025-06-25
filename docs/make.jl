@@ -7,6 +7,7 @@ makedocs(
         "Home" => "index.md",
         "Manual" => [
             "man/tutorial.md",
+            "man/tensormap.md",
             "man/states.md",
             "man/models.md",
         ],

@@ -3,14 +3,40 @@ $(TYPEDEF)
 
 Concrete type representing a projected-entangled pair operator in the symmetric gauge with
 with associated bond weights accessible with the `weights` function.
+Each tensor is defined on the tensor space `ket * bra' ← east * south * west' * north'`, and
+has the following structure (the ket and bra spaces are indices 1 and 2 respectively):
 
+                       ⋮                 ⋮
+                       ▲                 ▲
+                       │                 │
+                       │                 │
+                   ┌───┴───┐         ┌───┴───┐
+                   │   6   │         │   6   │
+         ⋯ ◄───────┤5 A₁₁ 3├─────────┤5 A₂₁ 3│◄─────── ⋯
+                   │   4   │         │   4   │
+                   └───┬───┘         └───┬───┘
+                       │                 │
+                       │                 │
+                       │                 │
+                   ┌───┴───┐         ┌───┴───┐
+                   │   6   │         │   6   │
+         ⋯ ◄───────┤5 A₁₂ 3├─────────┤5 A₂₂ 3│◄─────── ⋯
+                   │   4   │         │   4   │
+                   └───────┘         └───────┘
+                       ▲                 ▲
+                       │                 │
+                       │                 │
+                       ⋮                 ⋮
+
+where Aᵢⱼ refers to tensor obtained by indexing `pepo[i,j]`.
+                               
 See also: [`AbstractPEPO`](@ref), [`ThermalState`](@ref), and [`weights`](@ref)
 
-## Fields
+# Fields
 
 $(FIELDS)
 
-## Constructors
+# Constructors
 
 The following constructors can also be called with `PEPO{G} where {G<:AbstractUnitCellGeometry}`
 to dictate the unit-cell geometry of the output `PEPO` object. This will error if any of the 
@@ -278,7 +304,7 @@ end
 """
     $(FUNCTIONNAME)(pepo::PEPO, x, y; weights=false) -> PEPO
 
-Return a PEPO over the smaller UnitCell specified by indices `x` and `y`. If `weights=true`,
+Return a PEPO over the smaller unit cell specified by indices `x` and `y`. If `weights=true`,
 the PEPO is constructed with the weights of the chosen lattice sites, otherwise they are
 initilised to identities. Arguments `x` and `y` can be of type `Union{Int, UnitRange{Int}, Colon}`.
 """

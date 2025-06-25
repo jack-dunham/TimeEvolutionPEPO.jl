@@ -7,9 +7,11 @@ using TimeEvolutionPEPO, TensorKit
 ```
 # Constructing models
 
-One of the strengths of tensor network methods is that, by working directly with state vectors and matrix representations of time-evolution operators, they do not require deriving specific equations for different models. 
-Provided one can express the generator of the time evolution as a sum of terms amenable to a tensor network representation with respect to some tensor product of local Hilbert spaces, the methods in described in this thesis can be used. 
-That is not to say that the tensor network will necessarily capture the dynamics of the quantum state accurately, or even allow for stable evolution, but the handle can nevertheless be turned.
+One of the strengths of tensor network methods is that, by working directly with state vectors and matrix representations of time-evolution operators, they do not require deriving specific equations for different models.
+For this reason, TimeEvolutionPEPO aims to have very flexible support for implementing different models.
+!!! note
+    The set of models that can be constructed in this package is much larger than the set of models that a tensor network ansatz can support. 
+    You may find that for many models, too much entanglement is generated and the simulation breaks down. 
 
 ## Terms, Hamiltonians, and Liouvillians
 
@@ -108,7 +110,7 @@ which can be important when individual Trotter layers have lower rank than the s
 Many methods can take advantage of this and construct operators of lower bond dimension, at the cost of more operators (and thus more truncation steps) in the Trotter decomposition.
 For example, for the `TEBD` method:
 ```@repl
-state = PEPO(rand, 2, 1) # Random produce state with D = 1
+state = PEPO(rand, 2, 1) # Random product state with D = 1
 method = TEBD(compresstol = 10 * eps())
 Simulation(state, model_A, method; timestep = 0.1);
 Simulation(state, model_B, method; timestep = 0.1);

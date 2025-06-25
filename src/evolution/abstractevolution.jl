@@ -21,7 +21,7 @@ struct LocalStepper{G,MType} <: AbstractTrotterizedTimeStepper{G,MType}
     isreversed::Bool
 end
 
-Base.eltype(::Type{<:LocalStepper{G,T}}) where {G,T} = NTuple{2, T}
+Base.eltype(::Type{<:LocalStepper{G,T}}) where {G,T} = NTuple{2,T}
 
 LocalStepper(lat; axis=1, inreverse=false) = LocalStepper(lat, axis, inreverse)
 
@@ -608,9 +608,23 @@ function Base.getproperty(method::Union{AbstractTEBD,AbstractClusterMPO}, sym::S
     end
 end
 
+"""
+$(TYPEDEF)
+
+The time-evolving block decimation method for nearest-neighbour gate-based evolution.
+
+# FIELDS
+
+$(TYPEDFIELDS)
+
+See also: [`AxialTEBD`](@ref), [`GlobalTEBD`](@ref)
+"""
 @kwdef mutable struct TEBD{Alg<:AbstractTruncationScheme} <: AbstractTEBD
+    "(default `eps()`) Peform a low-rank approximation according to this tolerance."
     compresstol::Float64 = eps()
+    "(default `SimpleUpdate()`) The truncation algorithm to be used."
     alg::Alg = SimpleUpdate()
+    "deprec"
     verbose::Bool = true
 end
 
@@ -618,6 +632,15 @@ UpdateStyle(::Type{<:TEBD}) = IsLocal()
 
 Base.parent(method::Union{TEBD,ClusterMPO}) = method
 
+"""
+$(TYPEDEF)
+
+Axial version of [`TEBD`](@ref) formed from a sequence of Trotter gates  in a staircase patterm 
+split and contracted into a matrix product operator. Maintains translational invariance. 
+Fields are the same as in [`TEBD`](@ref).
+
+See also: [`TEBD`](@ref), [`GlobalTEBD`](@ref)
+"""
 struct AxialTEBD{TAlg} <: AbstractTEBD
     parent::TEBD{TAlg}
 end
@@ -626,6 +649,15 @@ AxialTEBD(; kwargs...) = AxialTEBD(TEBD(; kwargs...))
 
 UpdateStyle(::AxialTEBD) = IsAxial()
 
+"""
+$(TYPEDEF)
+
+Global version of [`TEBD`](@ref) formed from contracting both the horizontal and vertical
+matrix product operators from [`AxialTEBD`](@ref) together to from tensor network operator
+with 4 virtual bonds. Fields are the same as in [`TEBD`](@ref).
+
+See also: [`TEBD`](@ref), [`AxialTEBD`](@ref)
+"""
 struct GlobalTEBD{TAlg} <: AbstractTEBD
     parent::TEBD{TAlg}
 end

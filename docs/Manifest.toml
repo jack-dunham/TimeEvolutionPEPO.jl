@@ -2,12 +2,12 @@
 
 julia_version = "1.11.3"
 manifest_format = "2.0"
-project_hash = "41a2a687db3cfa2045622fe3b63c975ac4c2e6b3"
+project_hash = "ad26e4e63f33f6a2705898a252c47c346dfacbfd"
 
 [[deps.ADTypes]]
-git-tree-sha1 = "e2478490447631aedba0823d4d7a80b2cc8cdb32"
+git-tree-sha1 = "be7ae030256b8ef14a441726c4c37766b90b93a3"
 uuid = "47edcb42-4c32-4615-8424-f2b9edc5f35b"
-version = "1.14.0"
+version = "1.15.0"
 
     [deps.ADTypes.extensions]
     ADTypesChainRulesCoreExt = "ChainRulesCore"
@@ -201,9 +201,9 @@ version = "1.18.4+0"
 
 [[deps.ChainRules]]
 deps = ["Adapt", "ChainRulesCore", "Compat", "Distributed", "GPUArraysCore", "IrrationalConstants", "LinearAlgebra", "Random", "RealDot", "SparseArrays", "SparseInverseSubset", "Statistics", "StructArrays", "SuiteSparse"]
-git-tree-sha1 = "a975ae558af61a2a48720a6271661bf2621e0f4e"
+git-tree-sha1 = "224f9dc510986549c8139def08e06f78c562514d"
 uuid = "082447d4-558c-5d27-93f4-14fc19e9eca2"
-version = "1.72.3"
+version = "1.72.5"
 
 [[deps.ChainRulesCore]]
 deps = ["Compat", "LinearAlgebra"]
@@ -357,9 +357,9 @@ version = "1.15.1"
 
 [[deps.DifferentiationInterface]]
 deps = ["ADTypes", "LinearAlgebra"]
-git-tree-sha1 = "c8d85ecfcbaef899308706bebdd8b00107f3fb43"
+git-tree-sha1 = "210933c93f39f832d92f9efbbe69a49c453db36d"
 uuid = "a0c0ee7d-e4b9-4e03-894e-1c5f64a51d63"
-version = "0.6.54"
+version = "0.7.1"
 
     [deps.DifferentiationInterface.extensions]
     DifferentiationInterfaceChainRulesCoreExt = "ChainRulesCore"
@@ -708,9 +708,9 @@ version = "0.2.5"
 
 [[deps.IRTools]]
 deps = ["InteractiveUtils", "MacroTools"]
-git-tree-sha1 = "950c3717af761bc3ff906c2e8e52bd83390b6ec2"
+git-tree-sha1 = "57e9ce6cf68d0abf5cb6b3b4abf9bedf05c939c0"
 uuid = "7869d1d1-7146-5819-86e3-90919afe41df"
-version = "0.4.14"
+version = "0.4.15"
 
 [[deps.ImageAxes]]
 deps = ["AxisArrays", "ImageBase", "ImageCore", "Reexport", "SimpleTraits"]
@@ -752,14 +752,6 @@ version = "3.1.11+0"
 git-tree-sha1 = "012e604e1c7458645cb8b436f8fba789a51b257f"
 uuid = "9b13fd28-a010-5f03-acff-a1bbcff69959"
 version = "1.0.0"
-
-[[deps.InfiniteTensorContractions]]
-deps = ["CircularArrays", "DocStringExtensions", "KrylovKit", "LinearAlgebra", "TensorKit"]
-git-tree-sha1 = "8d754a0f332e64cd9840cf5743e95bfe24415ba9"
-repo-rev = "dev"
-repo-url = "https://github.com/jack-dunham/InfiniteTensorContractions.jl"
-uuid = "742c4823-a45f-4b1c-bad3-1a5bdcda2a0b"
-version = "0.1.0"
 
 [[deps.Inflate]]
 git-tree-sha1 = "d1b1b796e47d94588b3757fe84fbf65a5ec4a80d"
@@ -1020,9 +1012,9 @@ version = "2.41.0+0"
 
 [[deps.LineSearches]]
 deps = ["LinearAlgebra", "NLSolversBase", "NaNMath", "Parameters", "Printf"]
-git-tree-sha1 = "e4c3be53733db1051cc15ecf573b1042b3a712a1"
+git-tree-sha1 = "4adee99b7262ad2a1a4bbbc59d993d24e55ea96f"
 uuid = "d3d80556-e9d4-5f37-9878-2ab0fcc64255"
-version = "7.3.0"
+version = "7.4.0"
 
 [[deps.LinearAlgebra]]
 deps = ["Libdl", "OpenBLAS_jll", "libblastrampoline_jll"]
@@ -1121,9 +1113,9 @@ version = "2023.12.12"
 
 [[deps.NLSolversBase]]
 deps = ["ADTypes", "DifferentiationInterface", "Distributed", "FiniteDiff", "ForwardDiff"]
-git-tree-sha1 = "b14c7be6046e7d48e9063a0053f95ee0fc954176"
+git-tree-sha1 = "25a6638571a902ecfb1ae2a18fc1575f86b1d4df"
 uuid = "d41bc354-129a-5804-8e4c-c37616107c6c"
-version = "7.9.1"
+version = "7.10.0"
 
 [[deps.NaNMath]]
 deps = ["OpenLibm_jll"]
@@ -1209,9 +1201,9 @@ version = "0.5.6+0"
 
 [[deps.Optim]]
 deps = ["Compat", "EnumX", "FillArrays", "ForwardDiff", "LineSearches", "LinearAlgebra", "NLSolversBase", "NaNMath", "PositiveFactorizations", "Printf", "SparseArrays", "StatsBase"]
-git-tree-sha1 = "31b3b1b8e83ef9f1d50d74f1dd5f19a37a304a1f"
+git-tree-sha1 = "61942645c38dd2b5b78e2082c9b51ab315315d10"
 uuid = "429524aa-4258-5aef-a3af-852621145aeb"
-version = "1.12.0"
+version = "1.13.2"
 
     [deps.Optim.extensions]
     OptimMOIExt = "MathOptInterface"
@@ -1528,9 +1520,9 @@ version = "1.2.1"
 
 [[deps.SparseArrayKit]]
 deps = ["LinearAlgebra", "PackageExtensionCompat", "TensorOperations", "TupleTools", "VectorInterface"]
-git-tree-sha1 = "77769a2a6fefd92fc7c0367c0771a2a9d2b6f8e1"
+git-tree-sha1 = "53432ea97bba218288a5c9ed10536842e21068a6"
 uuid = "a9a3c162-d163-4c15-8926-b8794fbefed2"
-version = "0.4.0"
+version = "0.4.1"
 weakdeps = ["SparseArrays"]
 
     [deps.SparseArrayKit.extensions]
@@ -1737,6 +1729,14 @@ version = "5.2.0"
     ChainRulesCore = "d360d2e6-b24c-11e9-a2a3-2a2ae2dbcce4"
     cuTENSOR = "011b41b2-24ef-40a8-b3eb-fa098493e9e1"
 
+[[deps.TensorRenormalizationGroups]]
+deps = ["CircularArrays", "DocStringExtensions", "KrylovKit", "LinearAlgebra", "Printf", "TensorKit"]
+git-tree-sha1 = "64ea3a7a3e1deeca16cc2e1e7b2e49e012f21500"
+repo-rev = "dev"
+repo-url = "https://github.com/jack-dunham/TensorRenormalizationGroups.jl"
+uuid = "742c4823-a45f-4b1c-bad3-1a5bdcda2a0b"
+version = "1.0.0"
+
 [[deps.Test]]
 deps = ["InteractiveUtils", "Logging", "Random", "Serialization"]
 uuid = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
@@ -1749,7 +1749,7 @@ uuid = "731e570b-9d59-4bfa-96dc-6df516fadf69"
 version = "0.11.3"
 
 [[deps.TimeEvolutionPEPO]]
-deps = ["Accessors", "ChainRulesCore", "CircularArrays", "Combinatorics", "DocStringExtensions", "InfiniteTensorContractions", "KrylovKit", "LinearAlgebra", "Logging", "MacroTools", "Optim", "OptimKit", "PrecompileTools", "Random", "SparseArrayKit", "Statistics", "TensorKit", "TensorOperations", "TupleTools", "VectorInterface", "Zygote"]
+deps = ["Accessors", "ChainRulesCore", "CircularArrays", "Combinatorics", "DocStringExtensions", "KrylovKit", "LinearAlgebra", "Logging", "MacroTools", "Optim", "OptimKit", "PrecompileTools", "Random", "SparseArrayKit", "Statistics", "TensorKit", "TensorOperations", "TensorRenormalizationGroups", "TupleTools", "VectorInterface", "Zygote"]
 path = ".."
 uuid = "ee9a5d50-cb2d-461d-9ed1-04ffb2590b38"
 version = "0.1.0-alpha"
@@ -1891,9 +1891,9 @@ version = "1.5.7+1"
 
 [[deps.Zygote]]
 deps = ["AbstractFFTs", "ChainRules", "ChainRulesCore", "DiffRules", "Distributed", "FillArrays", "ForwardDiff", "GPUArraysCore", "IRTools", "InteractiveUtils", "LinearAlgebra", "LogExpFunctions", "MacroTools", "NaNMath", "PrecompileTools", "Random", "SparseArrays", "SpecialFunctions", "Statistics", "ZygoteRules"]
-git-tree-sha1 = "d1db6ee766b1b200594a22714c80d6678dee3c81"
+git-tree-sha1 = "a29cbf3968d36022198bcc6f23fdfd70f7caf737"
 uuid = "e88e6eb3-aa80-5325-afca-941959d7151f"
-version = "0.7.7"
+version = "0.7.10"
 
     [deps.Zygote.extensions]
     ZygoteAtomExt = "Atom"

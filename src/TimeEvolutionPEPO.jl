@@ -51,7 +51,7 @@ export TEBD, AxialTEBD, GlobalTEBD, ClusterMPO, GlobalTEBD, ClusterPEPO
 export LocalUpdate, GlobalUpdate
 export SimpleUpdate, SVDU, NTU, FET, IterativeSU
 
-export Simulation
+export Simulation, SimulationInfo
 export simulate!, updatetimestep!
 export quantumstate, timestep, trotterorder, simulationinfo
 
