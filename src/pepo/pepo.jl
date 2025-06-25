@@ -282,11 +282,11 @@ Return a PEPO over the smaller UnitCell specified by indices `x` and `y`. If `we
 the PEPO is constructed with the weights of the chosen lattice sites, otherwise they are
 initilised to identities. Arguments `x` and `y` can be of type `Union{Int, UnitRange{Int}, Colon}`.
 """
-function subpepo(pepo::PEPO, i1::Int, i2::Int; weights=false)
-    t = UnitCell(axisbuffer(pepo)[i1:i1, i2:i2])
+function subpepo(pepo::PEPO, i1::AbstractUnitRange, i2::AbstractUnitRange; weights=false)
+    t = UnitCell(pepo[i1, i2])
 
     if weights
-        w = UnitCellBonds(weights(pepo)[i1:i1, i2:i2])
+        w = UnitCellBonds(weights(pepo)[i1, i2])
         return PEPO(t, w)
     else
         return PEPO(t)
