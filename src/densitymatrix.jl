@@ -101,11 +101,7 @@ function DensityMatrix(
     alg::AbstractBoundaryAlgorithm;
     kwargs...,
 )
-    if alg isa CTMRG
-        data = dealias(TRGroups.getdata(pepo))
-    else
-        data = TRGroups.getdata(pepo)
-    end
+    data = TRGroups.getdata(pepo)
     return DensityMatrix(data, alg; kwargs...)
 end
 
