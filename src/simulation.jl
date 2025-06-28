@@ -202,15 +202,7 @@ function simulate!(
     tol = Inf
 
     while numiter < numsteps
-        for (i, step) in enumerate(stepper)
-            if eltype(truncator) <: AbstractVector
-                trunc = getindex.(truncator, i)
-            else
-                trunc = truncator
-            end
-
-            timestep!(pepo, trunc, step, truncalg)
-        end
+        timestep!(pepo, truncator, stepper, truncalg)
         # Calculate the difference in pepo singular values between timesteps
         tol = tolerance!(prev_weights, bondweights(pepo), timestep(sim))
 

@@ -1,7 +1,7 @@
 newtruncators(::AxialPEPO, _, ::SimpleUpdate) = (SimpleUpdateState(), SimpleUpdateState())
 newtruncators(::AxialPEPO, _, ::SVDU) = (SimpleUpdateState(), SimpleUpdateState())
 
-function timestep!(
+function trotterstep!(
     pepo::PEPO,
     truncator,
     stepper::LocalStepper,
@@ -33,72 +33,6 @@ function timestep!(
 
         pepo[bond] = mapreduce(copy, =>, newpair)
         setweight!(pepo, newweight, bond; copy=false)
-    end
-
-    # simple_update_gauge!(pepo; reset=false, verbose=true)
-    quicknormalize!(pepo)
-    hermitianize!(pepo)
-    #
-    return pepo, infidelity
-end
-
-function _timestep!(
-    pepo::PEPO{Square},
-    truncator,
-    stepper::LocalStepper,
-    truncalg::Union{SimpleUpdate,SVDU};
-    kwargs...,
-)
-
-    # Evolve and then truncate each bond in sequence
-    size(pepo) < (2, 2) && throw(ArgumentError(""))
-
-    infidelity = similar(TRGroups.getdata(pepo))
-
-    allbonds = bonds(pepo, stepper.axis)
-
-    isreversed(stepper) && (allbonds = collect(Iterators.Reverse(allbonds)))
-
-    checker = true
-
-    shiftf = checker ? (v, i) -> circshift(v, i - 1) : (v, _) -> circshift(v, 0)
-
-    bondcols = map(in -> shiftf(in[2], in[1]), enumerate(eachslice(allbonds; dims=2)))
-
-    while !isempty(bondcols)
-        bondcol = first(bondcols)
-
-        while !isempty(bondcol)
-            bond = first(bondcol)
-
-            env = environment!(pepo, SimpleUpdateState(), bond)
-
-            # println(bond)
-            # println("alt:", altbonds[i])
-
-            # Evolved the pair of tensors connected by `bond`, leaving the original pair
-            # unmutated.
-
-            # pair = evolve(pepo, stepper, bond)
-            # newpair, newweight = updatetensors(pair, env, truncalg, bond)
-
-            newpair, newweight = evolve_updatetensors(pepo, env, stepper, truncalg, bond)
-            # Loop through all the columns 
-            for col in bondcols
-                thisbond = popfirst!(col)
-
-                pepo[thisbond] = mapreduce(copy, =>, newpair)
-                setweight!(pepo, newweight, thisbond; copy=false)
-
-                # If not a checkerboard lattice, only update the first column
-                checker || break
-            end
-
-            # quicknormalize!(pepo)
-            # hermitianize!(pepo)
-        end
-
-        popfirst!(bondcols)
     end
 
     # simple_update_gauge!(pepo; reset=false, verbose=true)

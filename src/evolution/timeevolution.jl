@@ -8,11 +8,25 @@ function newevolution(::Type{<:LocalStepper}, pepo, steps, method::TEBD{<:Union{
 end
 
 # Default
-function timestep!(pepo, truncator, stepper, truncalg; kwargs...)
-    timestep!(pepo, first(truncator), stepper, truncalg; kwargs...)
+"""
+    $(TYPEDSIGNATURES)
 
+A single time step of the simulation.
+"""
+function timestep!(pepo, truncator, stepper, truncalg; kwargs...)
+    # Its a bit hacky
+    for (i, step) in enumerate(stepper)
+        if eltype(truncator) <: Vector
+            trunc = getindex.(truncator, i)
+        else
+            trunc = truncator
+        end
+
+        trotterstep!(pepo, truncator, step, truncalg)
+    end
     return pepo
 end
+
 function _timestep!(
     pepo::PEPO, truncator, stepper::LocalStepper, truncalg::SimpleUpdate; kwargs...
 )
@@ -40,7 +54,7 @@ function _timestep!(
     return pepo
 end
 
-function timestep!(
+function trottertep!(
     pepo!::PEPO, truncator, stepper::FullStepper, truncalg::SimpleUpdate; kwargs...
 )
     isoms = newisometries(pepo!, stepper)
@@ -83,7 +97,7 @@ end
 #     return pepo!
 # end
 
-function timestep!(
+function trotterstep!(
     pepo::AxialPEPO, truncator, stepper::LocalStepper, truncalg::Union{NTU,FET}; kwargs...
 )
     axis = stepper.axis
@@ -160,7 +174,7 @@ function timestep!(
     return pepo, infidelity
 end
 
-function timestep!(
+function trotterstep!(
     pepo::AxialPEPO, truncator, stepper::AxialStepper, truncalg::SimpleUpdate; kwargs...
 )
     axis = stepper.axis
@@ -217,7 +231,7 @@ function timestep!(
     return pepo, infidelity
 end
 
-function timestep!(
+function trotterstep!(
     pepo::AxialPEPO, truncator, stepper::AxialStepper, truncalg::Union{FET,NTU}; kwargs...
 )
     axis = stepper.axis
@@ -268,7 +282,7 @@ function timestep!(
 
     return pepo, infidelity
 end
-function timestep!(pepo!::PEPO, truncator!::Isometries, stepper, truncalg::IterativeSU)
+function trotterstep!(pepo!::PEPO, truncator!::Isometries, stepper, truncalg::IterativeSU)
     iterative_simple_update_prototype!(
         pepo!,
         truncator!,
@@ -283,7 +297,9 @@ function timestep!(pepo!::PEPO, truncator!::Isometries, stepper, truncalg::Itera
 
     return pepo!
 end
-function timestep!(pepo!::PEPO, truncator!::Isometries, stepper, truncalg::IterativeSUTest)
+function trotterstep!(
+    pepo!::PEPO, truncator!::Isometries, stepper, truncalg::IterativeSUTest
+)
     iterative_simple_update_prototype!(
         pepo!,
         truncator!,
