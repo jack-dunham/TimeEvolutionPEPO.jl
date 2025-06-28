@@ -10,11 +10,7 @@ using LinearAlgebra
 using Random
 using TensorKit
 using TupleTools
-using Zygote
-using OptimKit
 using VectorInterface
-using ChainRulesCore
-using SparseArrayKit
 using Accessors
 using DocStringExtensions
 using Logging
