@@ -1,6 +1,5 @@
 abstract type AbstractIsometryOptimisation{G<:Union{NoGauge,WTG}} end
 
-using TensorRenormalizationGroups: Renormalization, Renormalization
 function Base.show(io::IO, m::MIME"text/plain", sim::AbstractIsometryOptimisation)
     return shownested(io, m, sim)
 end
@@ -164,7 +163,19 @@ abstract type AbstractTruncatorState end
 struct SimpleUpdateState <: AbstractTruncatorState end
 
 # SimpleUpdate, FET, NTU
+"""
+$TYPEDEF
+
+Abstract super-type of all truncation schemes
+"""
 abstract type AbstractTruncationScheme end
+
+"""
+$TYPEDEF
+
+Abstract super-type of all truncation schemes that proceed like the simple update method. 
+See [interfaces.md](@ref).
+"""
 abstract type AbstractSimpleTruncationScheme <: AbstractTruncationScheme end
 
 function Base.show(io::IO, m::MIME"text/plain", sim::AbstractTruncationScheme)
@@ -178,7 +189,7 @@ $(TYPEDEF)
 
 The full environment truncation method.
 
-# FIELDS
+# Fields
 
 $(TYPEDFIELDS)
 
@@ -207,7 +218,7 @@ $(TYPEDEF)
 The neighbourhood tensor update method. Performs worse than FET, however uses an environment
 that is Hermitian exactly, which may improve stabilty.
 
-# FIELDS
+# Fields
 
 $(TYPEDFIELDS)
 
@@ -234,7 +245,7 @@ The singular value decomposition method. No bond weights are absorbed when trunc
 much worse truncations than would be obtained using simple update, however this method does not
 require matrix inversions.
 
-# FIELDS
+# Fields
 
 $(TYPEDFIELDS)
 
@@ -256,7 +267,7 @@ The simple update method (SU). At each truncation, the bond weights of the tenso
 are absorbed, resulting improved truncations over SVDU. This method is fast and robust,
 but may provide inaccurate results when the correlation length of the state becomes large.
 
-# FIELDS
+# Fields
 
 $(TYPEDFIELDS)
 
@@ -306,10 +317,11 @@ function newtruncators(
 ) where {P<:AbstractPEPO,S}
     return SimpleUpdateState(), SimpleUpdateState()
 end
-
 ## 
 
-function TRGroups.Renormalization(net::HilbertSchmidt, alg::AbstractRenormalizationAlgorithm; kwargs...)
+function TRGroups.Renormalization(
+    net::HilbertSchmidt, alg::AbstractRenormalizationAlgorithm; kwargs...
+)
     return Renormalization(net.data, alg; kwargs...)
 end
 
@@ -334,7 +346,6 @@ end
 newtruncators(tensors, st::SimpleUpdateState) = st
 newtruncators(st::SimpleUpdateState) = st
 
-environment!(pepo, ::SimpleUpdateState, ::Bond) = bondweights(pepo)
 environment!(pepo, ::NTUState, bond::Bond) = pair -> ntu_total(pair, pepo, bond)
 
 function environment!(pepo, truncator::Renormalization, ::Bond)

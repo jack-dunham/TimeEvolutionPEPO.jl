@@ -1,11 +1,17 @@
-newtruncators(::AxialPEPO, _, ::SimpleUpdate) = (SimpleUpdateState(), SimpleUpdateState())
-newtruncators(::AxialPEPO, _, ::SVDU) = (SimpleUpdateState(), SimpleUpdateState())
+function newtruncators(pepo, trotterlist, ::AbstractSimpleTruncationScheme)
+    return (SimpleUpdateState(), SimpleUpdateState())
+end
+# Simple update interface
+environment(pepo, truncalg::AbstractSimpleTruncationScheme, bond) = bondweights(pepo)
+function environment!(truncator, pepo, truncalg::AbstractSimpleTruncationScheme, bond)
+    return environment(pepo, truncalg, bond)
+end
 
 function trotterstep!(
     pepo::PEPO,
     truncator,
     stepper::LocalStepper,
-    truncalg::Union{SimpleUpdate,SVDU};
+    truncalg::AbstractSimpleTruncationScheme,
     kwargs...,
 )
 
@@ -17,18 +23,23 @@ function trotterstep!(
     allbonds = bonds(pepo, stepper.axis)
 
     for bond in allbonds
-        env = environment!(pepo, SimpleUpdateState(), bond)
+        env = environment!(truncator, pepo, truncalg, bond)
 
         # println("alt:", altbonds[i])
 
         # Evolved the pair of tensors connected by `bond`, leaving the original pair
         # unmutated.
 
-        if truncalg.reduce === :post
+        if hasfield(typeof(truncalg), :reduce)
+            if truncalg.reduce === :post
+                pair = evolve(pepo, stepper, bond)
+                newpair, newweight = updatetensors(pair, env, truncalg, bond)
+            elseif truncalg.reduce === :pre
+                newpair, newweight = updatetensors(pepo, env, stepper, truncalg, bond)
+            end
+        else
             pair = evolve(pepo, stepper, bond)
             newpair, newweight = updatetensors(pair, env, truncalg, bond)
-        elseif truncalg.reduce === :pre
-            newpair, newweight = evolve_updatetensors(pepo, env, stepper, truncalg, bond)
         end
 
         pepo[bond] = mapreduce(copy, =>, newpair)
@@ -90,11 +101,15 @@ end
 function simpleupdate!(pair, weights, bond; trunc, absorb=true, axial=false, kwargs...)
     axis = bondaxis(bond)
 
-    absorb && absorb_adjacent_weights!(pair, weights, bond; inverse=false, axial=axial)
+    if absorb
+        pair = absorb_adjacent_weights(pair, weights, bond; inverse=false, axial=axial)
+    end
 
     iso, s, infid = simple_update_svd!(pair; trunc=trunc, absorb=true, axis=axis, kwargs...)
 
-    absorb && absorb_adjacent_weights!(pair, weights, bond; inverse=true, axial=axial)
+    if absorb
+        pair = absorb_adjacent_weights(pair, weights, bond; inverse=true, axial=axial)
+    end
 
     return iso, s, infid
 end
@@ -104,7 +119,9 @@ function simpleupdate(pair, weights, bond; trunc, axial=false, absorb=true, kwar
 
     newpair = mapreduce(copy, =>, pair)
 
-    absorb && absorb_adjacent_weights!(newpair, weights, bond; axial=axial, inverse=false)
+    if absorb
+        newpair = absorb_adjacent_weights(pair, weights, bond; axial=axial, inverse=false)
+    end
 
     iso, s, infid = simple_update_svd(
         newpair; trunc=trunc, absorb=true, axis=axis, kwargs...
@@ -229,9 +246,9 @@ function vert_weights(uten::T, vten::T, U, V; axial) where {T<:AbsTen{2,5}}
     return unew, vnew
 end
 
-function absorb_adjacent_weights!(
-    pair::Pair{T}, weights::UnitCellBonds, bond::Bond; inverse=false, axial=false
-) where {T<:AbsTen{2}}
+function absorb_adjacent_weights(
+    pair::TensorPair{2}, weights::UnitCellBonds, bond::Bond; inverse=false, axial=false
+)
     uten, vten = pair
 
     if inverse
@@ -254,10 +271,7 @@ function absorb_adjacent_weights!(
         unew, vnew = vert_weights(uten, vten, U, V; axial=axial)
     end
 
-    copy!(uten, unew)
-    copy!(vten, vnew)
-
-    return uten => vten
+    return unew => vnew
 end
 
 function absorb_axial_weights!(

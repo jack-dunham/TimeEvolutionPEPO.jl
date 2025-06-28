@@ -1,6 +1,5 @@
-# Convenience const. 
-# const AbsTen{N₁,N₂,S} = AbstractTensorMap{S,N₁,N₂}
-# const TenAbs{N₂,N₁,S} = AbstractTensorMap{S,N₁,N₂}
+const TensorPair{N1,N2,S} = Pair{T,T} where {T<:AbsTen{N1,N2,S}}
+const TensorAntiPair{N1,N2,S} = Pair{T1,T2} where {T1<:AbsTen{N1,N2,S},T2<:AbsTen{N2,N1,S}}
 
 const _DIR_TO_DOMIND = (east=1, south=2, west=3, north=4)
 

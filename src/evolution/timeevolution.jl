@@ -118,13 +118,13 @@ function trotterstep!(
         # unmutated.
         pair = evolvemerge(pepo, stepper, bond)
 
-        if false #truncalg.rankreduce
+        if truncalg.rankreduce
             init_weights = environment!(pepo.parent, SimpleUpdateState(), bond)
             if axis == 2
                 init_weights = permutedims(init_weights)
             end
 
-            pair, initiso = updatetensors(pair, init_weights, SimpleUpdate(), bond)
+            initiso, _ = updateisometries(pair, init_weights, truncdim(dim(D)), bond)
 
             env = environment!(pepo, truncator[axis], bond)
             (u, v), s, _ = metric_isometries_from_simple_update!(

@@ -245,48 +245,123 @@ function rankreduce!(tensors::Pair{T,T}; axis=1) where {T<:AbsTen{2,4}}
     return uten => vten, R => L
 end
 
+function updateisometries(pair, weights, trunc, bond)
+    absorbedpair = absorb_adjacent_weights(pair, weights, bond; inverse=false)
+    newiso, newweight = updateisometries(absorbedpair, trunc, bond)
+    return newiso, newweight
+end
+
+# Default
 function updatetensors(pair, weights, truncalg::SimpleUpdate, bond)
-    absorb_adjacent_weights!(pair, weights, bond; inverse=false)
-    newpair, s = simple_update_tensors(pair; axis=bondaxis(bond), zeta=truncalg.zeta)
-    absorb_adjacent_weights!(newpair, weights, bond; inverse=true)
+    inpair = absorb_adjacent_weights(pair, weights, bond; inverse=false)
+    nextpair, s = updatetensors(inpair, truncalg, bond)
+    newpair = absorb_adjacent_weights(nextpair, weights, bond; inverse=true)
     return newpair, s
 end
-function updatetensors(pair, weights, truncalg::SVDU, bond)
-    newpair, s = simple_update_tensors(pair; axis=bondaxis(bond), zeta=truncalg.zeta)
-    return newpair, s
+updatetensors(pair, weights, truncalg::SVDU, bond) = updatetensors(pair, truncalg, bond)
+
+# Default
+function updatetensors(pair, truncalg::AbstractSimpleTruncationScheme, bond)
+    if hasfield(typeof(truncalg), :zeta)
+        zeta = truncalg.zeta
+    else
+        zeta = Inf
+    end
+    return simple_update_tensors(pair; axis=bondaxis(bond), zeta=zeta)
 end
-function evolve_updatetensors(pepo, weights, stepper, truncalg, bond)
-    pair = mapreduce(deepcopy, =>, pepo[bond])
+
+# Default
+function updatetensors(
+    pepo, weights, stepper, truncalg::AbstractSimpleTruncationScheme, bond
+)
+    pair = evolve(pepo, stepper, bond)
+    return updatetensors(pair, weights, truncalg, bond)
+end
+
+# Specific to SimpleUpdate
+function updatetensors(pepo, weights, stepper, truncalg::SimpleUpdate, bond)
     op_pair = stepper[bond]
 
-    absorb_adjacent_weights!(pair, weights, bond; inverse=false)
+    pair = absorb_adjacent_weights(pepo[bond], weights, bond; inverse=false)
 
     newpair, s = evolve_simple_update_tensors(
         pair, op_pair; axis=bondaxis(bond), zeta=truncalg.zeta
     )
 
-    absorb_adjacent_weights!(newpair, weights, bond; inverse=true)
+    newpair = absorb_adjacent_weights(newpair, weights, bond; inverse=true)
 
     return newpair, s
 end
 
-function evolve_simple_update_tensors(
-    pair::Pair{T}, op_pair; axis, zeta=Inf
-) where {T<:AbsTen{2,4}}
+"""
+    $(FUNCTIONNAME)(pair::Pair, axis::Int) -> (Q1, R, L, Q2)
+
+Perform a simple rank-reduction on the two tensors in `P1, P2 = pair` along `axis`. 
+The tensor `P1` (`P2`) is permuted such that the only bond in the domain (codomain) are 
+those corresponding to the east (west) space if `axis = 1` or south (north) space if `axis = 2`.
+
+The tensor `P1` and `P2` can be recovered by inverting this permutation on the products
+respective tensor map compositions `Q1 * R` and `L * Q2`.
+
+See also: [`reducephysical`](@ref) for a similar function that includes the physical indics
+    in the reduction
+"""
+function reducevirtual(pair::TensorPair{2,4}, axis::Int)
     uten, vten = pair
-    u1op, v2op = op_pair
+    if axis == 1
+        Q1, R = leftorth(uten, (1, 2, 4, 5, 6), (3,))
+        L, Q2 = rightorth(vten, (5,), (1, 2, 3, 4, 6))
+    elseif axis == 2
+        Q1, R = leftorth(uten, (1, 2, 3, 5, 6), (4,))
+        L, Q2 = rightorth(vten, (6,), (1, 2, 3, 4, 5))
+    end
+
+    return Q1, R, L, Q2
+end
+function reducevirtual(pair::TensorPair{2,5}, axis::Int)
+    uten, vten = pair
 
     if axis == 1
-        D = domain(uten)[3]
+        Q1, R = leftorth(uten, (1, 2, 5, 6, 7), (3, 4))
+        L, Q2 = rightorth(vten, (5, 6), (1, 2, 3, 4, 7))
+    elseif axis == 2
+        Q1, R = leftorth(uten, (1, 2, 3, 6, 7), (4, 5))
+        L, Q2 = rightorth(vten, (6, 7), (1, 2, 3, 4, 5))
+    end
 
+    return Q1, R, L, Q2
+end
+
+"""
+    $(FUNCTIONNAME)(pair::Pair, axis::Int) -> (QL, L, R, QR)
+
+Perform a simple rank-reduction on the two tensors in `PL, PR = pair` along `axis`. 
+The tensor `PL` (`PR`) is permuted such that, *in addition to the physical indices*
+the only virtual bond(s) in the domain (codomain) are those corresponding to the 
+east (west) space if `axis = 1`, or south (north) space if `axis = 2`.
+
+See also: [`reducevirtual`](@ref) for a similar function that ommits the physical indices.
+"""
+function reducephysical(pair::TensorPair{2,4}, axis::Int)
+    uten, vten = pair
+    if axis == 1
         Q1, R = leftorth(uten, (4, 5, 6), (1, 2, 3))
         L, Q2 = rightorth(vten, (1, 2, 5), (3, 4, 6))
     elseif axis == 2
-        D = domain(uten)[4]
-
         Q1, R = leftorth(uten, (3, 5, 6), (1, 2, 4))
         L, Q2 = rightorth(vten, (1, 2, 6), (3, 4, 5))
     end
+
+    return Q1, R, L, Q2
+end
+
+function evolve_simple_update_tensors(pair::TensorPair{2,4}, op_pair; axis, zeta=Inf)
+    u1op, v2op = op_pair
+
+    Q1, R, L, Q2 = reducephysical(pair, axis)
+
+    # The bond has vector space k * b * D, so D = domain(R, 1).
+    D = domain(R, 3)
 
     @tensoropt utenp[left ok ob; D η] := u1op[ok ob ik ib; η] * R[left; ik ib D]
     @tensoropt vtenp[D η; right ok ob] := v2op[ok ob ik ib; η] * L[ik ib D; right]
@@ -295,40 +370,74 @@ function evolve_simple_update_tensors(
 
     maxnormalize!(s)
 
-    (u, v), s = applyweight(u => v, s, zeta; verbose=false)
+    (u, v), newweight = applyweight(u => v, s, zeta; verbose=false)
 
-    if axis == 1
-        @tensoropt unew[k b; e s w n] := Q1[s w n; left] * u[left k b; e]
-        @tensoropt vnew[k b; e s w n] := v[w; right k b] * Q2[right; e s n]
-    elseif axis == 2
-        @tensoropt unew[k b; e s w n] := Q1[e w n; left] * u[left k b; s]
-        @tensoropt vnew[k b; e s w n] := v[n; right k b] * Q2[right; e s w]
-    end
+    newpair = truncate(Q1 => Q2, u => v, axis)
 
-    return unew => vnew, s
+    return newpair, newweight
 end
-function simple_update_tensors(pair::Pair{T}; axis, zeta=Inf) where {T<:AbsTen{2,5}}
-    uten, vten = pair
 
-    if axis == 1
-        D = domain(uten)[3]
+function simple_update_tensors(pair::TensorPair{2,5}; axis, zeta=Inf)
+    Q1, R, L, Q2 = reducevirtual(pair, axis)
 
-        Q1, R = leftorth(uten, (1, 2, 5, 6, 7), (3, 4))
-        L, Q2 = rightorth(vten, (5, 6), (1, 2, 3, 4, 7))
-    elseif axis == 2
-        D = domain(uten)[4]
-
-        Q1, R = leftorth(uten, (1, 2, 3, 6, 7), (4, 5))
-        L, Q2 = rightorth(vten, (6, 7), (1, 2, 3, 4, 5))
-    end
+    # The bond has vector space D * η, so D = domain(R, 1).
+    D = domain(R, 1)
 
     u, s, v, err1 = tsvd!(normalize!(R * L); trunc=truncdim(dim(D)))
-    # u, s, v, err2 = tsvd!(R * L; trunc=truncspace(D))
-
-    # println(s)
     maxnormalize!(s)
 
-    (u, v), s = applyweight(u => v, s, zeta; verbose=false)
+    (u, v), newweight = applyweight(u => v, s, zeta; verbose=false)
+
+    newpair = truncate(Q1 => Q2, u => v, axis)
+
+    return newpair, newweight
+end
+
+# Identity version for gauging?
+
+# function simple_update_tensors(
+#     pair::Pair{T,T}, trunc; axis, zeta=Inf
+# ) where {T<:AbsTen{2,4}}
+#     Q1, R, L, Q2 = reducevirtual(pair, axis)
+#
+#     u, s, v, err1 = tsvd!(normalize!(R * L); trunc=trunc)
+#
+#     maxnormalize!(s)
+#
+#     (u, v), s = applyweight(u => v, s, Inf; verbose=false)
+#
+#     pinv(R) * u => v * pinv(v)
+#
+#     newpair = truncate(Q1 => Q2, id(domain(Q1)) => id(codomain(Q2)), axis)
+#
+#     return newpair, newiso
+# end
+
+# Parallel version; dont truncate, needs to know the bond dimension
+function updateisometries(pair, trunc, bond)
+    return simple_update_tensors(pair, trunc; axis=bondaxis(bond), zeta=Inf)
+end
+function simple_update_tensors(pair::TensorPair{2,4}, trunc; axis, zeta=Inf)
+    _, R, L, _ = reducevirtual(pair, axis)
+
+    u, s, v, _ = tsvd!(normalize!(R * L); trunc=trunc)
+
+    maxnormalize!(s)
+
+    (u, v), newweight = applyweight(u => v, s, zeta; verbose=false)
+
+    newiso = pinv(R) * u => v * pinv(L)
+
+    return newiso, newweight
+end
+
+function truncate(
+    pair::TensorAntiPair{<:AbsTen{5,1},<:AbsTen{1,5}},
+    iso::Pair{<:AbsTen{1,1},<:AbsTen{1,1}},
+    axis::Int,
+)
+    Q1, Q2 = pair
+    u, v = iso
 
     Q1p = Q1 * u
     Q2p = v * Q2
@@ -342,46 +451,22 @@ function simple_update_tensors(pair::Pair{T}; axis, zeta=Inf) where {T<:AbsTen{2
         vnew = permute(Q2p, (2, 3), (4, 5, 6, 1))
     end
 
-    return unew => vnew, s
+    return unew => vnew
 end
 
-function simple_update_tensors(pair::Pair{T}; axis, zeta=Inf) where {T<:AbsTen{2,4}}
-    uten, vten = pair
+function truncate(pair::TensorAntiPair{3,1}, iso::TensorAntiPair{3,1}, axis::Int)
+    Q1, Q2 = pair
+    u, v = iso
 
     if axis == 1
-        D = domain(uten)[3]
-
-        Q1, R = leftorth(uten, (1, 2, 4, 5, 6), (3,))
-        L, Q2 = rightorth(vten, (5,), (1, 2, 3, 4, 6))
+        @tensoropt unew[k b; e s w n] := Q1[s w n; left] * u[left k b; e]
+        @tensoropt vnew[k b; e s w n] := v[w; right k b] * Q2[right; e s n]
     elseif axis == 2
-        D = domain(uten)[4]
-
-        Q1, R = leftorth(uten, (1, 2, 3, 5, 6), (4,))
-        L, Q2 = rightorth(vten, (6,), (1, 2, 3, 4, 5))
+        @tensoropt unew[k b; e s w n] := Q1[e w n; left] * u[left k b; s]
+        @tensoropt vnew[k b; e s w n] := v[n; right k b] * Q2[right; e s w]
     end
 
-    u, s, v, err1 = tsvd!(R * L;)# trunc=truncdim(dim(D)))
-    # u, s, v, err2 = tsvd!(R * L; trunc=truncspace(D))
-
-    # println(err2)
-
-    maxnormalize!(s)
-
-    (u, v), s = applyweight(u => v, s, Inf; verbose=false)
-
-    # Q1p = Q1 * u
-    # Q2p = v * Q2
-
-    if axis == 1
-        unew = permute(Q1, (1, 2), (6, 3, 4, 5))
-        vnew = permute(Q2, (2, 3), (4, 5, 1, 6))
-
-    elseif axis == 2
-        unew = permute(Q1, (1, 2), (3, 6, 4, 5))
-        vnew = permute(Q2, (2, 3), (4, 5, 6, 1))
-    end
-
-    return unew => vnew, u => v
+    return unew => vnew
 end
 
 function _leftrankreduce(p::AbsTen{2,4}, ind)
