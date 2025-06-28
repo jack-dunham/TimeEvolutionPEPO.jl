@@ -31,6 +31,14 @@ function _tolerance!(old, new, tau::Float64)
 end
 
 bondentropy(weights; kwargs...) = broadcast(w -> bondentropy(w; kwargs...), weights)
+"""
+    $(TYPEDSIGNATURES)
+
+Compute the bond entropy of bond weight `w`. If `normalised = true`, then also divide the
+result by `log(D)` where `D` is the dimension of the codomain/domain of `w`.
+
+See also: [`PEPO`](@ref), [`bondweights`](@ref)
+"""
 function bondentropy(w::AbstractTensorMap; normalised=false)
     w = tracenormalize!(copy(w))
 

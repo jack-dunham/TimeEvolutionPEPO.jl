@@ -30,7 +30,7 @@ has the following structure (the ket and bra spaces are indices 1 and 2 respecti
 
 where Aᵢⱼ refers to tensor obtained by indexing `pepo[i,j]`.
                                
-See also: [`AbstractPEPO`](@ref), [`ThermalState`](@ref), and [`weights`](@ref)
+See also: [`AbstractPEPO`](@ref), [`ThermalState`](@ref), and [`bondweights`](@ref)
 
 # Fields
 
@@ -82,6 +82,14 @@ TRGroups.getdata(pepo::PEPO) = pepo.data
 
 latticetype(::PEPO{G,P}) where {G,P} = UnitCell{G,P,Matrix{P}}
 
+"""
+    $(TYPEDSIGNATURES)
+
+Return the bond weights of associated with projected etangled pair operator. Note these
+are already aborbed the state.
+
+See also: [`PEPO`](@ref), [`bondentropy`](@ref)
+"""
 bondweights(pepo::PEPO) = pepo.weights
 getweight(pepo::PEPO, bond) = bondweights(pepo)[bond]
 

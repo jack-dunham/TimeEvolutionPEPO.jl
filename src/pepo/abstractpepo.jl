@@ -1,3 +1,8 @@
+"""
+$(TYPEDEF)
+
+Abstract supertype of all `PEPO`-like objects.
+"""
 abstract type AbstractPEPO{G,PType<:TenAbs{4}} <: AbstractUnitCell{G,PType,Matrix{PType}} end
 
 ischeckerboard(pepo::AbstractPEPO) = ischeckerboard(getaxis(pepo))
