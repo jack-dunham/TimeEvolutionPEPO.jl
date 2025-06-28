@@ -54,15 +54,16 @@ end
 metric(pair::Pair, environment::Function, ::Bond) = environment(pair)
 
 function metric_isometries_from_simple_update!(
-    initpair, initiso, environment, bond; D, optkwargs...
+    pair, initiso, environment, bond; D, optkwargs...
 )
     (u0, v0) = initiso
-    pair = initpair
+
+    _, (L0, R0) = rankreduce!(pair)
 
     truncmetric = metric(pair, environment, bond)
 
     iso, infid = metricoptimise(
-        u0, v0, truncmetric; trunc=truncspace(D), doreduction=true, optkwargs...
+        L0, R0, truncmetric; trunc=truncspace(D), u0=L0 * u0, v0=v0 * R0, optkwargs...
     )
     return (iso.u, iso.v), iso.s, infid
 end
@@ -72,25 +73,23 @@ function single_bond_metric_isometries!(
 )
     if doreduction
         if parallel
-            pair, (u0, v0) = rankreduce(pair)
+            pair, (L0, R0) = rankreduce(pair)
         else
-            pair, (u0, v0) = rankreduce!(pair)
+            pair, (L0, R0) = rankreduce!(pair)
         end
     end
 
     truncmetric = metric(pair, environment, bond)
 
     if !doreduction
-        u0, v0 = isometryinit(truncmetric, D)
+        L0, R0 = isometryinit(truncmetric, D)
     end
 
-    iso, infid = metricoptimise(
-        u0, v0, truncmetric; trunc=truncspace(D), doreduction=doreduction, optkwargs...
-    )
+    iso, infid = metricoptimise(L0, R0, truncmetric; trunc=truncspace(D), optkwargs...)
 
     if parallel && doreduction
-        copy!(iso.u, pinv(u0) * iso.u)
-        copy!(iso.v, iso.v * pinv(v0))
+        copy!(iso.u, pinv(L0) * iso.u)
+        copy!(iso.v, iso.v * pinv(R0))
     end
 
     return (iso.u, iso.v), iso.s, infid
@@ -515,23 +514,21 @@ end
 
 # Optimise the isometries `left` and `right` with respect to `metric`.
 function metricoptimise(
-    left, right, metric::AbsTen{2,2}; trunc, doreduction, zeta, optalg, posapprox=false
+    L0, # From rank reduction
+    R0, # From rank reduction
+    metric::AbsTen{2,2};
+    trunc,
+    zeta,
+    optalg,
+    posapprox=false,
+    u0=L0,
+    v0=R0,
 )
     gauge = optalg.gauge
 
-    if doreduction
-        left0 = left
-        right0 = right
-    else
-        T = scalartype(metric)
-
-        left0 = id(T, codomain(left))
-        right0 = id(T, domain(right))
-    end
-
     #left0 -> u
     #right0 -> v
-    LR0 = permute(left0 * right0, (1, 2), ())
+    LR0 = permute(L0 * R0, (1, 2), ())
     # normalize!(LR0)
 
     # Put in the appropriate matrix form for the Ritz procedure. 
@@ -550,7 +547,7 @@ function metricoptimise(
     if hermiticity > htol
         @warn "Metric not hermitian! inhermiticity: $hermiticity, tolerance: $htol"
         @info "Metric not hermitian: using SimpleUpdate"
-        u, s, v, err = tsvd(left * right; trunc=trunc)
+        u, s, v, err = tsvd(L0 * R0; trunc=trunc)
         @info "Truncation error: $err"
         return TruncationIsometries(metric, u, s, v)
     end
@@ -562,10 +559,10 @@ function metricoptimise(
     infidelity = (x, y) -> 1 - fidelity(x, y, Y, LR0)
 
     F0 = scalar(LR0' * Y * LR0)
-    @debug "Minimal infidelity: $(infidelity(left , right)). Normalisation check: $F0"
+    @debug "Minimal infidelity: $(infidelity(L0, R0)). Normalisation check: $F0"
 
     # Proceed with metric optimisation.
-    iso = isometryoptimise(infidelity, left, right, Y, left0, right0, optalg; trunc=trunc)
+    iso = isometryoptimise(infidelity, u0, v0, Y, L0, R0, optalg; trunc=trunc)
 
     permute!(metric, Y, ((4, 1), (3, 2)))
 
@@ -588,14 +585,14 @@ function metricoptimise(
     return iso, infid
 end
 
-function isometryoptimise(cf, u, v, metric, u0, v0, method::DZM; trunc)
+function isometryoptimise(cf, u0, v0, metric, L0, R0, method::DZM; trunc)
     iso = dziarmaga(
         cf,
-        u,
-        v,
-        metric,
         u0,
-        v0;
+        v0,
+        metric,
+        L0,
+        R0;
         trunc=trunc,
         maxiter=method.maxiter,
         verbose=method.verbose,
@@ -657,16 +654,16 @@ end
 
 function dziarmaga(
     cf,
-    ui,
-    vi,
+    ui, # Initial guess for the u isometry
+    vi, # Initial guess for the v isometry
     metric,
-    u0,
-    v0;
+    L0, # From the rank reduction (might be the identity)
+    R0; # From the rank reduction (might be the identity)
     trunc,
     EAT=true,
     maxiter=100,
     isotol=1e-8,
-    check=false,
+    check=true,
     randomness=0.0,
     verbose=true,
 )
@@ -678,7 +675,7 @@ function dziarmaga(
     # trunc = truncdim(dim(trunc.space))
 
     # The following tensor will be useful...
-    Y0 = Y * permute(u0 * v0, (1, 2), ())
+    Y0 = Y * permute(L0 * R0, (1, 2), ())
 
     # Initialize the initial best guess to that of simple-update.
     u, s, v = safetsvd!(ui * vi; trunc=trunc)
@@ -696,7 +693,7 @@ function dziarmaga(
     end
     # u, s, v = tsvd!(ui * vi; trunc=trunc)
 
-    @debug "Simple update:" minif
+    @warn "Simple update:" minif
 
     # Perform EAT if we want to.
     if EAT
@@ -705,8 +702,8 @@ function dziarmaga(
     end
 
     # Get an appropriate identity matrix for the spaces.
-    idu = one(u0)
-    idv = one(v0)
+    idu = one(L0)
+    idv = one(R0)
 
     counter = 0
     ϵ = Inf
