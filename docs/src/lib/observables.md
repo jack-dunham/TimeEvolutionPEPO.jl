@@ -3,7 +3,9 @@
 ## Density matrix
 
 ```@docs
+AbstractDensityMatrix
 DensityMatrix
+PurifiedDensityMatrix
 ```
 
 ## Methods

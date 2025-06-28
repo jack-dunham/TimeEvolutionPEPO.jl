@@ -1,17 +1,24 @@
 """
 $(TYPEDEF)
 
+Abstract super-type of all density matrices.
+
+See also: [`DensityMatrix`](@ref), and [`PurifiedDensityMatrix`](@ref).
+"""
+abstract type AbstractDensityMatrix end
+
+"""
+$(TYPEDEF)
+
 Concrete type representing a *normalized* density matrix with associated trace environment 
 of type `T`.
 
-See also: [`trace`](@ref), and [`partialtrace`](@ref).
+See also: [`PurifiedDensityMatrix`](@ref), [`trace`](@ref), and [`partialtrace`](@ref).
 """
-struct DensityMatrix{P<:AbstractUnitCell,T<:Renormalization}
+struct DensityMatrix{P<:AbstractUnitCell,T<:Renormalization} <: AbstractDensityMatrix
     data::P
     environment::T
-    function DensityMatrix(
-        data::P, env::T
-    ) where {P<:AbstractUnitCell,T<:Renormalization}
+    function DensityMatrix(data::P, env::T) where {P<:AbstractUnitCell,T<:Renormalization}
         # data = deepcopy(dealias(data))
         data = deepcopy(data)
         # tracenormalize!(data, env)
@@ -31,6 +38,8 @@ end
 TensorKit.spacetype(::Type{<:DensityMatrix{UC}}) where {UC} = spacetype(eltype(UC))
 TensorKit.scalartype(::Type{<:DensityMatrix{UC}}) where {UC} = scalartype(eltype(UC))
 
+isconverged(dm::AbstractDensityMatrix) = dm.environment.info.converged
+
 """
 $(TYPEDEF)
 
@@ -38,9 +47,11 @@ Concrete type representing a *normalized* purified density matrix with associate
 environment of type `T`, i.e. a density matrix of the form ``\\rho = X^{\\dagger}X`` where
 ``X`` is represented by tensor network.
 
+Note, this should be used for thermal state evolution only.
+
 See also: [`DensityMatrix`](@ref), [`trace`](@ref), and [`partialtrace`](@ref).
 """
-struct PurifiedDensityMatrix{P<:HilbertSchmidt,T<:Renormalization}
+struct PurifiedDensityMatrix{P<:HilbertSchmidt,T<:Renormalization} <: AbstractDensityMatrix
     data::P
     environment::T
     function PurifiedDensityMatrix(
@@ -106,9 +117,7 @@ function DensityMatrix(
 end
 
 function DensityMatrix(
-    pepo::Union{AbstractPEPO,Simulation,DensityMatrix},
-    env::Renormalization,
-    kwargs...,
+    pepo::Union{AbstractPEPO,Simulation,DensityMatrix}, env::Renormalization, kwargs...
 )
     data = TRGroups.getdata(pepo)
     TRGroups.renormalize!(env, contractphysical(data))
