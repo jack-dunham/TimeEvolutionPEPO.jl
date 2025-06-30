@@ -76,9 +76,9 @@ Either of these methods can be specialized on, with the return value getting pas
 
 If the mutating version is used, then the following default should also be overridden:
 ```julia
-newtruncators(pepo, trotterlist, truncalg::AbstractSimpleTruncationScheme) = SimpleUpdateState()
+newtruncators(pepo, propagator, truncalg::AbstractSimpleTruncationScheme) = SimpleUpdateState()
 ```
-This should return either the `truncator` argument to `environment!(truncator,...)` of a vector of length `length(trotterlist)` if a different `truncator` is required for each trotter step in a given time step.
+This should return the `truncator` argument to `environment!(truncator,...)`.
 This allows information to be passed between time steps that can be used to compute environments.
 For example, you may wish to use the `truncator` from the previous time step as a initial guess for some optimisation procedure that constructs an environment. 
 If this is not required, then the simpler `environment` method can be used.
