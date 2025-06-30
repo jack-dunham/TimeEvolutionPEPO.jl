@@ -12,10 +12,13 @@ makedocs(
             "man/models.md",
         ],
         "Library" => [
+            "lib/states.md",
+            "lib/simulations.md",
             "lib/models.md",
             "lib/observables.md",
-            "lib/simulations.md",
+            "lib/methods.md",
         ],
+        "Interfaces" => "interfaces.md",
         "Index" => "lib/index.md",
     ],
 )
