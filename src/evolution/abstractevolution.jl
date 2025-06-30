@@ -15,6 +15,12 @@ function Base.reverse(s::S) where {S<:AbstractTrotterizedTimeStepper}
     return S(TRGroups.getdata(s), bondaxis(s), !isreversed(s))
 end
 
+function newtruncators(
+    pepo::AxialPEPO, propagator::AbstractTimeStepper, truncalg::Union{FET,NTU}
+)
+    return newtruncators(getaxis(pepo, propagator.axis), truncalg)
+end
+
 struct LocalStepper{G,MType} <: AbstractTrotterizedTimeStepper{G,MType}
     data::UnitCell{G,NTuple{2,MType},Matrix{NTuple{2,MType}}} #left (u, e bond), right (v, w bond)
     axis::Int

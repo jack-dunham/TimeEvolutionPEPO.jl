@@ -20,6 +20,15 @@ Base.iterate(sch::TrotterDecomposition, state=1) = iterate(sch.body, state)
 Base.size(t::TrotterDecomposition) = (length(t),)
 Base.length(t::TrotterDecomposition) = length(t.body)
 
+function newtruncators(
+    pepo, sequence::TrotterDecomposition, truncalg::AbstractTruncationScheme
+)
+    rv = map(sequence.body) do propagator
+        newtruncators(pepo, propagator, truncalg)
+    end
+    return rv
+end
+
 # function construct_stepper_list(physical, model, method)
 #     model = Iterators.flatten(model)
 #

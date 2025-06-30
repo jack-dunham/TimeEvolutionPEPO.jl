@@ -42,12 +42,7 @@ struct TruncationIsometries{TU,TS,TV}
     v::TV
 end
 
-struct BondIsometries{Geom,U,S,V}
-    u::UnitCell{Geom,U,Matrix{U}}
-    s::UnitCell{Geom,S,Matrix{S}}
-    v::UnitCell{Geom,V,Matrix{V}}
-end
-
+# TODO: maybe deprec?
 struct SiteIsometries{Geom,U,V}
     ux::UnitCell{Geom,U,Matrix{U}}
     vx::UnitCell{Geom,V,Matrix{V}}
@@ -285,38 +280,7 @@ end
 showheader(::Type{<:SVDU}) = "Singular value decomposition update (SVDU)"
 showheader(::Type{<:SimpleUpdate}) = "Simple update (SimpleUpdate)"
 
-@kwdef mutable struct VGU <: AbstractTruncationScheme
-    zeta::Float64 = Inf
-end
-
-## Initalialize truncators for a full TD-PEPO
-function newtruncators(
-    pepo::NTuple{2,P}, ::Vector{S}, truncalg::Union{FET,NTU}
-) where {P<:AbstractPEPO,S}
-    xenv = newtruncators(pepo[1], truncalg)
-    yenv = newtruncators(pepo[2], truncalg)
-    return xenv, yenv
-end
-
-function newtruncators(pepo::PEPO, _, truncalg::Union{FET,NTU})
-    xenv = newtruncators(pepo, truncalg)
-    return xenv, xenv
-end
-function newtruncators(::PEPO, _, truncalg::Union{SimpleUpdate,SVDU})
-    xenv = SimpleUpdateState()
-    return xenv, xenv
-end
-function newtruncators(pepo::AxialPEPO, _, truncalg::Union{FET,NTU})
-    xenv = newtruncators(getaxis(pepo, 1), truncalg)
-    yenv = newtruncators(getaxis(pepo, 2), truncalg)
-    return xenv, yenv
-end
-
-function newtruncators(
-    ::NTuple{2,P}, ::Vector{S}, truncalg::SimpleUpdate
-) where {P<:AbstractPEPO,S}
-    return SimpleUpdateState(), SimpleUpdateState()
-end
+# Entry point
 ## 
 
 function TRGroups.Renormalization(

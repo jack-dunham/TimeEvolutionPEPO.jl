@@ -1,5 +1,5 @@
-function newtruncators(pepo, trotterlist, ::AbstractSimpleTruncationScheme)
-    return (SimpleUpdateState(), SimpleUpdateState())
+function newtruncators(pepo, ::AbstractTimeStepper, ::AbstractSimpleTruncationScheme)
+    return SimpleUpdateState()
 end
 # Simple update interface
 environment(pepo, truncalg::AbstractSimpleTruncationScheme, bond) = bondweights(pepo)

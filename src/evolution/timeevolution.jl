@@ -15,14 +15,8 @@ A single time step of the simulation.
 """
 function timestep!(pepo, truncator, stepper, truncalg; kwargs...)
     # Its a bit hacky
-    for (i, step) in enumerate(stepper)
-        if eltype(truncator) <: Vector
-            trunc = getindex.(truncator, i)
-        else
-            trunc = truncator
-        end
-
-        trotterstep!(pepo, truncator, step, truncalg)
+    for (trunc, step) in zip(truncator, stepper)
+        trotterstep!(pepo, trunc, step, truncalg)
     end
     return pepo
 end
@@ -61,7 +55,8 @@ function trottertep!(
 
     newpepo = evolve(pepo!, stepper)
 
-    simple_update_gauge_parallel!(newpepo)
+    simple_update_gauge!(newpepo)
+    # simple_update_gauge_parallel!(newpepo)
 
     truncate_bond_matrices!(pepo!, newpepo, isoms)
 
@@ -119,20 +114,20 @@ function trotterstep!(
         pair = evolvemerge(pepo, stepper, bond)
 
         if truncalg.rankreduce
-            init_weights = environment!(pepo.parent, SimpleUpdateState(), bond)
+            init_weights = environment(pepo.parent, SimpleUpdate(), bond)
             if axis == 2
                 init_weights = permutedims(init_weights)
             end
 
             initiso, _ = updateisometries(pair, init_weights, truncdim(dim(D)), bond)
 
-            env = environment!(pepo, truncator[axis], bond)
+            env = environment!(pepo, truncator, bond)
             (u, v), s, _ = metric_isometries_from_simple_update!(
                 pair, initiso, env, bond; D=D, optalg=truncalg.optalg, zeta=truncalg.zeta
             )
 
         else
-            env = environment!(pepo, truncator[axis], bond)
+            env = environment!(pepo, truncator, bond)
             (u, v), s, _ = isometries(pair, env, bond, truncalg; D=D)
         end
 
@@ -163,7 +158,6 @@ function trotterstep!(
 
         setweight!(pepo, s, bond; copy=false)
     end
-
 
     quicknormalize!(pepo)
     hermitianize!(pepo)
@@ -254,7 +248,7 @@ function trotterstep!(
         # isoms = map(bonds(pepo, 1)) do bond
         D = bondspace(pepo, bond)
 
-        env = environment!(evpepo, truncator[axis], bond)
+        env = environment!(evpepo, truncator, bond)
 
         pair = evpepo[bond]
 

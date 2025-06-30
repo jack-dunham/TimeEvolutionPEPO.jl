@@ -27,7 +27,7 @@ struct Simulation{E<:AbstractTimeEvolution,P<:AbstractPEPO,L<:AbstractTimeSteppe
     model::M
     state::P
     stepper::TrotterDecomposition{L}
-    truncators::Tuple{T,T}
+    truncators::Vector{T}
     initialstate::P
     function Simulation(
         info::SimulationInfo,
@@ -35,7 +35,7 @@ struct Simulation{E<:AbstractTimeEvolution,P<:AbstractPEPO,L<:AbstractTimeSteppe
         model::M,
         state::P,
         stepper::TrotterDecomposition{L},
-        truncators::Tuple{T,T},
+        truncators::Vector{T},
         initialstate::P,
     ) where {E,P,L,M,T}
         return new{E,P,L,M,T}(info, method, model, state, stepper, truncators, initialstate)
@@ -46,7 +46,7 @@ struct Simulation{E<:AbstractTimeEvolution,P<:AbstractPEPO,L<:AbstractTimeSteppe
         model::M,
         state::P,
         ::TrotterDecomposition{L},
-        ::Tuple{T,T},
+        ::Vector{T},
         ::Nothing,
     ) where {E,P,L,M,T}
         return new{E,P,L,M,T}(info, method, model, state)
@@ -441,7 +441,7 @@ function negativityhook!(sim::Simulation)
     #     return sim
     # end
 
-    pepo = getaxis(sim)
+    pepo = quantumstate(sim)
 
     alg = VUMPS(; maxiter=100, bonddim=16, verbose=true)
 
