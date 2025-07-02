@@ -172,14 +172,22 @@ Calculate the expectation value of product of local operators `ops` applied to t
 of `rho` consecutively.
 """
 function expval(
-    rho::TensorMap{<:Number,<:IndexSpace,N,N},
+    rho::TensorMap{T,<:IndexSpace,N,N},
     ops::Vararg{<:Matrix,M};
-    inds=NTuple{N,Int}(1:N),
-) where {N,M}
+    inds::NTuple{NInd,Int}=NTuple{N,Int}(1:N),
+) where {T,N,M,NInd}
     pdim = dims(codomain(rho))
 
     # Sanity check things
-    if !allunique(inds)
+    if NInd != N
+        throw(
+            ArgumentError(
+                "number of provided indices must match number of indices in (co)domain of tensor",
+            ),
+        )
+    elseif M > N
+        throw(ArgumentError("too many operators provided for number of indices"))
+    elseif !allunique(inds)
         throw(ArgumentError("all indices must be unqiue"))
     elseif maximum(inds) > N
         throw(ArgumentError("index out of range"))
@@ -187,15 +195,18 @@ function expval(
 
     ops = eltype(ops)[ops...]
 
-    j = 1
-    # Loop through every index,
-    matrices = map(1:N) do i
+    matrices = Matrix{T}[]
 
+    # Loop through every index,
+    i = 1
+    while i <= N
         # Is this an index we are applying an operator to?
         if !(i ∈ inds) || isempty(ops)
             # If not, then it will be a 1-local identity
             p = pdim[i]
-            return Matrix{T}(I, p, p)
+            push!(matrices, Matrix{T}(I, p, p))
+            i += 1
+            continue
         end
 
         # If so, get the next matrix in the queue
@@ -235,10 +246,10 @@ function expval(
         # Iterate the index queue
         i += count
 
-        return op
+        push!(matrices, op)
     end
 
-    observable = TensorMap(reduce(⊗, matrices), space(rho))
+    observable = TensorMap(reduce(kron, matrices), space(rho))
 
     return tr(observable * rho)
 end
