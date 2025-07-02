@@ -5,7 +5,6 @@ Abstract supertype of all `PEPO`-like objects.
 """
 abstract type AbstractPEPO{G,PType<:TenAbs{4}} <: AbstractUnitCell{G,PType,Matrix{PType}} end
 
-ischeckerboard(pepo::AbstractPEPO) = ischeckerboard(getaxis(pepo))
 physicalspace(pepo::AbstractPEPO) = getindex.(codomain.(pepo), 1)
 
 function TensorKit.truncspace(pepo::AbstractPEPO, bond::Bond)
@@ -57,3 +56,4 @@ function weights2identity!(pepo::AbstractPEPO)
 end
 
 hermitianize!(pepo::AbstractPEPO) = hermitianize!.(pepo)
+bondentropy(pepo::AbstractPEPO) = bondentropy(bondweights(pepo))
