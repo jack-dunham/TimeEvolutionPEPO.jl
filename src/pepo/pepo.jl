@@ -138,7 +138,7 @@ dim2space(s::IndexSpace) = s
 
 # Construct using a Bloch vector or as a thermal state
 function PEPO{G}(
-    init::Union{Tuple,ThermalState,Matrix{<:Number},Array{6,<:Number}},
+    init::Union{Tuple,ThermalState,Matrix{<:Number},Array{<:Number,6}},
     phys,
     east,
     south=east,
@@ -162,7 +162,7 @@ function PEPO{G}(
     return PEPO{G}(init, phys, bondspace, bondspace)
 end
 function PEPO{G}(
-    init::AbstractMatrix{<:Array{6,<:Number}}, ::Nothing, bondspace, ::Nothing
+    init::AbstractMatrix{<:Array{<:Number,6}}, ::Nothing, bondspace, ::Nothing
 ) where {G}
     phys = broadcast(p -> ComplexSpace(size(p, 1)), init)
     return PEPO{G}(init, phys, bondspace, bondspace)
@@ -185,7 +185,9 @@ function PEPO{G}(
 end
 
 # Construct using an array
-function PEPO{G}(init::AbstractMatrix{Array{6,<:Number}}, phys, east, south=east) where {G}
+function PEPO{G}(
+    init::AbstractMatrix{<:Array{<:Number,6}}, phys, east, south=east
+) where {G}
     init = UnitCell{G}(init)
 
     tensors = broadcast(init, pepospace(G, phys, east, south)...) do a, p, e, s, w, n
