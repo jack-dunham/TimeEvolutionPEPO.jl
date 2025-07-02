@@ -2,6 +2,8 @@ struct UnitCellBonds{G,ElType,A} <: AbstractUnitCell{G,ElType,A}
     data::UnitCell{G,NTuple{2,ElType},A}
 end
 
+Base.eltype(ucb::UnitCellBonds) = eltype(ucb.data)
+
 function latticetype(
     ::Type{<:UnitCellBonds}, ::Type{UnitCell{G,NTuple{2,ElType},A}}
 ) where {G,ElType,A}
