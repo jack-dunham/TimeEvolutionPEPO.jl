@@ -30,7 +30,9 @@ function _tolerance!(old, new, tau::Float64)
     return rv
 end
 
-bondentropy(weights; kwargs...) = broadcast(w -> bondentropy(w; kwargs...), weights)
+function bondentropy(weights::UnitCellBonds; kwargs...)
+    return broadcast(w -> bondentropy(w; kwargs...), weights)
+end
 """
     $(TYPEDSIGNATURES)
 
@@ -39,7 +41,7 @@ result by `log(D)` where `D` is the dimension of the codomain/domain of `w`.
 
 See also: [`PEPO`](@ref), [`bondweights`](@ref)
 """
-function bondentropy(w::AbstractTensorMap; normalised=false)
+function bondentropy(w::AbstractTensorMap; normalized=false)
     w = tracenormalize!(copy(w))
 
     wvec = diag(convert(Array, w))
@@ -48,7 +50,7 @@ function bondentropy(w::AbstractTensorMap; normalised=false)
 
     entf = λ -> λ ≈ 0 ? zero(λ) : -λ * log(λ)
 
-    entropy = sum(entf, wvec) / log(length(wvec))^normalised
+    entropy = sum(entf, wvec) / log(length(wvec))^normalized
 
     return entropy
 end
