@@ -51,7 +51,7 @@ function fsmadd!(rules, liouvillian::Liouvillian)
     return rules
 end
 
-function fsmadd!(rules, term::LocalOp{1}; thermal=false)
+function fsmadd!(rules, term::LocalOp{1}; thermal=true)
     h = Matrix(term)
     Id = one(h)
 
@@ -138,15 +138,15 @@ function fsm_add_ising!(rules::FSM, a::Number, C::AbstractMatrix, B::AbstractMat
     return rules
 end
 
-function fsmset!(rules, term::J1J2SymmetricOp; thermal=false)
+function fsmset!(rules, term::J1J2SymmetricOp; thermal=true)
     a = term.a
     k = term.k
     CB = term.CB
 
     # Put C and B on equal footing
     if thermal
-        CB1 = sqrt(-0.5) * kron(CB, one(CB))
-        CB2 = sqrt(-0.5) * kron(one(CB), transpose(CB))
+        CB1 = sqrt(-0.5 + 0im) * kron(CB, one(CB))
+        CB2 = sqrt(-0.5 + 0im) * kron(one(CB), transpose(CB))
     else
         CB1 = sqrt(-im) * kron(CB, one(CB))
         CB2 = sqrt(+im) * kron(one(CB), transpose(CB))

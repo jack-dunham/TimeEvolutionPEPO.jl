@@ -2,8 +2,37 @@
 $(TYPEDEF)
 
 Concrete type representing an approximation to a power-law decay term as a sum of axial 
-exponential functions, that is, as `Hamiltonian{ExpOp}` or radial Gaussians 
-`Hamiltonian{GaussOp2d}`.
+exponential functions [`ExpOp`](@ref) or radial Gaussians [`GaussOp2d`](@ref).
+
+# Constructors
+
+    $(FUNCTIONNAME)(C, B, α, A=one(C); n=10, N=50, expand=false, kwargs...)
+
+Constructs `op::$(FUNCTIONNAME)` such that `a * op` refers to terms of the form:
+```math
+\\hat{h}_{j} = a  \\sum_{l = 1}^{n} \\hat{g}^{[l]}_{j} \\approx 
+a \\sum_{k > j}^{\\infty} \\frac{\\hat{C}_{j} \\hat{B}_{k}  }{|{k -j}|^{\\alpha}}
+```
+That is, an ``n`` term approximation to the power law ``r^{\\alpha}`` on the one-dimensional 
+interval ``[1,N]``. If `expand=true`, then the expansion is automatically expanded into a 
+Trotterized product. The extra `kwargs...` are passed in as keyword arguments to [`ExpOp`](@ref).
+
+---
+
+    $(FUNCTIONNAME){GaussOp2d}(C, B, α, A=one(C); n=10, N=50, expand=false, kwargs...)
+
+Constructs `op::$(FUNCTIONNAME)` such that `a * op` refers to terms of the
+form:
+```math
+\\hat{h}_{j} = a  \\sum_{l = 1}^{n} \\hat{g}^{[l]}_{j} \\approx 
+a \\sum_{k}^{\\infty}
+\\frac{\\hat{C}_{\\mathbf{r}_{j}} \\hat{B}_{\\mathbf{r}_k}  }{||\\mathbf{r}_k - \\mathbf{r}_j||^{\\alpha}}
+```
+That is, an ``n`` term approximation to the power law ``r^{\\alpha}`` on the disc
+``\\{ r = \\sqrt{x^2 + y^2} \\mid x,y \\in \\mathbb{Z}_{\\leq N} \\}``. 
+If `expand=true`, then the expansion is automatically expanded into a Trotterized product
+(recommended).
+The extra `kwargs...` are passed in as keyword arguments to [`GaussOp2d`](@ref).
 """
 struct PowOp{T<:Union{GaussOp2d,ExpOp}} <: AbstractSingleTerm
     a::Float64
@@ -16,7 +45,7 @@ struct PowOp{T<:Union{GaussOp2d,ExpOp}} <: AbstractSingleTerm
             throw(
                 ArgumentError(
                     "mismatched C or B operators found when constructing `GaussOp`: " *
-                    "all respective C and B operators must be the same every term",
+                    "all respective C and B operators must be the same for every term",
                 ),
             )
         end
@@ -25,6 +54,11 @@ struct PowOp{T<:Union{GaussOp2d,ExpOp}} <: AbstractSingleTerm
 end
 PowOp(a, α, H::AbstractTerm, expand) = PowOp(a, α, terms(H), expand)
 
+"""
+    const PowOp2d = PowOp{GaussOp2d}
+
+Convenience alias.
+"""
 const PowOp2d = PowOp{GaussOp2d}
 
 isaxial(::PowOp{GaussOp2d}) = false
@@ -62,7 +96,6 @@ function (op::PowOp{GaussOp2d})(x::Int, y::Int)
 
     return cumsum
 end
-
 function PowOp(C, B, α, A=one(C); n=10, N=50, expand=false)
     X, Λ = approx_as_sum_of_exp(α, n; N=N)
 

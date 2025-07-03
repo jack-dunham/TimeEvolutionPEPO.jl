@@ -5,16 +5,18 @@ CurrentModule = TimeEvolutionPEPO
 ```
 ## Single terms
 
+Terms are either one-dimensional (axial) with support on a single axis of a lattice only, or two-dimensional.
+In the former case, lattice site indices are denoted with scalar sub-scripts representing the position on a lattice axis.
+In the latter, vector subscripts are used.
+
 ```@docs
 LocalOp
-LocalOp(D::AbstractMatrix)
-LocalOp(C,B,A; l)
-LocalOp(CAB)
 ExpOp
-PowOp
-PowOp2d
 GaussOp
+PowOp
+ExpOp2d
 GaussOp2d
+PowOp2d
 ```
 
 ## Models and sums of terms
@@ -25,4 +27,5 @@ Hamiltonian
 Dissipator
 Liouvillian
 TrotterLayer
+Ising
 ```

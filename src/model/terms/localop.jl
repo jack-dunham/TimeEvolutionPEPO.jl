@@ -1,17 +1,34 @@
 """
 $(TYPEDEF)
 
-Concrete type representing an ``l``-local axial term of the form:
+Concrete type representing an ``N``-local axial terms.
+
+# Constructors
+
+    $(FUNCTIONNAME)(D::AbstractMatrix) -> LocalOp{1}
+
+Construct a one-local (on-site) term `op::LocalOp{1}` such that `a * op` represents:
 ```math
-\\sum_{i = -\\infty}^{\\infty} a C_{i} A^{[1]}_{i + 1} A^{[2]}_{i + 2} \\cdots B_{i + l}
+\\hat{h}_{j} = a \\hat{D}_j
 ```
-where ``i`` is a sum of lattice sites on a single axis, and ``l \\geq 0`` defines the distance
-between the ``C`` and ``B`` operators. If ``l = 0``, then ``C \\cdot B = D``, and the term has the form
+---
+    $(FUNCTIONNAME)(C::AbstractMatrix, B::AbstractMatrix [,A=one(C), N = 2])
+
+Construct a ``N``-local one-dimensional (axial) term  `op::LocalOp{N}` such that `a * op` represents:
 ```math
-\\sum_{i = -\\infty}^{\\infty} a D_{i}
+\\hat{h}_{j} = a \\hat{C}_{j} \\hat{A}_{j + 1} \\hat{A}_{j + 2} \\dots \\hat{B}_{j + N - 1}
 ```
-The bulk operators ``A^{[\\alpha]}`` can be distinct in general, however a common scenario is to have
-``A^{[\\alpha]} = \\mathbf{I}`` for all ``\\alpha`` (default behaviour).
+Note, for type stabilty pass `Val(N)` instead of `N::Integer` as the final argument or use the generic `Tuple`
+constructor.
+
+---
+    $(FUNCTIONNAME)(CAB::NTuple{N, <:AbstractMatrix})
+
+Construct a ``N``-local one-dimensional (axial) term  `op::LocalOp{N}` such that `a * op` represents:
+```math
+\\hat{h}_{j} = a \\hat{C}_{j} \\hat{A}^{[1]}_{j + 1} \\hat{A}^{[2]}_{j + 2} \\dots \\hat{B}_{j + N - 1}
+```
+with ``C``, ``B``, and ``\\{A^{[\\alpha]}\\}`` given by `first(CAB)`, `last(CAB)` and `CAB[2:end-1]` respectively.
 """
 struct LocalOp{N} <: AbstractSingleTerm
     a::Float64
@@ -79,17 +96,8 @@ end
 Base.:(==)(l1::LocalOp, l2::LocalOp) = hash(l1) == hash(l2)
 Base.:(≈)(l1::LocalOp{N}, l2::LocalOp{N}) where {N} = all(l1.CAB .≈ l2.CAB) && l1.a ≈ l2.a
 
-"""
-    $(FUNCTIONNAME)(D::AbstractMatrix) -> LocalOp{1}
-
-Construct the onsite (one-local) term ``D = `` `D`
-"""
 LocalOp(D::AbstractMatrix) = LocalOp((D,))
-"""
-    $(FUNCTIONNAME)(C::AbstractMatrix, B::AbstractMatrix, [A=one(C)]; l::Int=0)
 
-Construct a local axial term as a `LocalOp` with ``A^{[1]} = A^{[2]} =`` `A`
-"""
 function LocalOp(C, B, A=one(C); l::Int=1)
     if l < 1
         if l == 0
@@ -116,12 +124,7 @@ function LocalOp(C, B, A=one(C); l::Int=1)
 
     return LocalOp(Tuple(terms))
 end
-"""
-    $(FUNCTIONNAME)(CAB::Tuple)
 
-Construct a general local axial term  with ``C = `` `first(CAB)`, ``B = `` `last(CAB)` and
-``A^{[\\alpha]} = `` `CAB[2:end-1][α]`
-"""
 LocalOp(CAB::NTuple{N,AbstractMatrix}) where {N} = LocalOp(1.0, CAB)
 LocalOp(D::NTuple{1,AbstractMatrix}) = LocalOp(1.0, D)
 

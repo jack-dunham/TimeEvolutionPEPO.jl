@@ -19,3 +19,10 @@ SimpleUpdate
 NTU
 FET
 ```
+
+## Isometry Optimization
+
+```@docs
+EVB
+DZM
+```

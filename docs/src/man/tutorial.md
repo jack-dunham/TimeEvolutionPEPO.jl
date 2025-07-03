@@ -9,8 +9,8 @@ To get started, load TimeEvolutionPEPO.jl and the TensorKit package.jl
 using Logging # hide
 using TimeEvolutionPEPO
 using TensorKit
+TimeEvolutionPEPO.Random.seed!(1234) # hide
 ```
-
 ## Computing Observables
 
 To calculate expectation values of observables, one must first construct a reduced density matrix from the tensor network.
@@ -115,7 +115,7 @@ model = J -> Model(J / 4 * LocalOp(Z,Z) + Dissipator(0.5 * (Y - im * Z)))
 This can then be passed into the functions we have defined previously.
 ```@repl
 sim = newsim(model(3.0));
-magn, time = runsim!(sim)
+magn, time = runsim!(sim);
 ```
 Note the `Simulation` object `sim` mutates in the process. 
 Some information pertaining to a given `Simulation` object can be obtained by calling:

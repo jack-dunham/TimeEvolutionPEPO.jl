@@ -1,22 +1,71 @@
+"""
+$(TYPEDEF)
+
+Represents an Ising-like term of the form
+```math
+    \\hat{H}_{jk} = a \\hat{X}_j \\hat{X}_k + \\hat{D}_j
+```
+together with an (optional) on-site dissipator ``\\hat{\\mathcal{D}}_j``.
+This type allows for certain exact low-rank truncations to take place when using 
+[`TEBD`](@ref). In that case, the two-local nearest-neighbor Suzuki-Trotter gate takes the form
+```math
+\\hat{g}_{jk}  = 
+e^{\\frac{\\tau}{4}(
+    \\hat{D}_j + \\hat{\\mathcal{D}}_j + 
+    \\hat{D}_k + \\hat{\\mathcal{D}}_k
+)}
+e^{\\tau a \\hat{X}_j \\hat{X}_k }
+e^{\\frac{\\tau}{4}(
+    \\hat{D}_j + \\hat{\\mathcal{D}}_j + 
+    \\hat{D}_k + \\hat{\\mathcal{D}}_k
+)}.
+```
+# Constructors
+
+    $(FUNCTIONNAME)([a = 1,], X::LocalOp{2}, [oneterms::Union{LocalOp{1}, Vector{LocalOp{1}}, dissipator::Dissipator])
+
+Construct an Ising-like term with optional on-site terms `oneterms` and dissipator. Note, the
+argument `X` is checked to be of Ising form, i.e. `X.C == X.B`.
+"""
 struct Ising{HL} <: AbstractSumOfTerms
     a::Float64
     CB::Matrix{ComplexF64}
     oneterms::Vector{LocalOp{1}}
     dissipator::Union{Nothing,Dissipator}
-    Ising(a, CB, oneterms, ::Nothing) = new{Hamiltonian}(a, CB, oneterms, nothing)
-    Ising(a, CB, oneterms, dissipator) = new{Liouvillian}(a, CB, oneterms, dissipator)
+    function Ising(a::Number, CB::LocalOp{2}, oneterms, ::Nothing)
+        oneterms = vcat(LocalOp{1}[], oneterms)
+        return new{Hamiltonian}(a, checkisising(CB), oneterms, nothing)
+    end
+    function Ising(a::Number, CB::LocalOp{2}, oneterms, dissipator)
+        oneterms = vcat(LocalOp{1}[], oneterms)
+        return new{Liouvillian}(a, checkisising(CB), oneterms, dissipator)
+    end
 end
 
-Ising(CB) = Ising(CB, LocalOp{1}[])
-Ising(CB, dissipator::Dissipator) = Ising(CB, LocalOp{1}[], dissipator)
-function Ising(CB, oneterms::Vector{LocalOp{1}}, dissipator=nothing)
-    return Ising(1, CB, oneterms, dissipator)
+isising(op::LocalOp{2}) = op.C == op.B
+function checkisising(op::LocalOp{2})
+    if !isising(op)
+        throw(ArgumentError("got `op.C != op.B`; provided `op` not an Ising term"))
+    else
+        return op.C
+    end
 end
+
+Ising(CB) = Ising(1, CB)
+Ising(a::Number, CB) = Ising(a, CB, LocalOp{1}[])
+
+# Extra dissipator
+Ising(CB, D::Dissipator) = Ising(1, CB, [], D)
+Ising(a::Number, CB, D::Dissipator) = Ising(a, CB, [], D)
+
+# Extra lops, dissipator optional
+Ising(CB, lops, D=nothing) = Ising(1, CB, lops, D)
+Ising(a::Number, CB, lops) = Ising(a, CB, lops, nothing)
 
 function Base.:+(::Ising, term::AbstractTerm)
     throw(
         ArgumentError(
-            "Terms of type Ising are self contained and cannot be added to other terms"
+            "terms of type Ising are self contained and cannot be added to other terms"
         ),
     )
 end
