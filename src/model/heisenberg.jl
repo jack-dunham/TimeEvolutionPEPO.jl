@@ -156,8 +156,16 @@ function tebdtensor(model::Ising, p1::IndexSpace, p2::IndexSpace, dt; kwargs...)
     end
 
     # 
-    expf = (xi, A) -> begin
-        return cosh(xi) * kron(one(A), one(A)) + sinh(xi) * kron(A, A)
+
+    CB = model.CB
+    if CB * CB ≈ one(CB)
+        expf = (xi, A) -> begin
+            return cosh(xi) * kron(one(A), one(A)) + sinh(xi) * kron(A, A)
+        end
+    else
+        expf = (xi, A) -> begin
+            return exp(xi * kron(A, A))
+        end
     end
 
     expfv = (xi, A) -> begin
@@ -165,10 +173,6 @@ function tebdtensor(model::Ising, p1::IndexSpace, p2::IndexSpace, dt; kwargs...)
     end
 
     xi = dt * model.a
-
-    CB = model.CB
-
-    @assert CB * CB ≈ one(CB)
 
     op = expfv(xi, CB)
 

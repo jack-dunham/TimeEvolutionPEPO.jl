@@ -71,7 +71,7 @@ function Base.:+(::Ising, term::AbstractTerm)
 end
 
 function Base.:*(a::Number, op::Ising)
-    newop = Ising(a * LocalOp(op.CB, op.CB), op.oneterms, op.dissipator)
+    newop = Ising(a * op.a * LocalOp(op.CB, op.CB), op.oneterms, op.dissipator)
     return scalelocal(newop, a)
 end
 
@@ -85,7 +85,7 @@ function scalelocal(L::Ising, a)
     end
 
     CB = L.CB
-    return Ising(LocalOp(CB, CB), L.oneterms .* a, D)
+    return Ising(L.a * LocalOp(CB, CB), L.oneterms .* a, D)
 end
 
 isaxial(::Ising) = true
