@@ -35,7 +35,7 @@ struct Ising{HL} <: AbstractSumOfTerms
     function Ising(CB::LocalOp{2}, oneterms, ::Nothing)
         oneterms = vcat(LocalOp{1}[], oneterms)
         a, mat = checkisising(CB)
-        return new{Liouvillian}(a, mat, oneterms, nothing)
+        return new{Hamiltonian}(a, mat, oneterms, nothing)
     end
     function Ising(CB::LocalOp{2}, oneterms, dissipator)
         oneterms = vcat(LocalOp{1}[], oneterms)
@@ -60,7 +60,7 @@ Ising(CB) = Ising(CB, LocalOp{1}[])
 Ising(CB, D::Dissipator) = Ising(CB, [], D)
 
 # Extra lops, dissipator optional
-Ising(CB, lops, D=nothing) = Ising(CB, lops, D)
+Ising(CB, lops) = Ising(CB, lops, nothing)
 
 function Base.:+(::Ising, term::AbstractTerm)
     throw(
@@ -70,19 +70,22 @@ function Base.:+(::Ising, term::AbstractTerm)
     )
 end
 
-Base.:*(a::Number, op::Ising) = scalelocal(@set(op.a .*= a), a)
+function Base.:*(a::Number, op::Ising)
+    newop = Ising(a * LocalOp(op.CB, op.CB), op.oneterms, op.dissipator)
+    return scalelocal(newop, a)
+end
 
 oneterms(L::Ising) = L.oneterms
 
 function scalelocal(L::Ising, a)
-    @reset L.oneterms .*= a
     D = L.dissipator
 
     if !(D isa Nothing)
-        @reset L.dissipator *= a
+        D *= a
     end
 
-    return L
+    CB = L.CB
+    return Ising(LocalOp(CB, CB), L.oneterms .* a, D)
 end
 
 isaxial(::Ising) = true
