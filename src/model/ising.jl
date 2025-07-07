@@ -32,13 +32,15 @@ struct Ising{HL} <: AbstractSumOfTerms
     CB::Matrix{ComplexF64}
     oneterms::Vector{LocalOp{1}}
     dissipator::Union{Nothing,Dissipator}
-    function Ising(a::Number, CB::LocalOp{2}, oneterms, ::Nothing)
+    function Ising(CB::LocalOp{2}, oneterms, ::Nothing)
         oneterms = vcat(LocalOp{1}[], oneterms)
-        return new{Hamiltonian}(a, checkisising(CB), oneterms, nothing)
+        a, mat = checkisising(CB)
+        return new{Liouvillian}(a, mat, oneterms, nothing)
     end
-    function Ising(a::Number, CB::LocalOp{2}, oneterms, dissipator)
+    function Ising(CB::LocalOp{2}, oneterms, dissipator)
         oneterms = vcat(LocalOp{1}[], oneterms)
-        return new{Liouvillian}(a, checkisising(CB), oneterms, dissipator)
+        a, mat = checkisising(CB)
+        return new{Liouvillian}(a, mat, oneterms, dissipator)
     end
 end
 
@@ -47,20 +49,18 @@ function checkisising(op::LocalOp{2})
     if !isising(op)
         throw(ArgumentError("got `op.C != op.B`; provided `op` not an Ising term"))
     else
-        return op.C
+        mat = op.C
     end
+    return op.a, mat
 end
 
-Ising(CB) = Ising(1, CB)
-Ising(a::Number, CB) = Ising(a, CB, LocalOp{1}[])
+Ising(CB) = Ising(CB, LocalOp{1}[])
 
 # Extra dissipator
-Ising(CB, D::Dissipator) = Ising(1, CB, [], D)
-Ising(a::Number, CB, D::Dissipator) = Ising(a, CB, [], D)
+Ising(CB, D::Dissipator) = Ising(CB, [], D)
 
 # Extra lops, dissipator optional
-Ising(CB, lops, D=nothing) = Ising(1, CB, lops, D)
-Ising(a::Number, CB, lops) = Ising(a, CB, lops, nothing)
+Ising(CB, lops, D=nothing) = Ising(CB, lops, D)
 
 function Base.:+(::Ising, term::AbstractTerm)
     throw(
