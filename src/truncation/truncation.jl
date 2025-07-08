@@ -4,6 +4,13 @@ function Base.show(io::IO, m::MIME"text/plain", sim::AbstractIsometryOptimisatio
     return shownested(io, m, sim)
 end
 
+"""
+$(TYPEDEF)
+
+# Constructor
+
+$(METHODLIST)
+"""
 @kwdef struct EVB{G} <: AbstractIsometryOptimisation{G}
     maxiter::Int = 100
     verbose::Bool = false
@@ -12,6 +19,7 @@ end
     randomness::Float64 = 0.0
     gauge::G = WTG()
 end
+
 @kwdef struct EVBTrivial <: AbstractIsometryOptimisation{WTG}
     maxiter::Int = 100
     verbose::Bool = false
@@ -20,6 +28,13 @@ end
     gauge::NoGauge = NoGauge()
 end
 
+"""
+$(TYPEDEF)
+
+# Constructor
+
+$(METHODLIST)
+"""
 @kwdef struct DZM{G} <: AbstractIsometryOptimisation{G}
     maxiter::Int = 100
     verbose::Bool = false
@@ -101,49 +116,6 @@ function Base.getindex(iso::SiteIsometries, I::Dims)
     n = iso.vy[I]
 
     return e, s, w, n
-end
-
-function seperateweights(
-    horizontal::UnitCell{G,Tuple{Pair{TU,TV},TS}},
-    vertical::UnitCell{G,Tuple{Pair{TU,TV},TS}},
-) where {G,TU,TV,TS}
-    nxny = size(isometries)
-
-    uhlat = UnitCell{G,TU}(undef, nxny)
-    vhlat = UnitCell{G,TV}(undef, nxny)
-    shlat = UnitCell{G,TS}(undef, nxny)
-
-    uvlat = UnitCell{G,TU}(undef, nxny)
-    vvlat = UnitCell{G,TV}(undef, nxny)
-    svlat = UnitCell{G,TS}(undef, nxny)
-
-    hind = eachindex(horizontal)
-    vind = eachindex(vertical)
-
-    if hind != vind
-        throw(DimensionMismatch())
-    end
-
-    populate_isometries_weights!(uhlat, vhlat, shlat, horizontal; axis=1)
-    populate_isometries_weights!(uvlat, vvlat, svlat, vertical; axis=2)
-
-    return SiteIsometries(uhlat, vhlat, uvlat, vvlat), UnitCellBonds(shlat, svlat)
-end
-
-function populate_isometries_weights!(ulat, vlat, slat, isometries; axis)
-    axisbonds = bonds(isometries, axis)
-
-    foreach(axisbonds) do bond
-        uind, vind = bond
-
-        (u, v), s = isometries[uind]
-
-        ulat[uind] = u
-        vlat[vind] = v
-        slat[vind] = s
-    end
-
-    return ulat, vlat, slat
 end
 
 function TruncationIsometries(pepo, u, s, v)
