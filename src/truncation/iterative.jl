@@ -641,33 +641,34 @@ function iterative_simple_update_prototype!(
     return pepo!, infidelity
 end
 
-function gaugedistance(pepo)
-    weights = bondweights(pepo)
-    h, v = only(weights)
+# function gaugedistance(pepo)
+#     weights = bondweights(pepo)
+#     h, v = only(weights)
+#
+#     p = only(pepo)
+#
+#     T = scalartype(pepo)
+#
+#     ide = similar(h, T)
+#     ids = similar(h, T)
+#     idw = similar(v, T)
+#     idn = similar(v, T)
+#
+#     @tensoropt ide[e2; e1] =
+#         p[k b; e1 s1 w1 n1] * (p')[e2 s2 w2 n2; k b] * v[s1; s2] * h[w2; w1] * v[n2; n1]
+#     @tensoropt ids[s2; s1] =
+#         p[k b; e1 s1 w1 n1] * (p')[e2 s2 w2 n2; k b] * v[e1; e2] * h[w2; w1] * v[n2; n1]
+#     @tensoropt idw[w1; w2] =
+#         p[k b; e1 s1 w1 n1] * (p')[e2 s2 w2 n2; k b] * v[s1; s2] * h[e1; e2] * v[n2; n1]
+#     @tensoropt idn[n1; n2] =
+#         p[k b; e1 s1 w1 n1] * (p')[e2 s2 w2 n2; k b] * v[s1; s2] * h[e1; e2] * h[w2; w1]
+#
+#     return sum((ide, ids, idw, idn)) do t
+#         rv = norm(normalize(t) - one(t))
+#         return rv
+#     end
+# end
 
-    p = only(pepo)
-
-    T = scalartype(pepo)
-
-    ide = similar(h, T)
-    ids = similar(h, T)
-    idw = similar(v, T)
-    idn = similar(v, T)
-
-    @tensoropt ide[e2; e1] =
-        p[k b; e1 s1 w1 n1] * (p')[e2 s2 w2 n2; k b] * v[s1; s2] * h[w2; w1] * v[n2; n1]
-    @tensoropt ids[s2; s1] =
-        p[k b; e1 s1 w1 n1] * (p')[e2 s2 w2 n2; k b] * v[e1; e2] * h[w2; w1] * v[n2; n1]
-    @tensoropt idw[w1; w2] =
-        p[k b; e1 s1 w1 n1] * (p')[e2 s2 w2 n2; k b] * v[s1; s2] * h[e1; e2] * v[n2; n1]
-    @tensoropt idn[n1; n2] =
-        p[k b; e1 s1 w1 n1] * (p')[e2 s2 w2 n2; k b] * v[s1; s2] * h[e1; e2] * h[w2; w1]
-
-    return sum((ide, ids, idw, idn)) do t
-        rv = norm(normalize(t) - one(t))
-        return rv
-    end
-end
 function gaugedistance(pepo)
     T = scalartype(pepo)
 
