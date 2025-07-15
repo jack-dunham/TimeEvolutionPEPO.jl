@@ -40,7 +40,8 @@ export PAULI, LADDER, SPIN1
 export UnitCellBonds
 export ThermalState
 
-export AbstractPEPO, PEPO, expandspace, subpepo, unsymmetrise, bondweights, bondentropy
+export AbstractPEPO, PEPO
+export expandspace, subpepo, unsymmetrise, bondweights, bondentropy, physicalspace
 export Bond
 
 export TEBD, AxialTEBD, GlobalTEBD, ClusterMPO, GlobalTEBD, ClusterPEPO

@@ -126,7 +126,7 @@ end
 
 function DensityMatrix(tensors::AbstractUnitCell, alg::AbstractBoundaryAlgorithm; kwargs...)
     env = Renormalization(contractphysical(tensors), alg; kwargs...)
-    TRGroups.renormalize!(env)
+    renormalize!(env)
     return DensityMatrix(tensors, env)
 end
 

@@ -16,7 +16,7 @@ struct TrotterLayer{T<:AbstractTerm}
     data::Matrix{T}
     axis::Int
     function TrotterLayer(data::Matrix{T}, axis) where {T}
-        if any(!isaxial, data) && axis != 0 
+        if any(!isaxial, data) && axis != 0
             throw(ArgumentError("cannot put non-axial term on axis $axis"))
         else
             return new{layertype(T)}(data, axis)
@@ -24,10 +24,10 @@ struct TrotterLayer{T<:AbstractTerm}
     end
 end
 
-function TrotterLayer(data, axis = 0)
+function TrotterLayer(data, axis=0)
     T = layertype(typeof(data))
     mat = Matrix{T}(undef, 1, 1)
-    mat[1,1] = data
+    mat[1, 1] = data
     return TrotterLayer(mat, axis)
 end
 TrotterLayer(data::TrotterLayer) = data
@@ -44,16 +44,18 @@ layertype(::Type{LocalOp{1}}) = LocalOp{1}
 layertype(::Type{Dissipator}) = Dissipator
 layertype(::Type{<:Ising}) = Ising
 
-
 Base.:*(l::TrotterLayer, a) = l.data .= l.data .* a
 Base.:*(a, l::TrotterLayer) = l.data .= a .* l.data
 
 Base.:+(l::TrotterLayer, h::LocalOp{1}) = TrotterLayer(l.data .+ Ref(h), l.axis)
 function Base.:+(l1::TrotterLayer, l2::TrotterLayer)
-
     if !(l1.axis == 0 && l2.axis == 0)
         if l1.axis != l2.axis
-            throw(ArgumentError("cannot combine operators acting on different lattice axis into the same trotter layer"))
+            throw(
+                ArgumentError(
+                    "cannot combine operators acting on different lattice axis into the same trotter layer",
+                ),
+            )
         end
     else
         rvdata = l1.data .+ l2.data
@@ -77,13 +79,16 @@ Base.:+(l::TrotterLayer, term::AbstractTerm) = +(l, TrotterLayer(term))
 
 unwrap(model::TrotterLayer) = model.data
 
-
-changeaxis(t::TrotterLayer, axis; a = 1.0) = TrotterLayer(scalelocal.(t.data, a), axis)
+changeaxis(t::TrotterLayer, axis; a=1.0) = TrotterLayer(scalelocal.(t.data, a), axis)
 
 function broadcastmodel(
-    G::Type{<:TRGroups.AbstractUnitCellGeometry}, model::TrotterLayer, physical, method; inreverse=false,kwargs...
+    G::Type{<:TRGroups.AbstractUnitCellGeometry},
+    model::TrotterLayer,
+    physical,
+    method;
+    inreverse=false,
+    kwargs...,
 )
-
     return broadcastmodel(
         G, model.data, physical, method; axis=model.axis, inreverse, kwargs...
     )
@@ -100,18 +105,18 @@ end
 struct Combine
     model::NTuple{2,TrotterLayer}
 end
-Combine(a,b) = Combine((a,b))
+Combine(a, b) = Combine((a, b))
 
-function Base.:+(c::Combine, h::AbstractTerm) 
-    c1,c2 = c.model
+function Base.:+(c::Combine, h::AbstractTerm)
+    c1, c2 = c.model
     return Combine((c1 + h), (c2 + h))
 end
 
 function addlinops(c::Combine, linops)
-    c1,c2 = c.model
+    c1, c2 = c.model
     rv1 = addlinops(c1, linops)
     rv2 = addlinops(c2, linops)
-    return Combine(rv1,rv2)
+    return Combine(rv1, rv2)
 end
 
 function (model::Combine)(G, physical, method, dt; inreverse=false, kwargs...)
@@ -122,15 +127,14 @@ function (model::Combine)(G, physical, method, dt; inreverse=false, kwargs...)
     # Swap the order of the axis
     termtuple = inreverse ? reverse(model.model) : model.model
 
-    t1,t2 = termtuple
+    t1, t2 = termtuple
     @debug "" typeof(t1) typeof(t2)
 
-    tlat1 = broadcastmodel(G, t1, physical, method;  kwargs...)(dt)
-    tlat2 = broadcastmodel(G, t2, physical, method;  kwargs...)(dt)
+    tlat1 = broadcastmodel(G, t1, physical, method; kwargs...)(dt)
+    tlat2 = broadcastmodel(G, t2, physical, method; kwargs...)(dt)
 
     rv = broadcast(tlat1, tlat2) do ten1, ten2
-        @tensoropt out[ok ob ik ib; e s w n] :=
-            ten2[ok ob x y; e w] * ten1[x y ik ib; s n]
+        @tensoropt out[ok ob ik ib; e s w n] := ten2[ok ob x y; e w] * ten1[x y ik ib; s n]
         return out
     end
 
@@ -138,7 +142,11 @@ function (model::Combine)(G, physical, method, dt; inreverse=false, kwargs...)
 end
 
 function broadcastmodel(
-    G::Type{<:TRGroups.AbstractUnitCellGeometry}, model::Combine, physical, method; kwargs...
+    G::Type{<:TRGroups.AbstractUnitCellGeometry},
+    model::Combine,
+    physical,
+    method;
+    kwargs...,
 )
     return dt -> onlattice(G, model(G, physical, method, dt; kwargs...))
 end
@@ -148,5 +156,3 @@ function applykwargs(S::Type, ::Combine)
     end
     return rv
 end
-
-
