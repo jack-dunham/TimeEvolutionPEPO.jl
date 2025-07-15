@@ -7,33 +7,33 @@
  &quot;b&quot;
  &quot;d&quot;</code></pre><p>In terms of local operator transformations:</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; ρ = rand(2,2); A = rand(2,2); B = rand(2,2);</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; reshape(kron(B&#39;, A) * reshape(ρ, 4), 2, 2) ≈ A * ρ * B</code><code class="nohighlight hljs ansi" style="display:block;">true</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; reshape(kron(A, B&#39;) * reshape(ρ, 4), 2, 2) ≈ A * ρ * B</code><code class="nohighlight hljs ansi" style="display:block;">false</code></pre><p>This is worth bearing in mind if you wish to import a vectorized density matrix obtained outside of this package.</p></div></div><h2 id="Conversion-to-and-from-a-dense-array"><a class="docs-heading-anchor" href="#Conversion-to-and-from-a-dense-array">Conversion to and from a dense array</a><a id="Conversion-to-and-from-a-dense-array-1"></a><a class="docs-heading-anchor-permalink" href="#Conversion-to-and-from-a-dense-array" title="Permalink"></a></h2><p>If you wish to convert a <code>TensorMap</code> to an <code>Array</code>, then it is straightforward to do so:</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; s = ℂ^2</code><code class="nohighlight hljs ansi" style="display:block;">ℂ^2</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; convert(Array, TensorMap(rand, s * s, s))</code><code class="nohighlight hljs ansi" style="display:block;">2×2×2 Array{Float64, 3}:
 [:, :, 1] =
- 0.587514   0.905639
- 0.0772095  0.530198
+ 0.975453  0.89272
+ 0.705596  0.11567
 
 [:, :, 2] =
- 0.975828   0.650036
- 0.0787538  0.857321</code></pre><p>however this is not a free operation. Conversely, a <code>TensorMap</code> can be constructed directly by supplying the data as an <code>Array</code> whose <code>size</code> matches the space supplied to the <code>TensorMap</code> constructor:</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; data = rand(2,2,2)</code><code class="nohighlight hljs ansi" style="display:block;">2×2×2 Array{Float64, 3}:
+ 0.745873  0.432033
+ 0.951451  0.286716</code></pre><p>however this is not a free operation. Conversely, a <code>TensorMap</code> can be constructed directly by supplying the data as an <code>Array</code> whose <code>size</code> matches the space supplied to the <code>TensorMap</code> constructor:</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; data = rand(2,2,2)</code><code class="nohighlight hljs ansi" style="display:block;">2×2×2 Array{Float64, 3}:
 [:, :, 1] =
- 0.162273   0.462707
- 0.0410926  0.271661
+ 0.128691  0.479109
+ 0.869707  0.0741418
 
 [:, :, 2] =
- 0.732417  0.144975
- 0.975905  0.939764</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; TensorMap(data, s * s, s)</code><code class="nohighlight hljs ansi" style="display:block;">TensorMap((ℂ^2 ⊗ ℂ^2) ← ℂ^2):
+ 0.424706  0.978635
+ 0.861839  0.212293</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; TensorMap(data, s * s, s)</code><code class="nohighlight hljs ansi" style="display:block;">TensorMap((ℂ^2 ⊗ ℂ^2) ← ℂ^2):
 [:, :, 1] =
- 0.1622733095216451   0.46270678129058673
- 0.04109256471767009  0.2716613471045566
+ 0.12869142429474123  0.4791093585216972
+ 0.8697071469580946   0.07414183547885878
 
 [:, :, 2] =
- 0.732416977914378   0.14497481836529724
- 0.9759050212670342  0.9397644308391829</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; TensorMap(data, s, s * s)</code><code class="nohighlight hljs ansi" style="display:block;">TensorMap(ℂ^2 ← (ℂ^2 ⊗ ℂ^2)):
+ 0.4247059580215683  0.978635445775906
+ 0.8618391505909183  0.212292706024391</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; TensorMap(data, s, s * s)</code><code class="nohighlight hljs ansi" style="display:block;">TensorMap(ℂ^2 ← (ℂ^2 ⊗ ℂ^2)):
 [:, :, 1] =
- 0.1622733095216451   0.46270678129058673
- 0.04109256471767009  0.2716613471045566
+ 0.12869142429474123  0.4791093585216972
+ 0.8697071469580946   0.07414183547885878
 
 [:, :, 2] =
- 0.732416977914378   0.14497481836529724
- 0.9759050212670342  0.9397644308391829</code></pre><h2 id="Irrep-ordering-in-symmetric-spaces"><a class="docs-heading-anchor" href="#Irrep-ordering-in-symmetric-spaces">Irrep ordering in symmetric spaces</a><a id="Irrep-ordering-in-symmetric-spaces-1"></a><a class="docs-heading-anchor-permalink" href="#Irrep-ordering-in-symmetric-spaces" title="Permalink"></a></h2><p>You may wish to make use of a symmetric local vector space for simulations that, for example, preserve total spin or particle number. When constructing symmetric vector spaces, TensorKit prescribes and ordering of the basis vectors that may not align with what you expect. For example, consider a spin-1 particle.  You may wish to make use of a possible U(1) symmetry by using writing the basis in terms of the sectors of well-defined <span>$z$</span>-axis spin projection. The typical ordering of the basis is then <span>$\{| 1 \rangle, | 0 \rangle, | -1 \rangle \}$</span> such that the spin-<span>$z$</span> operator looks like:</p><p class="math-container">\[S_z = \begin{pmatrix}
+ 0.4247059580215683  0.978635445775906
+ 0.8618391505909183  0.212292706024391</code></pre><h2 id="Irrep-ordering-in-symmetric-spaces"><a class="docs-heading-anchor" href="#Irrep-ordering-in-symmetric-spaces">Irrep ordering in symmetric spaces</a><a id="Irrep-ordering-in-symmetric-spaces-1"></a><a class="docs-heading-anchor-permalink" href="#Irrep-ordering-in-symmetric-spaces" title="Permalink"></a></h2><p>You may wish to make use of a symmetric local vector space for simulations that, for example, preserve total spin or particle number. When constructing symmetric vector spaces, TensorKit prescribes and ordering of the basis vectors that may not align with what you expect. For example, consider a spin-1 particle.  You may wish to make use of a possible U(1) symmetry by using writing the basis in terms of the sectors of well-defined <span>$z$</span>-axis spin projection. The typical ordering of the basis is then <span>$\{| 1 \rangle, | 0 \rangle, | -1 \rangle \}$</span> such that the spin-<span>$z$</span> operator looks like:</p><p class="math-container">\[S_z = \begin{pmatrix}
     1 &amp; 0 &amp; 0 \\
     0 &amp; 0 &amp; 0 \\
     0 &amp; 0 &amp; -1
@@ -49,4 +49,4 @@ julia&gt; permutebasis(Sz, perm)
 3×3 Matrix{ComplexF64}:
  0.0+0.0im  0.0+0.0im   0.0+0.0im
  0.0+0.0im  1.0+0.0im   0.0+0.0im
- 0.0+0.0im  0.0+0.0im  -1.0+0.0im</code></pre><p>to perform the correct change-of-basis transformation.</p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../tutorial/">« Quick start</a><a class="docs-footer-nextpage" href="../states/">State representation using the <code>PEPO</code> type »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.11.4 on <span class="colophon-date" title="Tuesday 8 July 2025 13:28">Tuesday 8 July 2025</span>. Using Julia version 1.11.5.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+ 0.0+0.0im  0.0+0.0im  -1.0+0.0im</code></pre><p>to perform the correct change-of-basis transformation.</p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../tutorial/">« Quick start</a><a class="docs-footer-nextpage" href="../states/">State representation using the <code>PEPO</code> type »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.11.4 on <span class="colophon-date" title="Tuesday 15 July 2025 21:33">Tuesday 15 July 2025</span>. Using Julia version 1.11.6.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
