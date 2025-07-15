@@ -114,7 +114,7 @@ function Simulation(
 
     state = newevolution(pepo, stepper, method)
 
-    truncators = newtruncators(state, stepper, method.alg)
+    truncators = _newtruncators(state, stepper, method.alg)
 
     initialstate = storeall ? deepcopy(state) : nothing
 
@@ -193,7 +193,7 @@ function simulate!(
     if isdefined(sim, :truncators)
         truncator = sim.truncators
     else
-        truncator = newtruncators(pepo, stepper, truncalg)
+        truncator = _newtruncators(pepo, stepper, truncalg)
     end
 
     numinit > 0 && @info "Resuming simulation from $numinit iterations."
@@ -351,8 +351,11 @@ end
 function measurehook!(sim::Simulation, A=PAULI[1]; env=nothing)
     pepo = TimeEvolutionPEPO.quantumstate(sim)
 
-    # alg = VUMPS(; tol=1e-8, maxiter=200, bonddim=16, verbose=true)
-    alg = CTMRG(; tol=1e-7, maxiter=200, bonddim=16, verbose=true, randinit=false)
+    simple_update_gauge_parallel!(pepo; tol=1e-8, maxiter=200, reset=false)
+    # minimalcanonicalform!(pepo; tol=1e-8, maxiter=10000)
+
+    alg = VUMPS(; tol=1e-8, maxiter=200, bonddim=16, verbose=true)
+    # alg = CTMRG(; tol=1e-8, maxiter=200, bonddim=16, verbose=true, randinit=false)
     #
     # env = newcontraction(alg, contractphysical( TimeEvolutionPEPO.tensors(pepo)))
     # renormalize!(env, contractphysical( TimeEvolutionPEPO.tensors(pepo)))

@@ -20,7 +20,7 @@ Base.iterate(sch::TrotterDecomposition, state=1) = iterate(sch.body, state)
 Base.size(t::TrotterDecomposition) = (length(t),)
 Base.length(t::TrotterDecomposition) = length(t.body)
 
-function newtruncators(
+function _newtruncators(
     pepo, sequence::TrotterDecomposition, truncalg::AbstractTruncationScheme
 )
     rv = map(sequence.body) do propagator
