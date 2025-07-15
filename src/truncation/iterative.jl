@@ -213,12 +213,8 @@ function iterative_simple_update_step(pepo, stepper, isometries, bond; kwargs...
     return (u, v), s, infid
 end
 
-function newtruncators(pepo, sequence, ::Union{IterativeSU,IterativeSUTest})
-    rv = map(sequence.body) do stepper
-        iso = newisometries(pepo, stepper)
-        return iso
-    end
-    return (rv, rv)
+function newtruncators(pepo, stepper, ::Union{IterativeSU,IterativeSUTest})
+    return newisometries(pepo, stepper)
 end
 
 function iterative_simple_update_prototype!(
@@ -489,15 +485,15 @@ function iterative_simple_update_prototype!(
 
         gauge < 2 && continue
 
-        wtgisometries!(isoms, pepo!, stepper)
-
-        continue
+        # wtgisometries!(isoms, pepo!, stepper)
+        #
+        # continue
 
         temppepo = deepcopy(pepo!)
 
-        for I in eachindex(buff)
-            dst = getaxis(temppepo)[I]
-            op = getaxis(stepper)[I]
+        for I in eachindex(pepo!)
+            dst = temppepo[I]
+            op = stepper[I]
             e, s, w, n = isoms[I]
 
             truncateto!(dst, deepcopy(dst), op, e, s, w, n)
@@ -506,7 +502,7 @@ function iterative_simple_update_prototype!(
         end
 
         gauge1, gauge2, info = simple_update_gauge_isometries!(
-            temppepo; tol=1e-10, verbose=false
+            temppepo; tol=1e-6, verbose=false
         )
         @info "Gauged to $(info[1]) after $(info[2]) iterations"
 
@@ -516,9 +512,9 @@ function iterative_simple_update_prototype!(
         gs = broadcast(first, permutedims(gauge2))
         gn = broadcast(last, permutedims(circshift(gauge2, (1, 0))))
 
-        gisoms = SquareLattice(broadcast(tuple, ge, gs, gw, gn))
+        gisoms = UnitCell(broadcast(tuple, ge, gs, gw, gn))
 
-        isoms = broadcast(eachindex(buff)) do I
+        isoms = broadcast(eachindex(pepo!)) do I
             e1, s1, w1, n1 = isoms[I]
             e2, s2, w2, n2 = gisoms[I]
 
@@ -533,7 +529,7 @@ function iterative_simple_update_prototype!(
 
         isoms = Isometries(UnitCell(isoms))
 
-        foreach(eachbond(buff)) do bond
+        foreach(eachbond(pepo!)) do bond
             s = bondweights(temppepo)[bond]
             setweight!(pepo!, s, bond; copy=true)
         end
@@ -546,7 +542,7 @@ function iterative_simple_update_prototype!(
     #     mergeinto!(dst, spten)
     # end
 
-    @info "gauging..."
+    # @info "gauging..."
     # simple_update_gauge!(pepo!; maxiter=200, tol=1e-10, verbose=false, reset=false)
     #=
     for numiter in 1:1
@@ -622,19 +618,105 @@ function iterative_simple_update_prototype!(
     # end
 
     if gauge == 1
-        @info "Gauge fixing"
-        size(pepo!) == (1, 1) && minimalcanonicalform!(pepo!; maxiter=2000)
-        # size(buff) == (1, 1) &&
-        #     simple_update_gauge!(pepo!; maxiter=200, tol=1e-10, verbose=false, reset=false)
-        size(pepo!) != (1, 1) && simple_update_gauge!(pepo!; maxiter=100, reset=false)
+        distance = gaugedistance(pepo!)
+        if distance > 1e-6
+            @info "Gauge fixing $distance"
+            # size(buff) == (1, 1) &&
+            #     simple_update_gauge!(pepo!; maxiter=200, tol=1e-10, verbose=false, reset=false)
+            size(pepo!) == (1, 1) &&
+                simple_update_gauge_parallel!(pepo!; tol=1e-6, maxiter=200, reset=false)
+            size(pepo!) != (1, 1) && simple_update_gauge!(pepo!; maxiter=100, reset=false)
+        end
+    elseif gauge == -1
+        size(pepo!) == (1, 1) && minimalcanonicalform!(pepo!; tol=1e-8, maxiter=10000)
     end
 
-    # minimalcanonicalform!(tensors(pepo))
+    @info "Vidal distance after" gaugedistance(pepo!)
+
+    # minimalcanonicalform!(pepo!)
 
     quicknormalize!(pepo!)
     hermitianize!(pepo!)
 
     return pepo!, infidelity
+end
+
+function gaugedistance(pepo)
+    weights = bondweights(pepo)
+    h, v = only(weights)
+
+    p = only(pepo)
+
+    T = scalartype(pepo)
+
+    ide = similar(h, T)
+    ids = similar(h, T)
+    idw = similar(v, T)
+    idn = similar(v, T)
+
+    @tensoropt ide[e2; e1] =
+        p[k b; e1 s1 w1 n1] * (p')[e2 s2 w2 n2; k b] * v[s1; s2] * h[w2; w1] * v[n2; n1]
+    @tensoropt ids[s2; s1] =
+        p[k b; e1 s1 w1 n1] * (p')[e2 s2 w2 n2; k b] * v[e1; e2] * h[w2; w1] * v[n2; n1]
+    @tensoropt idw[w1; w2] =
+        p[k b; e1 s1 w1 n1] * (p')[e2 s2 w2 n2; k b] * v[s1; s2] * h[e1; e2] * v[n2; n1]
+    @tensoropt idn[n1; n2] =
+        p[k b; e1 s1 w1 n1] * (p')[e2 s2 w2 n2; k b] * v[s1; s2] * h[e1; e2] * h[w2; w1]
+
+    return sum((ide, ids, idw, idn)) do t
+        rv = norm(normalize(t) - one(t))
+        return rv
+    end
+end
+function gaugedistance(pepo)
+    T = scalartype(pepo)
+
+    weights = bondweights(pepo)
+
+    cumsum = 0
+
+    for bond in eachbond(pepo)
+        P, Q = absorb_adjacent_weights(pepo[bond], weights, bond)
+        axis = bondaxis(bond)
+
+        w = weights[bond]
+
+        idu = similar(w, T)
+        idv = similar(w, T)
+
+        if axis == 1
+            @tensoropt idu[e2; e1] = P[k b; e1 s w n] * (P')[e2 s w n; k b]
+            @tensoropt idv[w1; w2] = Q[k b; e s w1 n] * (Q')[e s w2 n; k b]
+        elseif axis == 2
+            @tensoropt idu[s2; s1] = P[k b; e s1 w n] * (P')[e s2 w n; k b]
+            @tensoropt idv[n1; n2] = Q[k b; e s w n1] * (Q')[e s w n2; k b]
+        end
+
+        try
+            wi = inv(sqrt(w))
+
+            idu = wi * idu * wi
+            idv = wi * idv * wi
+
+            # @tensoropt ide[e2; e1] =
+            #     p[k b; e1 s1 w1 n1] * (p')[e2 s2 w2 n2; k b] * v[s1; s2] * h[w2; w1] * v[n2; n1]
+            # @tensoropt ids[s2; s1] =
+            #     p[k b; e1 s1 w1 n1] * (p')[e2 s2 w2 n2; k b] * v[e1; e2] * h[w2; w1] * v[n2; n1]
+            # @tensoropt idw[w1; w2] =
+            #     p[k b; e1 s1 w1 n1] * (p')[e2 s2 w2 n2; k b] * v[s1; s2] * h[e1; e2] * v[n2; n1]
+            # @tensoropt idn[n1; n2] =
+            #     p[k b; e1 s1 w1 n1] * (p')[e2 s2 w2 n2; k b] * v[s1; s2] * h[e1; e2] * h[w2; w1]
+
+            disu = norm(normalize(idu) - normalize(one(idu)))
+            disv = norm(normalize(idv) - normalize(one(idv)))
+
+            cumsum += disu
+            cumsum += disv
+        catch _
+            return Inf
+        end
+    end
+    return cumsum / (4 * length(pepo))
 end
 
 function iterative_neighbourhood_update!(pepo, truncator, stepper)

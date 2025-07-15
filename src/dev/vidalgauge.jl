@@ -1,6 +1,4 @@
-function simple_update_gauge!(
-    pepo; maxiter=100, tol=1e-12, verbose=true, buffering=false, reset=false
-)
+function simple_update_gauge!(pepo; maxiter=10, tol=1e-10, verbose=true, reset=false)
     reset && weights2identity!(pepo)
 
     prevweights = deepcopy(bondweights(pepo))
@@ -8,20 +6,14 @@ function simple_update_gauge!(
     ϵ = Inf
     numiter = 0
 
-    if buffering
-        buffer = similar.(currentbuffer(pepo))
-    else
-        buffer = nothing
-    end
-
     while ϵ > tol && numiter < maxiter
         reverse = isodd(numiter)
 
         # if 1 in size(pepo)
-        if true
+        if false
             simple_update_gauge_parallel_step!(pepo)
         else
-            simple_update_gauge_step!(pepo, buffer; inreverse=reverse)
+            simple_update_gauge_step!(pepo; inreverse=reverse)
         end
 
         ϵ = tolerance!(prevweights, bondweights(pepo), 1.0)
@@ -42,38 +34,43 @@ function simple_update_gauge_parallel!(
     prevweights = deepcopy(bondweights(pepo))
 
     ϵ = Inf
+    best_ϵ = Inf
     numiter = 0
 
-    while ϵ > tol && numiter < maxiter
-        reverse = isodd(numiter)
+    best_tensors = broadcast(copy, pepo)
+    best_weights = broadcast(copy, bondweights(pepo))
 
+    while ϵ > tol && numiter < maxiter
         simple_update_gauge_parallel_step!(pepo)
 
-        ϵ = tolerance!(prevweights, bondweights(pepo), 1.0)
+        # ϵ = sqrt(tolerance!(prevweights, bondweights(pepo), 1.0))
+        ϵ = gaugedistance(pepo)
+
+        if ϵ < best_ϵ
+            copy!.(best_tensors, pepo)
+            copy!.(best_weights, bondweights(pepo))
+            best_ϵ = ϵ
+        end
 
         verbose && @info ϵ
 
         numiter += 1
     end
 
+    copy!.(pepo, best_tensors)
+    copy!.(bondweights(pepo), best_weights)
+
+    @info "Distance to Vidal gauge: $(gaugedistance(pepo))"
+
     return pepo
 end
-function simple_update_gauge_isometries!(
-    pepo; maxiter=100, tol=1e-12, verbose=true, buffering=false
-)
+function simple_update_gauge_isometries!(pepo; maxiter=100, tol=1e-12, verbose=true)
     # weights2identity!(pepo)
 
     prevweights = deepcopy(bondweights(pepo))
 
     ϵ = Inf
     numiter = 0
-
-    if buffering
-        buffer = similar.(currentbuffer(pepo))
-    else
-        buffer = nothing
-    end
-
     while ϵ > tol && numiter < maxiter
         reverse = isodd(numiter)
 
@@ -83,7 +80,7 @@ function simple_update_gauge_isometries!(
             simple_update_gauge_step!(pepo, buffer; inreverse=reverse)
         end
 
-        ϵ = tolerance!(prevweights, bondweights(pepo), 1.0)
+        ϵ = gaugedistance(pepo)
 
         verbose && @info ϵ
 
@@ -103,11 +100,7 @@ function simple_update_gauge_get_pair(pepo, ::Nothing, bond)
 end
 simple_update_gauge_get_pair(_, buffer, bond) = buffer[bond]
 
-function simple_update_gauge_step!(pepo, buffer; inreverse=false, absorb=true)
-
-    # Iterative calculation 
-    isnothing(buffer) || copyto!(buffer, pepo)
-
+function simple_update_gauge_step!(pepo; inreverse=false, absorb=true)
     bonds = eachbond(pepo)
 
     if inreverse
@@ -119,26 +112,16 @@ function simple_update_gauge_step!(pepo, buffer; inreverse=false, absorb=true)
     itr = bonds
 
     for bond in itr
-        pair = simple_update_gauge_get_pair(pepo, buffer, bond)
+        pair = simple_update_gauge_get_pair(pepo, pepo, bond)
 
-        iso, s, infid = simpleupdate!(
-            pair, bondweights(pepo), bond; absorb=absorb, trunc=notrunc()
-        )
-
-        # if abs(infid) > 1e-14
-        #     @warn infid
-        # end
-
-        newpair = mapreduce(copy, =>, pepo[bond])
-
-        truncateto!(newpair, pair, iso; axis=bondaxis(bond))
+        newpair, s = vidalupdate(pair, bondweights(pepo), bond; trunc=notrunc())
 
         pepo[bond] = newpair
 
         setweight!(pepo, s, bond; copy=false)
-
-        isnothing(buffer) || copy!(last(buffer[bond]), last(pepo[bond]))
     end
+
+    @warn gaugedistance(pepo)
 
     return pepo
 end
@@ -153,10 +136,6 @@ function simple_update_gauge_parallel_isometries!(pepo)
 
             # l, s, r, infid = simpleupdate!(axispepo, bond; trunc=notrunc())
             iso, s, infid = simpleupdate(pepo[bond], bondweights(pepo), bond; trunc=notrunc())
-
-            # if abs(infid) > 1e-14
-            #     @warn infid
-            # end
 
             setweight!(newweights, s, bond; copy=false)
 

@@ -105,13 +105,28 @@ function simpleupdate!(pair, weights, bond; trunc, absorb=true, axial=false, kwa
         pair = absorb_adjacent_weights(pair, weights, bond; inverse=false, axial=axial)
     end
 
-    iso, s, infid = simple_update_svd!(pair; trunc=trunc, absorb=true, axis=axis, kwargs...)
+    iso, s, f = simple_update_svd!(pair; trunc=trunc, absorb=true, axis=axis, kwargs...)
 
     if absorb
         pair = absorb_adjacent_weights(pair, weights, bond; inverse=true, axial=axial)
     end
 
+    infid = 1 - f(pair[1], pair[2])
+
     return iso, s, infid
+end
+
+function vidalupdate(pair, weights, bond; trunc, axial=false, kwargs...)
+    axis = bondaxis(bond)
+
+    pair = absorb_adjacent_weights(pair, weights, bond; inverse=false, axial=axial)
+
+    # iso, s, f = simple_update_svd!(pair; trunc=trunc, absorb=false, axis=axis, kwargs...)
+    pair, s = simple_update_tensors(pair; axis=axis)
+
+    pair = absorb_adjacent_weights(pair, weights, bond; inverse=true, axial=axial)
+
+    return pair, s
 end
 
 function simpleupdate(pair, weights, bond; trunc, axial=false, absorb=true, kwargs...)
@@ -138,8 +153,8 @@ function simple_update_svd(pair; axis, kwargs...)
     return pinv(u0) * u => v * pinv(v0), s, infid
 end
 
-function simple_update_svd!(pair; axis, kwargs...)
-    (P, Q), (u0, v0) = rankreduce!(pair; axis=axis)
+function simple_update_svd!(pair, center=nothing; axis, kwargs...)
+    (P, Q), (u0, v0) = rankreduce!(pair, center; axis=axis)
 
     iso, s, infid = isometries_from_svd(P, Q, u0, v0; axis=axis, kwargs...)
 
@@ -156,14 +171,14 @@ function isometries_from_svd(P, Q, u0, v0; zeta=Inf, trunc, absorb=true, axis)
 
     if absorb
         uv, s = applyweight(uv, s, zeta)
-        f = localfidelity(u, v, P, Q, u0, v0; axis=axis)
+        f = (P, Q) -> localfidelity(u, v, P, Q, u0, v0; axis=axis)
     else
         zeta < Inf && rescale!(s, copy(s), zeta)
+        f = (P, Q) -> 0
         # f = fidelity(u * sqrt(s), sqrt(s) * v, P, Q, u0, v0)
     end
-    f = 0
 
-    return uv, s, 1 - f
+    return uv, s, f
 end
 
 function hori_weights(uten::T, vten::T, U, V; axial) where {T<:AbsTen{2,4}}
@@ -247,18 +262,19 @@ function vert_weights(uten::T, vten::T, U, V; axial) where {T<:AbsTen{2,5}}
 end
 
 function absorb_adjacent_weights(
-    pair::TensorPair{2}, weights::UnitCellBonds, bond::Bond; inverse=false, axial=false
+    pair::TensorPair{2}, weights::UnitCellBonds, bond::Bond; kwargs...
+)
+    return absorb_adjacent_weights(sqrt, pair, weights, bond; kwargs...)
+end
+function absorb_adjacent_weights(
+    f, pair::TensorPair{2}, weights::UnitCellBonds, bond::Bond; inverse=false, axial=false
 )
     uten, vten = pair
 
     if inverse
-        func = w -> try
-            inv(sqrt(w))
-        catch
-            pinv(sqrt(w))
-        end
+        func = w -> pinv(f(w))
     else
-        func = w -> sqrt(w)
+        func = w -> f(w)
     end
 
     U, V = mapadjacent(func, weights, bond)

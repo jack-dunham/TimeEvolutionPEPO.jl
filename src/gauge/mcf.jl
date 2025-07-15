@@ -2,7 +2,11 @@ fixgauge!(x, gauge::MCF) = minimalcanonicalform!(x; gauge.tol, gauge.maxiter)
 
 function minimalcanonicalform!(lat::AbstractUnitCell; kwargs...)
     if size(lat) > (1, 1)
-        throw(ArgumentError("Minimal canonical form for unit-cells of size > (1,1) not currently supported"))
+        throw(
+            ArgumentError(
+                "Minimal canonical form for unit-cells of size > (1,1) not currently supported",
+            ),
+        )
     else
         _, hort, vert = minimalcanonicalform!(only(lat); kwargs...)
     end

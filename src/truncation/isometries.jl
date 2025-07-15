@@ -230,7 +230,7 @@ function rankreduce(tensors::Pair{T,T}; axis=1) where {T<:AbsTen{2,4}}
     return P1 => P2, R => L
 end
 
-function rankreduce!(tensors::Pair{T,T}; axis=1) where {T<:AbsTen{2,4}}
+function rankreduce!(tensors::Pair{T,T}, center=nothing; axis=1) where {T<:AbsTen{2,4}}
     uten, vten = tensors
 
     if axis == 1
@@ -238,11 +238,26 @@ function rankreduce!(tensors::Pair{T,T}; axis=1) where {T<:AbsTen{2,4}}
     elseif axis == 2
         i1, i2 = 2, 4
     end
+    s = domain(uten, i1)
+
+    if isnothing(center)
+        C = id(ComplexF64, s)
+    else
+        C = sqrt(center)
+    end
+
+    if axis == 1
+        @tensoropt uten[k b; ee s w n] := copy(uten)[k b; e s w n] * inv(C)[e; ee]
+        @tensoropt vten[k b; e s ww n] := copy(vten)[k b; e s w n] * inv(C)[ww; w]
+    elseif axis == 2
+        @tensoropt uten[k b; e ss w n] := copy(uten)[k b; e s w n] * inv(C)[s; ss]
+        @tensoropt vten[k b; e s w nn] := copy(vten)[k b; e s w n] * inv(C)[nn; n]
+    end
 
     _, R = leftrankreduce!(uten, i1)
     L, _ = rightrankreduce!(vten, i2)
 
-    return uten => vten, R => L
+    return uten => vten, R * C => C * L
 end
 
 function updateisometries(pair, weights, trunc, bond)
@@ -377,7 +392,7 @@ function evolve_simple_update_tensors(pair::TensorPair{2,4}, op_pair; axis, zeta
     return newpair, newweight
 end
 
-function simple_update_tensors(pair::TensorPair{2,5}; axis, zeta=Inf)
+function simple_update_tensors(pair::TensorPair{2,N}; axis, zeta=Inf) where {N}
     Q1, R, L, Q2 = reducevirtual(pair, axis)
 
     # The bond has vector space D * η, so D = domain(R, 1).
@@ -432,9 +447,7 @@ function simple_update_tensors(pair::TensorPair{2,4}, trunc; axis, zeta=Inf)
 end
 
 function truncate(
-    pair::TensorAntiPair{<:AbsTen{5,1},<:AbsTen{1,5}},
-    iso::Pair{<:AbsTen{1,1},<:AbsTen{1,1}},
-    axis::Int,
+    pair::TensorAntiPair{5,1}, iso::Pair{<:AbsTen{1,1},<:AbsTen{1,1}}, axis::Int
 )
     Q1, Q2 = pair
     u, v = iso
