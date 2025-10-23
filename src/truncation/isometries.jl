@@ -58,7 +58,8 @@ function metric_isometries_from_simple_update!(
 )
     (u0, v0) = initiso
 
-    _, (L0, R0) = rankreduce!(pair)
+    tpair, (L0, R0) = rankreduce!(pair)
+    mapreduce(copy!, =>, pair, tpair)
 
     truncmetric = metric(pair, environment, bond)
 
@@ -758,7 +759,7 @@ function dziarmaga(
     L0, # From the rank reduction (might be the identity)
     R0; # From the rank reduction (might be the identity)
     trunc,
-    EAT=true,
+    EAT=false,
     maxiter=100,
     isotol=1e-8,
     check=true,
@@ -1210,8 +1211,6 @@ function evenbly(
     # l = u * sqrt(s) * v
     # r = vt' * v' * sqrt(s) * v
 
-    println(s)
-
     copy!(iso.u, l)
     copy!(iso.s, s)
     copy!(iso.v, r')
@@ -1396,8 +1395,6 @@ function evenblytrivial(
     rt = TensorMap(permutedims(conj(r)), Dsp, χsp)
 
     s = TensorMap(diagm(σ), Dsp, Dsp)
-
-    println(s)
 
     # return lt, id(Dsp), rt
     return lt, s, rt
