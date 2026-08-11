@@ -2,25 +2,22 @@ module TimeEvolutionPEPO
 
 import TensorKit.AdjointTensorMap
 import TensorKit.IndexTuple
-
+using Accessors
 using Combinatorics
-using TensorRenormalizationGroups
+using DocStringExtensions
 using KrylovKit
 using LinearAlgebra
+using Logging
 using Random
 using TensorKit
+using TensorRenormalizationGroups
 using TupleTools
 using VectorInterface
-using Accessors
-using DocStringExtensions
-using Logging
 
 const TRGroups = TensorRenormalizationGroups
 const PEPOKit = TimeEvolutionPEPO
 
-import TensorRenormalizationGroups: AbsTen
-import TensorRenormalizationGroups: TenAbs
-import TensorRenormalizationGroups: SquareSymmetric
+import TensorRenormalizationGroups: AbsTen, SquareSymmetric, TenAbs
 
 export PEPOKit
 
