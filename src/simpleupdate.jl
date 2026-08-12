@@ -55,26 +55,44 @@ end
 """
     $(TYPEDSIGNATURES)
 
-One Trotter layer: update every bond of the unit cell, along the first axis and then the second.
-Returns the largest truncation error over the sweep.
+Update every bond of the unit cell along `axis` (1 for the column direction, 2 for the row direction),
+returning the largest truncation error.
 
-Each site belongs to four bonds, and each bond carries half of the one-local part of `propagator`
-(see `twolocal`), so a sweep applies that part twice per site. Build the propagator from a model whose
-one-local terms are halved if the sweep is to realise the intended generator.
+Each site sits on two bonds of a given axis and each bond carries half of the one-local part of
+`propagator` (see `twolocal`), so one sweep applies that part once per site. Sweeping both axes
+therefore applies it twice, which is why [`trotterise`](@ref) halves it.
 """
-function trotterstep!(
-        state::InfinitePEPO, weights::SUWeight, propagator::AbstractTensorMap; trunc = nothing
+function axissweep!(
+        state::InfinitePEPO, weights::SUWeight, propagator::AbstractTensorMap, axis::Int;
+        trunc = nothing
     )
+    axis in (1, 2) || throw(ArgumentError("axis must be 1 or 2, got $axis"))
     Nr, Nc, = size(state)
     (Nr >= 2 && Nc >= 2) ||
         throw(ArgumentError("a two-site update needs a unit cell of at least 2x2, got ($Nr, $Nc)"))
 
     ϵ = 0.0
-    for axis in 1:2, r in 1:Nr, c in 1:Nc
+    for r in 1:Nr, c in 1:Nc
         site1 = CartesianIndex(r, c)
         site2 = axis == 1 ? CartesianIndex(r, c + 1) : CartesianIndex(r + 1, c)
         ϵ = max(ϵ, bondstep!(state, weights, propagator, [site1, site2]; trunc))
     end
 
+    return ϵ
+end
+
+"""
+    $(TYPEDSIGNATURES)
+
+One time step: sweep each `(propagator, axis)` of a Trotter decomposition in turn, returning the
+largest truncation error.
+"""
+function timestep!(
+        state::InfinitePEPO, weights::SUWeight, decomposition::AbstractVector; trunc = nothing
+    )
+    ϵ = 0.0
+    for (propagator, axis) in decomposition
+        ϵ = max(ϵ, axissweep!(state, weights, propagator, axis; trunc))
+    end
     return ϵ
 end

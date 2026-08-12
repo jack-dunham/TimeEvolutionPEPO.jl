@@ -41,7 +41,12 @@ export dissipator, oneterms, isaxial, isexpandable
 export generator, bondpropagator
 export reducedbond_first, reducedbond_last, undo_reducedbond_first, undo_reducedbond_last
 export applypropagator
-export bondstep!, trotterstep!
+export bondstep!, axissweep!, timestep!
+export trotterise
+
+export Simulation, SimulationInfo, simulate!
+export quantumstate, bondweights, timestep, simulationinfo, weightdistance
+export isconverged, convergence, numiter, isfinished, simtime, walltime
 
 include("linalg.jl")
 include("state.jl")
@@ -62,12 +67,14 @@ include("model/ising.jl")
 include("propagator.jl")
 include("reducedbond.jl")
 include("simpleupdate.jl")
+include("trotterdecomposition.jl")
+include("convergenceinfo.jl")
+include("simulation.jl")
 
 # Awaiting replacement, in the order the plan takes them:
 #
 # include("utils.jl")
 # include("tensorkitutils.jl")
-# include("convergenceinfo.jl")
 # include("abstractlattice.jl")
 # include("edgelattice.jl")
 # include("updatestyle.jl")
@@ -110,7 +117,6 @@ include("simpleupdate.jl")
 #
 # include("evolution/dynamicalmap.jl")
 #
-# include("simulation.jl")
 # include("densitymatrix.jl")
 #
 # include("dev/vidalgauge.jl")

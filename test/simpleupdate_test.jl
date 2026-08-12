@@ -39,9 +39,9 @@ end # SimpleUpdateSetup
         v0 = (0.0, 0.0, -1.0)
         dt, numsteps = 0.02, 10
 
-        # A sweep applies each site's one-local part twice, so halve it in the propagator.
-        model = zero(Hamiltonian) + 0.5 * Dissipator(jump)
-        u = bondpropagator(model, P, dt)
+        # `trotterise` halves the one-local part, since a full step sweeps both axes.
+        model = zero(Hamiltonian) + Dissipator(jump)
+        decomposition = trotterise(model, P, dt)
 
         state = productpepo(fill(v0, 2, 2), 1)
         weights = SUWeight(state)
@@ -49,7 +49,7 @@ end # SimpleUpdateSetup
 
         deviation = 0.0
         for step in 1:numsteps
-            trotterstep!(state, weights, u)
+            timestep!(state, weights, decomposition)
             m = onesite(state)
             exact = evolve_dense(bloch(v0), G, step * dt)
             deviation = max(
@@ -63,14 +63,14 @@ end # SimpleUpdateSetup
 
     @testset "trace and hermiticity survive an interacting sweep" begin
         jump = 0.5 * (Y - im * Z)
-        model = 1.5 / 4 * LocalOp(Z, Z) + 0.5 * Dissipator(jump)
-        u = bondpropagator(model, P, 0.025)
+        model = 1.5 / 4 * LocalOp(Z, Z) + Dissipator(jump)
+        decomposition = trotterise(model, P, 0.025)
 
         state = productpepo(fill((0, 0, -1), 2, 2), 4)
         weights = SUWeight(state)
 
         for _ in 1:5
-            trotterstep!(state, weights, u)
+            timestep!(state, weights, decomposition)
         end
         m = onesite(state)
         @test abs(real(tr(m)) - 1) < 1e-8
@@ -81,6 +81,6 @@ end # SimpleUpdateSetup
     @testset "a unit cell smaller than 2x2 is rejected" begin
         u = bondpropagator(zero(Hamiltonian) + Dissipator(0.0 * Z), P, 0.01)
         state = productpepo((0, 0, -1), 1)
-        @test_throws ArgumentError trotterstep!(state, SUWeight(state), u)
+        @test_throws ArgumentError axissweep!(state, SUWeight(state), u, 1)
     end
 end
