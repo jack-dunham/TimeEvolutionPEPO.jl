@@ -7,6 +7,21 @@ Conventions for every task below: use the `julia_eval` MCP tool, never `bash jul
 lines you touched (JuliaFormatter BlueStyle). ReTestItems discovers `test/*_test.jl` only. Do not
 run `Pkg.test()` without asking; run the specific test files named in each task.
 
+**Nothing in `src/` is deleted.** Code whose behaviour PEPSKit does not directly provide moves to
+`src/dev/` with its include commented out, to be refactored later. Code that PEPSKit does replace also
+moves there rather than being removed, and only stops being loaded once its replacement demonstrably
+works — replace first, park second, in that order and never the reverse. This applies per subsystem,
+not per file: most files mix replaced and unreplaced behaviour (`pepo/weights.jl` holds `setweight!`
+alongside `bondentropy`; `truncation/truncation.jl` holds the `FET` and `SVDU` structs alongside
+`NTU`), so the unit of work is a subsystem's replacement landing, at which point the old files behind
+it are parked whole.
+
+Two mappings in §0 are unverified and must not drive a parking decision until checked: `WTG` is not a
+state gauge — `fixgauge!(iso, metric, ::WTG)` gauges the truncation isometries, so its analogue is
+`contractions/bondenv/gaugefix.jl`, not `SUGauge` — and the product-state constructors in
+`pepo/pepo.jl` have no PEPSKit builder beyond `infinite_temperature_density_matrix`, which covers only
+the identity.
+
 ## 0. API mapping
 
 | Current | PEPSKit replacement | Notes |

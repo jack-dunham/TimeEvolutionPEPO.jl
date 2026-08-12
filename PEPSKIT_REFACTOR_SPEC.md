@@ -29,17 +29,29 @@ negativity, and the cluster-MPO/FSM construction.
 4. **The gaps stay here, rebuilt on PEPSKit primitives.** NTU becomes another bond-environment
    source feeding `bond_truncate`; negativity, the term algebra and the FSM/cluster-MPO code stay.
 
-## What gets deleted
+## What gets parked
 
-`src/pepo/` (except product-state constructors), `src/edgelattice.jl`, `src/abstractlattice.jl`,
-`src/contract/`, `src/gauge/`, `src/dev/vidalgauge.jl`, `src/dev/beliefpropagation.jl`,
-`src/truncation/{simpleupdate,isometries,truncation,clu}.jl`, `src/sparsetensormap.jl`, the
-`LocalStepper`/`AxialStepper`/`FullStepper` zoo, and most of `src/densitymatrix.jl`. That is on the
-order of 6–7k lines, against roughly 1.5k lines of new adapter and Lindblad-update code.
+Nothing is deleted. Code PEPSKit does not replace moves to `src/dev/` with its include commented out,
+for a later refactor; code PEPSKit does replace moves there too, and stops being loaded only once the
+replacement demonstrably works. The listing below is therefore what leaves the live tree, not what is
+removed from the repository — and since most files mix replaced with unreplaced behaviour, they are
+parked whole, per subsystem, as each replacement lands.
+
+`src/pepo/`, `src/edgelattice.jl`, `src/abstractlattice.jl`, `src/contract/`, `src/gauge/`,
+`src/dev/vidalgauge.jl`, `src/truncation/{simpleupdate,isometries,truncation,iterative,clu}.jl`,
+`src/sparsetensormap.jl`, the `LocalStepper`/`AxialStepper`/`FullStepper` zoo, and most of
+`src/densitymatrix.jl` — on the order of 7.5k lines leaving the live tree, against roughly 1.5k lines
+of new adapter and Lindblad-update code.
+
+Of that, the parts with no PEPSKit counterpart stay parked and awaiting a rewrite rather than merely
+superseded: `NTU` and its cluster metric under `truncation/clu/`, `IterativeSU`, `WTG`, the
+product-state constructors, `bondentropy`, `negativity`, and the minimal canonical form already moved
+in `src/dev/mcf.jl`.
 
 `AxialPEPO` deserves a specific mention: PEPSKit sweeps the second axis by rotating the state
 (`rotl90`), not by holding a permuted-transposed copy, so the `setaxis!` aliasing hazard disappears
 with it.
+
 
 ## Order of work
 
