@@ -31,7 +31,8 @@ export cj, conjugate
 
 export ThermalState, bloch, productpepo, bondentropy
 
-export DensityMatrix, partialtrace, expval, tracenetwork, isconverged
+export DensityMatrix, PurifiedDensityMatrix, partialtrace, expval, tracenetwork, isconverged
+export correlationlength, correlator, negativity
 
 export Hamiltonian, Liouvillian, Dissipator, Ising
 export AbstractTerm, AbstractSingleTerm, AbstractSumOfTerms
