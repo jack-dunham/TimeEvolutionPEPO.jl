@@ -1,0 +1,97 @@
+# exact benchmarks, commit ba2345c
+# working tree:  M src/truncation/iterative.jl; ?? test/exact_benchmarks.jl; ?? test/generate_reference_output.jl; ?? test/reference/
+
+B1  AGREES
+  one-local Lindblad, D=1, exact single-site exponential
+  deviation 2.498e-15  tolerance 1.0e-08
+    (step = 0, t = 0.0, x = 0.0, z = -1.0, x_exact = 0.0, z_exact = -1.0, trace = 1.0)
+    (step = 1, t = 0.02, x = -0.01980132669324478, z = -0.9900498337491691, x_exact = -0.0198013266932447, z_exact = -0.990049833749168, trace = 0.9999999999999999)
+    (step = 2, t = 0.04, x = -0.039210560847676726, z = -0.9801986733067565, x_exact = -0.03921056084767679, z_exact = -0.9801986733067555, trace = 1.0000000000000002)
+    (step = 3, t = 0.06, x = -0.05823546641575125, z = -0.9704455335485089, x_exact = -0.05823546641575128, z_exact = -0.9704455335485084, trace = 1.0000000000000002)
+    (step = 4, t = 0.08, x = -0.07688365361336436, z = -0.9607894391523242, x_exact = -0.07688365361336423, z_exact = -0.9607894391523233, trace = 1.0)
+    (step = 5, t = 0.1, x = -0.09516258196404041, z = -0.9512294245007143, x_exact = -0.09516258196404043, z_exact = -0.951229424500714, trace = 1.0)
+    (step = 6, t = 0.12, x = -0.11307956328284259, z = -0.9417645335842496, x_exact = -0.11307956328284247, z_exact = -0.9417645335842487, trace = 1.0)
+    (step = 7, t = 0.14, x = -0.13064176460119434, z = -0.9323938199059475, x_exact = -0.1306417646011942, z_exact = -0.9323938199059483, trace = 1.0)
+    (step = 8, t = 0.16, x = -0.14785621103378882, z = -0.9231163463866353, x_exact = -0.14785621103378865, z_exact = -0.9231163463866358, trace = 0.9999999999999999)
+    (step = 9, t = 0.18, x = -0.16472978858872792, z = -0.9139311852712271, x_exact = -0.16472978858872794, z_exact = -0.9139311852712281, trace = 0.9999999999999999)
+    (step = 10, t = 0.2, x = -0.1812692469220182, z = -0.9048374180359587, x_exact = -0.18126924692201807, z_exact = -0.9048374180359595, trace = 1.0)
+    (step = 11, t = 0.22, x = -0.1974812020375218, z = -0.8958341352965283, x_exact = -0.19748120203752145, z_exact = -0.895834135296528, trace = 0.9999999999999998)
+    (step = 12, t = 0.24, x = -0.21337213893344692, z = -0.8869204367171568, x_exact = -0.21337213893344664, z_exact = -0.8869204367171575, trace = 1.0)
+    (step = 13, t = 0.26, x = -0.2289484141964345, z = -0.8780954309205609, x_exact = -0.2289484141964338, z_exact = -0.8780954309205614, trace = 1.0000000000000002)
+    (step = 14, t = 0.28, x = -0.24421625854427553, z = -0.8693582353988061, x_exact = -0.24421625854427456, z_exact = -0.869358235398806, trace = 1.0000000000000002)
+    (step = 15, t = 0.3, x = -0.2591817793182834, z = -0.860707976425058, x_exact = -0.2591817793182821, z_exact = -0.8607079764250577, trace = 0.9999999999999999)
+    (step = 16, t = 0.32, x = -0.27385096292631084, z = -0.8521437889662122, x_exact = -0.27385096292630906, z_exact = -0.8521437889662111, trace = 0.9999999999999998)
+    (step = 17, t = 0.34, x = -0.28822967723739235, z = -0.8436648165963851, x_exact = -0.28822967723739024, z_exact = -0.8436648165963836, trace = 0.9999999999999998)
+    (step = 18, t = 0.36, x = -0.3023236739289711, z = -0.8352702114112733, x_exact = -0.302323673928969, z_exact = -0.8352702114112719, trace = 0.9999999999999999)
+    (step = 19, t = 0.38, x = -0.3161385907876462, z = -0.8269591339433638, x_exact = -0.3161385907876442, z_exact = -0.8269591339433623, trace = 0.9999999999999999)
+    (step = 20, t = 0.4, x = -0.32967995396436317, z = -0.8187307530779842, x_exact = -0.3296799539643607, z_exact = -0.8187307530779818, trace = 0.9999999999999999)
+
+B2  DISAGREES
+  interacting Lindblad, derivative vs exact generator
+  deviation 2.304e+00  tolerance 1.0e-03
+  deviation with the Hamiltonian sign reversed: 6.478e-06
+    (dt = 0.004, dx = -2.5093506168724353, dz = 0.3996002665331566, err_x = 2.3013506168724356, err_z = 0.0003997334668434105)
+    (dt = 0.002, dx = -2.5106882329496982, dz = 0.3998000666499135, err_x = 2.3026882329496985, err_z = 0.00019993335008650082)
+    (dt = 0.001, dx = -2.511347355577842, dz = 0.3999000166670097, err_x = 2.3033473555778423, err_z = 9.998333299032769e-5)
+
+B3  AGREES
+  trace, hermiticity and positivity of the one-site RDM
+  deviation 4.441e-16  tolerance 1.0e-06
+    (step = 0, t = 0.0, trace_error = 0.0, hermiticity = 0.0, min_eigenvalue = 0.0)
+    (step = 1, t = 0.025, trace_error = 4.440892098500626e-16, hermiticity = 0.0, min_eigenvalue = 0.006056878865312483)
+    (step = 2, t = 0.05, trace_error = 3.3306690738754696e-16, hermiticity = 0.0, min_eigenvalue = 0.011736847159472765)
+    (step = 3, t = 0.07500000000000001, trace_error = 0.0, hermiticity = 0.0, min_eigenvalue = 0.01705506741481438)
+    (step = 4, t = 0.1, trace_error = 2.220446049250313e-16, hermiticity = 0.0, min_eigenvalue = 0.022028061522956978)
+    (step = 5, t = 0.125, trace_error = 1.1102230246251565e-16, hermiticity = 0.0, min_eigenvalue = 0.026673470893395224)
+    (step = 6, t = 0.15000000000000002, trace_error = 4.440892098500626e-16, hermiticity = 0.0, min_eigenvalue = 0.03100982325534616)
+    (step = 7, t = 0.17500000000000002, trace_error = 1.1102230246251565e-16, hermiticity = 0.0, min_eigenvalue = 0.03505630959382459)
+    (step = 8, t = 0.2, trace_error = 1.1102230246251565e-16, hermiticity = 0.0, min_eigenvalue = 0.038832573982315925)
+    (step = 9, t = 0.225, trace_error = 4.440892098500626e-16, hermiticity = 0.0, min_eigenvalue = 0.04235851834973493)
+    (step = 10, t = 0.25, trace_error = 0.0, hermiticity = 0.0, min_eigenvalue = 0.045654123529190384)
+    (step = 11, t = 0.275, trace_error = 4.440892098500626e-16, hermiticity = 0.0, min_eigenvalue = 0.048739287305632734)
+    (step = 12, t = 0.30000000000000004, trace_error = 0.0, hermiticity = 0.0, min_eigenvalue = 0.05163367962769339)
+    (step = 13, t = 0.325, trace_error = 2.220446049250313e-16, hermiticity = 0.0, min_eigenvalue = 0.05435661468802452)
+    (step = 14, t = 0.35000000000000003, trace_error = 0.0, hermiticity = 0.0, min_eigenvalue = 0.056926939211476686)
+    (step = 15, t = 0.375, trace_error = 2.220446049250313e-16, hermiticity = 0.0, min_eigenvalue = 0.05936293602052707)
+    (step = 16, t = 0.4, trace_error = 4.440892098500626e-16, hermiticity = 0.0, min_eigenvalue = 0.06168224176698668)
+    (step = 17, t = 0.42500000000000004, trace_error = 1.1102230246251565e-16, hermiticity = 0.0, min_eigenvalue = 0.06390177761808843)
+    (step = 18, t = 0.45, trace_error = 2.220446049250313e-16, hermiticity = 0.0, min_eigenvalue = 0.0660376916520901)
+    (step = 19, t = 0.47500000000000003, trace_error = 2.220446049250313e-16, hermiticity = 0.0, min_eigenvalue = 0.06810531174012019)
+    (step = 20, t = 0.5, trace_error = 0.0, hermiticity = 0.0, min_eigenvalue = 0.07011910775409398)
+
+B4  AGREES
+  high-temperature limit of thermal annealing
+  deviation 2.074e-04  tolerance 5.0e-02
+  measured/exact: zz 1.000129  x 0.999793
+    (step = 1, t = 0.005, dzz = -0.3749996092825114, dzz_exact = -0.375, dx = 0.9999878582277874, dx_exact = 1.0)
+    (step = 2, t = 0.01, dzz = -0.37500898323682974, dzz_exact = -0.375, dx = 0.9999487986755632, dx_exact = 1.0)
+    (step = 3, t = 0.015, dzz = -0.3750247503879145, dzz_exact = -0.375, dx = 0.9998837075916552, dx_exact = 1.0)
+    (step = 4, t = 0.02, dzz = -0.37504822505464164, dzz_exact = -0.375, dx = 0.9997925971543171, dx_exact = 1.0)
+
+B5  DISAGREES
+  product-state constructor prepares the requested rho
+  deviation 4.756e-01  tolerance 1.0e-08
+  deviation against rho^4: 1.665e-16
+    (bloch = (0.0, 0.0, -0.5), deviation_vs_rho = 0.47560975609756095, deviation_vs_rho4 = 0.0)
+    (bloch = (0.4, 0.5, -0.6), deviation_vs_rho = 0.08373867276151215, deviation_vs_rho4 = 1.6653345369377348e-16)
+    (bloch = (0.2, -0.3, 0.1), deviation_vs_rho = 0.4356420735642073, deviation_vs_rho4 = 1.1102230246251565e-16)
+
+B6  DISAGREES
+  Larmor precession, sign of the Hamiltonian in a Liouvillian
+  deviation 1.129e+00  tolerance 1.0e-08
+  deviation with the Hamiltonian sign reversed: 4.441e-16
+    (t = 0.0, y = 0.0, y_exact = 0.0, x = 1.0, x_exact = 1.0)
+    (t = 0.05, y = -0.09983341664682814, y_exact = 0.09983341664682815, x = 0.9950041652780256, x_exact = 0.9950041652780258)
+    (t = 0.1, y = -0.19866933079506116, y_exact = 0.19866933079506122, x = 0.9800665778412416, x_exact = 0.9800665778412416)
+    (t = 0.15000000000000002, y = -0.2955202066613395, y_exact = 0.2955202066613396, x = 0.9553364891256062, x_exact = 0.955336489125606)
+    (t = 0.2, y = -0.3894183423086506, y_exact = 0.3894183423086505, x = 0.9210609940028852, x_exact = 0.9210609940028851)
+    (t = 0.25, y = -0.4794255386042032, y_exact = 0.479425538604203, x = 0.8775825618903725, x_exact = 0.8775825618903728)
+    (t = 0.30000000000000004, y = -0.5646424733950359, y_exact = 0.5646424733950355, x = 0.825335614909678, x_exact = 0.8253356149096782)
+
+B7  DISAGREES
+  one-local model at bond dimension above the gate rank
+  deviation 7.247e+01  tolerance 1.0e-08
+    (D = 1, deviation = 1.1102230246251565e-15)
+    (D = 2, deviation = 2.1094237467877974e-15)
+    (D = 4, deviation = 2.0197386996551954)
+    (D = 8, deviation = 72.46722064106137)

@@ -80,7 +80,51 @@ This file is scaffolding. It is deleted at the end of Phase 5 once `PEPO` is gon
 
 ## 2. Phase 0 — reference output, then TensorKit 0.17
 
-### 0.1 Record reference output (first task, on `dev`, before any code change)
+### 0.1 Exact benchmarks (done; `test/exact_benchmarks.jl`, report in `test/reference/benchmarks.txt`)
+
+Seven benchmarks compare the package against references computed independently with dense linear
+algebra, so a disagreement locates an error in the package rather than a change in it. Results at
+commit `ba2345c`:
+
+| | subject | result |
+|:---|:---|:---|
+| B1 | one-local Lindblad, `D=1`, against `exp(t𝓛)` | agrees, 2.5e-15 |
+| B2 | interacting Lindblad, `d⟨O⟩/dt` against the exact generator | disagrees, 2.30; **6.5e-6 with the Hamiltonian sign reversed** |
+| B3 | unit trace, Hermiticity, positivity of the one-site RDM | agrees, 4.4e-16 |
+| B4 | high-temperature limit of thermal annealing | agrees, 2.1e-4; measured/exact `zz` 1.000129, `x` 0.999793, so `β = t` |
+| B5 | product-state constructor prepares the requested `ρ` | disagrees, 0.476; **1.7e-16 against `ρ⁴`** |
+| B6 | Larmor precession, sign of `H` in a `Liouvillian` | disagrees, 1.13; **4.4e-16 with the sign reversed** |
+| B7 | one-local model at bond dimension above the gate rank | disagrees: `D=1` 1.1e-15, `D=2` 2.1e-15, `D=4` 2.02, `D=8` 72.5 |
+
+These benchmarks, not trajectory comparisons, are the completion criterion for later phases: they
+check against exact results rather than against the current implementation, so they remain valid
+across the refactor. `test/generate_reference_output.jl` records trajectories for change detection
+and is optional.
+
+### Pre-existing defects found by task 0.1
+
+1. **The Hamiltonian in a `Liouvillian` enters with the wrong sign.** Evolution is `dρ/dt = +i[H,ρ]`
+   instead of `-i[H,ρ]` (B6: reversing the sign of `H` reproduces the package to 4.4e-16 in the
+   simplest possible setting — one spin, `H = (h/2)Z`, `D=1`, no dissipation). B2 confirms it for a
+   two-body term. The thermal path is unaffected (B4 agrees, and `β = t`), so the error is in
+   `vectorise` for the Hamiltonian part of a Liouvillian, not in `thermalvectorise`. Every Lindblad
+   result the package has produced corresponds to `-H`. On a bipartite lattice with this tutorial's
+   dissipator, `J → -J` is partly absorbed by a sublattice rotation, so single-site `⟨X⟩` may be
+   unaffected while correlators and sublattice-resolved `⟨Z⟩` are not. Fix before Phase 4 and record
+   the change separately from refactor changes.
+2. **`pepositedata` prepares `ρ⁴`, not `ρ`** (`src/pepo/pepo.jl:100-114`). It writes the input matrix
+   into all four directional tensors and contracts them in a chain through the physical index. Pure
+   states are projectors and `ThermalState` is the identity, so every example in the docs and tests
+   is unaffected; any mixed initial state is silently replaced by `ρ⁴/tr(ρ⁴)`. Fix in Phase 1, where
+   the constructors are rewritten onto PEPSKit's product-state builders anyway.
+3. **Bond dimension above the rank the gate can generate produces garbage** (B7). Padded bond weights
+   contain exact zeros, which simple update inverts. The failure is silent and severe: a one-local
+   model that is exact at `D=1,2` is wrong by 2.0 at `D=4` and by 72.5 at `D=8`. The documented
+   example `PEPO(rho, ℂ^2, ℂ^4)` is in this regime for any gate of rank below 4. PEPSKit guards the
+   same operation with `sdiag_pow(s, pow; tol)`, so Phase 3/4 adoption resolves it; until then, keep
+   `D` at or below the gate rank reported by the compression log.
+
+### Trajectory recording (optional, `test/generate_reference_output.jl`)
 
 Add `test/generate_reference_output.jl`. It runs the three configurations below against the
 unmodified `dev` code and writes one plain-text file per configuration under `test/reference/`,
