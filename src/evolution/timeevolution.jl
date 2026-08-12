@@ -48,7 +48,7 @@ function _timestep!(
     return pepo
 end
 
-function trottertep!(
+function trotterstep!(
     pepo!::PEPO, truncator, stepper::FullStepper, truncalg::SimpleUpdate; kwargs...
 )
     isoms = newisometries(pepo!, stepper)
