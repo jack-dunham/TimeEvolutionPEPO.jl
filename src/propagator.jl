@@ -1,6 +1,5 @@
-# Two-site propagators for PEPSKit's simple-update pipeline. A Liouvillian acts jointly on the ket and
-# bra of a site, which PEPSKit's own two-site operators cannot express, so each site's pair is fused
-# into one leg and the propagator becomes an ordinary two-site operator on `fuse(P ⊗ P')`.
+# Two-site propagators. A Liouvillian acts jointly on the ket and bra of a site, so the propagator
+# carries all four physical legs of a bond and the ket and bra stay separate throughout.
 
 """
     $(TYPEDSIGNATURES)
@@ -48,16 +47,8 @@ end
 """
     $(TYPEDSIGNATURES)
 
-Isometry fusing a site's physical pair into one leg, `fuse(P ⊗ P') ← P ⊗ P'`.
-"""
-fusephysical(P::IndexSpace) = isomorphism(fuse(P ⊗ P'), P ⊗ P')
-
-"""
-    $(TYPEDSIGNATURES)
-
-Two-site propagator `exp(dt * generator(model, P))` on the fused physical space of each site, giving an
-`(F ⊗ F) ← (F ⊗ F)` map with `F = fuse(P ⊗ P')` — the `(2, 2)` shape PEPSKit's two-site operators
-require.
+Two-site propagator `exp(dt * generator(model, P))` as an `AbsTen{4,4}` on the physical legs of a bond,
+ordered `(ket₁, bra₁, ket₂, bra₂)` in both the codomain and the domain.
 """
 function bondpropagator(model::AbstractTerm, P::IndexSpace, dt::Number)
     matrix = exp(dt * generator(model, P))
@@ -65,24 +56,6 @@ function bondpropagator(model::AbstractTerm, P::IndexSpace, dt::Number)
     # Declared in the order the generator's composite index runs, then regrouped per site.
     spaces = P ⊗ P ⊗ P' ⊗ P'
     t = vectorised_tensormap(matrix, spaces, spaces)
-    t = permute(t, ((1, 3, 2, 4), (5, 7, 6, 8)))
 
-    u = fusephysical(P)
-    ud = u'
-    @tensor propagator[o1 o2; i1 i2] :=
-        u[o1; k1 b1] * u[o2; k2 b2] * t[k1 b1 k2 b2; q1 c1 q2 c2] *
-        ud[q1 c1; i1] * ud[q2 c2; i2]
-
-    return propagator
-end
-
-"""
-    $(TYPEDSIGNATURES)
-
-Vectorised identity in the fused basis, as a plain vector: the trace functional, whose invariance
-under a propagator is trace preservation.
-"""
-function vectorisedidentity(P::IndexSpace)
-    arr = convert(Array, fusephysical(P))
-    return [sum(arr[a, k, k] for k in 1:dim(P)) for a in 1:size(arr, 1)]
+    return permute(t, ((1, 3, 2, 4), (5, 7, 6, 8)))
 end

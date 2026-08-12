@@ -21,7 +21,7 @@ function dense_liouvillian(H::AbstractMatrix, jumps::AbstractVector)
     return G
 end
 
-"""Two-site propagator as a plain matrix, in whatever index order the fused legs impose."""
+"""Two-site propagator as a plain matrix, in whatever index order the legs impose."""
 function matrixof(propagator::AbstractTensorMap)
     n = dim(codomain(propagator))
     return reshape(convert(Array, propagator), n, n)
@@ -61,12 +61,18 @@ end # PropagatorSetup
     end
 
     @testset "trace preservation" begin
-        # <<I| exp(dt L) = <<I| for a Lindblad generator: the trace functional is left invariant.
-        w = kron(vectorisedidentity(P), vectorisedidentity(P))
-        preserved(model) = norm(transpose(w) * matrixof(bondpropagator(model, P, dt)) - transpose(w))
+        # Tracing both output pairs of exp(dt L) must leave the identity on the inputs, for a
+        # Lindblad generator but not a thermal one.
+        # `matrixof` runs its composite index column-major over (ket1, bra1, ket2, bra2), so the trace
+        # functional is the vector supported on ket == bra at each site.
+        d = dim(P)
+        w = vec([
+            (k1 == c1 && k2 == c2) ? 1.0 : 0.0 for k1 in 1:d, c1 in 1:d, k2 in 1:d, c2 in 1:d
+        ])
+        preserved(model) =
+            norm(transpose(w) * matrixof(bondpropagator(model, P, dt)) - transpose(w))
 
         @test preserved(lindblad) < 1e-10
-        # The thermal generator is not trace preserving, so the same contraction must differ.
         @test preserved(thermal) > 1e-3
     end
 
@@ -75,11 +81,10 @@ end # PropagatorSetup
         @test matrixof(u) ≈ Matrix{ComplexF64}(I, 16, 16) atol = 1e-12
     end
 
-    @testset "shape matches PEPSKit's two-site operators" begin
+    @testset "all four physical legs stay separate" begin
         u = bondpropagator(lindblad, P, dt)
-        F = fuse(P ⊗ P')
-        @test (numout(u), numin(u)) == (2, 2)
-        @test codomain(u) == F ⊗ F
-        @test domain(u) == F ⊗ F
+        @test (numout(u), numin(u)) == (4, 4)
+        @test codomain(u) == P ⊗ P' ⊗ P ⊗ P'
+        @test domain(u) == P ⊗ P' ⊗ P ⊗ P'
     end
 end
