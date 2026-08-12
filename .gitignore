@@ -5,3 +5,4 @@ src/models/
 *.DS_store
 dev/
 !src/dev
+/CLAUDE.md
