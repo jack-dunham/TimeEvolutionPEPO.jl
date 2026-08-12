@@ -439,10 +439,86 @@ function b8(; h = 1.0, a = 1.5, dt = 0.05, numsteps = 6)
     )
 end
 
+"""
+Exact `d⟨O⟩/dt` at `t = 0` on site `A` of a three-period stripe product state `A, B, C` along axis 2,
+uniform along axis 1, under a two-site bond Hamiltonian `h2` plus one one-local generator per site.
+
+Exchanging the two factors of `h2` is a lattice inversion, so it is unobservable whenever the two
+neighbours along an axis hold the same state — as they do for a uniform or checkerboard state. Here
+`A` has `B` on one side and `C` on the other, which breaks inversion and makes the two orderings
+distinguishable.
+"""
+function exact_derivative_stripe(
+        O::AbstractMatrix, rhoA::AbstractMatrix, rhoB::AbstractMatrix, rhoC::AbstractMatrix,
+        h2::AbstractMatrix, jump::AbstractMatrix
+    )
+    Id = Matrix{ComplexF64}(I, 2, 2)
+    Gloc = dense_liouvillian(zeros(ComplexF64, 2, 2), [jump])
+    dOdt = real(tr(O * reshape(Gloc * vec(rhoA), 2, 2)))
+
+    Gbond = dense_liouvillian(h2, Matrix{ComplexF64}[])
+    bond(r1, r2) = reshape(Gbond * vec(kron(r1, r2)), 4, 4)
+
+    # Axis 1: both neighbours hold A. Axis 2: B on the forward bond, C on the backward one.
+    dOdt += real(tr(kron(O, Id) * bond(rhoA, rhoA))) + real(tr(kron(Id, O) * bond(rhoA, rhoA)))
+    dOdt += real(tr(kron(O, Id) * bond(rhoA, rhoB)))
+    dOdt += real(tr(kron(Id, O) * bond(rhoC, rhoA)))
+
+    return dOdt
+end
+
+"""
+B9: an asymmetric two-site term, `a X_j Y_k`, on a three-period stripe. Every other benchmark uses
+terms invariant under exchanging the two sites, so none of them constrains the site order. Reports
+the deviation against the reference for the exchanged term `a Y_j X_k`, which must be large for the
+benchmark to have any power.
+"""
+function b9(; a = 1.0, dts = (0.004, 0.002), D = 8)
+    X, Y, Z = PAULI
+    jump = 0.5 * (Y - im * Z)
+    # All unit length, so the rho^4 constructor defect is inert, and all different from each other.
+    vA, vB, vC = (0.36, 0.48, -0.8), (-0.8, 0.0, 0.6), (0.0, -1.0, 0.0)
+    rhoA, rhoB, rhoC = bloch(vA), bloch(vB), bloch(vC)
+    init = [vA vB vC; vA vB vC]  # tuples: `[matrix matrix; ...]` would concatenate into one matrix
+    alg = CTMRG(; bonddim = 8, tol = 1.0e-10, maxiter = 100, verbose = false)
+    model = Model(a * LocalOp(X, Y) + Dissipator(jump))
+
+    observables = (X, Y, Z)
+    reference(h2) = [
+        exact_derivative_stripe(O, rhoA, rhoB, rhoC, h2, jump) for O in observables
+    ]
+    exact = reference(a * kron(X, Y))
+    exchanged = reference(a * kron(Y, X))
+
+    derivs = map(dts) do dt
+        Random.seed!(SEED)
+        sim = quiet(
+            () -> Simulation(PEPO(init, 2, D), model, TEBD(); timestep = dt),
+        )
+        r0 = onesite_rdm(quantumstate(sim), alg)
+        b0 = [real(expval(r0, O)) for O in observables]
+        quiet(() -> simulate!(sim; numsteps = 1, verbose = false))
+        r1 = onesite_rdm(quantumstate(sim), alg)
+        return ([real(expval(r1, O)) for O in observables] .- b0) ./ dt
+    end
+
+    extrapolated = 2 .* derivs[2] .- derivs[1]
+    rows = [
+        (observable = n, extrapolated = e, exact = x, exchanged_sites = s) for
+            (n, e, x, s) in zip(("x", "y", "z"), extrapolated, exact, exchanged)
+    ]
+
+    return (
+        name = "B9", description = "asymmetric two-site term, site ordering",
+        deviation = maximum(abs.(extrapolated .- exact)), tolerance = 1.0e-3,
+        deviation_exchanged_sites = maximum(abs.(extrapolated .- exchanged)), rows = rows,
+    )
+end
+
 function run_benchmarks(dir::AbstractString = BENCHMARK_DIR)
     mkpath(dir)
     results = []
-    for f in (b1, b2, b3, b4, b5, b6, b7, b8)
+    for f in (b1, b2, b3, b4, b5, b6, b7, b8, b9)
         try
             push!(results, f())
         catch e
@@ -478,6 +554,10 @@ function run_benchmarks(dir::AbstractString = BENCHMARK_DIR)
             )
             haskey(r, :deviation_if_rho4_intended) && @printf(
                 io, "  deviation against rho^4: %.3e\n", r.deviation_if_rho4_intended
+            )
+            haskey(r, :deviation_exchanged_sites) && @printf(
+                io, "  deviation with the two sites exchanged: %.3e\n",
+                r.deviation_exchanged_sites
             )
             for row in r.rows
                 println(io, "    ", row)

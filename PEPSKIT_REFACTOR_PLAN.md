@@ -96,6 +96,7 @@ commit `ba2345c`:
 | B6 | Larmor precession, sign of `H` in a `Liouvillian` | disagrees, 1.13; **4.4e-16 with the sign reversed** |
 | B7 | one-local model at bond dimension above the gate rank | disagrees: `D=1` 1.1e-15, `D=2` 2.1e-15, `D=4` 2.02, `D=8` 72.5 |
 | B8 | `Ising` fast path against the generic path at zero coupling | agrees, 8.9e-16 (after the fix below; 1.13 before) |
+| B9 | asymmetric two-site term on a three-period stripe, site ordering | agrees, 6.6e-5; 1.60 against the exchanged ordering |
 
 These benchmarks, not trajectory comparisons, are the completion criterion for later phases: they
 check against exact results rather than against the current implementation, so they remain valid
@@ -108,8 +109,15 @@ and is optional.
    with `D[conj(L)]` instead of `D[L]`. `tebdtensor` built the vectorised superoperator as a matrix
    whose composite index runs ket-slowest (row major), then moved it into the eight-leg array with
    `copyto!`, which fills the fastest axis first — reversing each group of four legs, which both
-   exchanges ket with bra and reverses the two sites. The site reversal is invisible for terms
-   symmetric under exchanging the two sites, which is every term the tests and documentation use.
+   exchanges ket with bra and reverses the two sites.
+
+   The two halves differ in severity. Exchanging ket with bra is a physics error with no symmetry
+   excusing it. Reversing the two sites is a lattice inversion: applied to every bond of a
+   translation-invariant model it is a relabelling, unobservable unless the state itself breaks
+   inversion symmetry, and invisible outright for terms symmetric under exchanging the two sites —
+   which is every term the tests and documentation use. B9 pins it with a three-period stripe, where
+   a site's two neighbours along an axis hold different states; a checkerboard is not enough, since
+   there both neighbours hold the same state.
    The governing convention is PEPSKit's `PEPOTensor : P ⊗ P´ ← N ⊗ E ⊗ S ⊗ W` — index 1 outgoing
    (ket, left-multiplied), index 2 incoming (bra, right-multiplied), as confirmed by
    `trace_physicalspaces` contracting `O[p p; N E S W]` and by `_apply_sitegate` applying `gate * a`

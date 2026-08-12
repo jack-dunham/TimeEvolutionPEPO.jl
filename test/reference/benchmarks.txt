@@ -1,5 +1,5 @@
-# exact benchmarks, commit 0696970
-# working tree:  M src/model/equation.jl;  M src/model/heisenberg.jl;  M src/tensorkitutils.jl;  M test/exact_benchmarks.jl;  M test/reference/benchmarks.txt
+# exact benchmarks, commit 8ec0341
+# working tree:  M test/exact_benchmarks.jl;  M test/reference/benchmarks.txt
 
 B1  AGREES
   one-local Lindblad, D=1, exact single-site exponential
@@ -101,3 +101,11 @@ B8  AGREES
   deviation 8.882e-16  tolerance 1.0e-08
     (dt = 0.05, steps = 6, interacting_discrepancy = 0.00046700753955952745)
     (dt = 0.025, steps = 12, interacting_discrepancy = 0.00011704906826298656)
+
+B9  AGREES
+  asymmetric two-site term, site ordering
+  deviation 6.632e-05  tolerance 1.0e-03
+  deviation with the two sites exchanged: 1.600e+00
+    (observable = "x", extrapolated = -1.9360552938451765, exact = -1.936, exchanged_sites = -0.6559999999999997)
+    (observable = "y", extrapolated = 0.5280070013895105, exact = 0.528, exchanged_sites = -1.072)
+    (observable = "z", extrapolated = 0.6016663234755248, exact = 0.6016, exchanged_sites = 0.21760000000000002)
