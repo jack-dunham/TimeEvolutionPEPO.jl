@@ -60,9 +60,13 @@ reference configurations reproduce their stored numbers within the recorded tole
 
 Recorded, not fixed, per instruction. Detail and remediation points are in the plan.
 
-1. **The Hamiltonian in a `Liouvillian` has the wrong sign**: evolution is `dρ/dt = +i[H,ρ]`.
-   Confirmed on one spin with `H = (h/2)Z` at `D=1` — reversing the sign of `H` reproduces the
-   package to 4.4e-16. The thermal path is correct. Every Lindblad result so far corresponds to `-H`.
+1. **Fixed.** The physical legs of the Trotter gate were reversed, so evolution ran with
+   `dρ/dt = +i[H,ρ]` and with `D[conj(L)]` in place of `D[L]`. Root cause: `tebdtensor` copied the
+   vectorised superoperator into its eight-leg array with `copyto!`, which fills the fastest axis
+   first, whereas the composite index of the superoperator runs ket-slowest — reversing each group of
+   four legs. PEPSKit fixes the convention this must obey: `PEPOTensor : P ⊗ P´ ← N ⊗ E ⊗ S ⊗ W`,
+   index 1 outgoing (ket, left-multiplied), index 2 incoming (bra, right-multiplied). The vectorised
+   expressions were already textbook-correct for that ordering; only the conversion was wrong.
 2. **The product-state constructor prepares `ρ⁴`** instead of `ρ` (`src/pepo/pepo.jl:100-114`).
    Invisible for pure states and for `ThermalState`, which is every example in the docs and tests.
 3. **Bond dimension above the gate rank produces garbage**: exact zeros in the padded bond weights
