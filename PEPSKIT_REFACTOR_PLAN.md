@@ -176,7 +176,24 @@ the two invocations in `test/reference/tolerance.txt`. That figure is the thresh
 comparison: a deviation below it is run-to-run variation, a deviation above it is a change in the
 computed results.
 
-### 0.2 TRGroups to TensorKit 0.17
+### 0.2 TRGroups migration — declined
+
+TRGroups stays on TensorKit 0.14. Raising the bound therefore breaks it while it is still a
+dependency, so task 0.3 and Phase 1 merge into a single stretch during which the package does not
+load and no benchmark can run. Two consequences that shape the work:
+
+- **Delete rather than port.** Anything the plan deletes later must not be migrated to TensorKit 0.17
+  first, since that work would be done blind and then thrown away. NTU, FET, `IterativeSU`,
+  `AxialPEPO`, the stepper zoo and the cluster/FSM code are all in that category.
+- **The exit criterion is the benchmark suite.** The stretch ends when the package loads with no
+  TRGroups dependency and B1, B3, B5, B6, B7, B9 run again. B2, B4 and B8 need the gate pipeline and
+  come back later in Phase 4.
+
+Dependency resolution was checked against the local PEPSKit clone and succeeds: TensorKit 0.17.1,
+MPSKit 0.13.13, MatrixAlgebraKit 0.6.9, KrylovKit 0.10.4, TensorOperations 5.7.0, Zygote 0.7.12 on
+Julia 1.12.5. Note KrylovKit moves 0.9.5 to 0.10.4, so it is a second migration surface.
+
+### 0.2b (superseded) TRGroups to TensorKit 0.17
 
 This work is discarded once TRGroups is dropped, but it keeps every later task runnable (~45 call
 sites: 24 `TensorMap(`, 13 `tsvd`, 5 truncation, 3 orth). Same mechanical edits as 0.3. If it is
