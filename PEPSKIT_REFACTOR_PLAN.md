@@ -128,7 +128,7 @@ and is optional.
 
 ### Pre-existing defects found by task 0.1
 
-1. **Reversed physical legs on the Trotter gate — fixed.** Evolution ran with `dρ/dt = +i[H,ρ]` and
+1. **Reversed physical legs on the two-site propagator — fixed.** Evolution ran with `dρ/dt = +i[H,ρ]` and
    with `D[conj(L)]` instead of `D[L]`. `tebdtensor` built the vectorised superoperator as a matrix
    whose composite index runs ket-slowest (row major), then moved it into the eight-leg array with
    `copyto!`, which fills the fastest axis first — reversing each group of four legs, which both
@@ -296,16 +296,16 @@ This is the part with no upstream equivalent. Build it as a mirror of PEPSKit's 
 (`algorithms/time_evolution/simpleupdate.jl:80-117`), reusing everything except gate application.
 
 **Why an override is needed.** Their `_su_iter!` loops `for gate_ax in 1:2`, applying the same
-2-site `NNGate = AbstractTensorMap{T,S,2,2}` to the ket leg and then the bra leg, breaking after the
+2-site operator `NNGate = AbstractTensorMap{T,S,2,2}` to the ket leg and then the bra leg, breaking after the
 first when `purified`. A Liouvillian acts on `(ket₁,bra₁,ket₂,bra₂)` jointly and does not factorise
 that way.
 
 **Design.**
 
-1. `src/evolution/liouvillegate.jl`: gate type carrying the vectorised superoperator as a 2-2 map on
+1. `src/propagator.jl`: propagator carrying the vectorised superoperator as a 2-2 map on
    *fused* `ket⊗bra` physical spaces, so it satisfies the `NNGate` shape on the fused leg.
 2. Replace `trotterise`/`broadcastmodel` with a builder emitting
-   `LocalCircuit{LiouvilleGate}(lattice, [siteA, siteB] => gate, …)`. `LocalCircuit`'s operator type
+   `LocalCircuit{BondPropagator}(lattice, [siteA, siteB] => gate, …)`. `LocalCircuit`'s operator type
    is a free parameter (`gates::Vector{Pair{Vector{CartesianIndex{2}}, O}}`), so no piracy is
    needed. Keep the existing exponentiation (`tebdtensor`, `Ising`, `ExpOp`, `PowOp`) and the
    `Model`/`TrotterLayer` semantics — the layer structure is this package's design, not PEPSKit's.

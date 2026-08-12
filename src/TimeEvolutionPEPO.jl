@@ -4,11 +4,13 @@ module TimeEvolutionPEPO
 # live; every include commented out below awaits its PEPSKit-based replacement and is unloaded, not
 # deleted. Do not assume any of it works against TensorKit 0.17.
 
+using Accessors
 using DocStringExtensions
 using LinearAlgebra
 using PEPSKit
 using Random
 using TensorKit
+using TupleTools
 
 using PEPSKit: EAST, NORTH, SOUTH, WEST
 
@@ -29,9 +31,30 @@ export ThermalState, bloch, productpepo, bondentropy
 
 export DensityMatrix, partialtrace, expval, tracenetwork, isconverged
 
+export Hamiltonian, Liouvillian, Dissipator, Ising
+export AbstractTerm, AbstractSingleTerm, AbstractSumOfTerms
+export LocalOp, ExpOp, GaussOp, GaussOp2d, PowOp, PowOp2d
+export dissipator, oneterms, isaxial, isexpandable
+
+export generator, bondpropagator, fusephysical, vectorisedidentity
+
 include("linalg.jl")
 include("state.jl")
 include("observables.jl")
+
+## Term algebra: matrix-level code, carried over unchanged
+include("model/abstractterm.jl")
+include("model/terms/localop.jl")
+include("model/terms/linop.jl")
+include("model/terms/expop.jl")
+include("model/terms/gaussop.jl")
+include("model/terms/powop.jl")
+include("model/terms/nnnop.jl")
+include("model/hamiltonian.jl")
+include("model/liouvillian.jl")
+include("model/ising.jl")
+
+include("propagator.jl")
 
 # Awaiting replacement, in the order the plan takes them:
 #
@@ -68,16 +91,6 @@ include("observables.jl")
 #
 # include("truncation/simpleupdate.jl")
 #
-# include("model/abstractterm.jl")
-# include("model/terms/localop.jl")
-# include("model/terms/linop.jl")
-# include("model/terms/expop.jl")
-# include("model/terms/gaussop.jl")
-# include("model/terms/powop.jl")
-# include("model/terms/nnnop.jl")
-# include("model/hamiltonian.jl")
-# include("model/liouvillian.jl")
-# include("model/ising.jl")
 # include("model/trotterlayer.jl")
 # include("model/model.jl")
 # include("model/equation.jl")

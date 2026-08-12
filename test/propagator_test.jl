@@ -1,0 +1,85 @@
+@testsetup module PropagatorSetup
+using Reexport
+@reexport using TimeEvolutionPEPO
+@reexport using TensorKit
+@reexport using LinearAlgebra
+
+export dense_liouvillian, matrixof
+
+"""
+Dense Lindblad generator acting on `vec(rho)`, built independently of the package from
+`dρ/dt = -i[H,ρ] + Σ(LρL' - {L'L,ρ}/2)`. Column-major vectorisation.
+"""
+function dense_liouvillian(H::AbstractMatrix, jumps::AbstractVector)
+    d = size(H, 1)
+    Id = Matrix{ComplexF64}(I, d, d)
+    G = -im * (kron(Id, H) - kron(transpose(H), Id))
+    for L in jumps
+        LdL = L' * L
+        G += kron(conj(L), L) - (kron(Id, LdL) + kron(transpose(LdL), Id)) / 2
+    end
+    return G
+end
+
+"""Two-site propagator as a plain matrix, in whatever index order the fused legs impose."""
+function matrixof(propagator::AbstractTensorMap)
+    n = dim(codomain(propagator))
+    return reshape(convert(Array, propagator), n, n)
+end
+end # PropagatorSetup
+
+@testitem "Two-site propagator" setup = [PropagatorSetup] begin
+    X, Y, Z = PAULI
+    P = ComplexSpace(2)
+    dt = 0.05
+
+    jump = 0.5 * (Y - im * Z)
+    lindblad = 1.5 / 4 * LocalOp(Z, Z) + Dissipator(jump)
+    thermal = 1.5 / 4 * LocalOp(Z, Z) - LocalOp(X)
+
+    @testset "spectrum matches the dense generator" begin
+        # Eigenvalues are invariant under the fusion and under any leg permutation, so they test the
+        # generator and the time step without depending on the index convention.
+        # Rounded sort key: conjugate pairs whose real parts agree only to machine precision would
+        # otherwise be paired inconsistently between the two lists.
+        key(x) = (round(real(x); digits = 9), round(imag(x); digits = 9))
+        for model in (lindblad, thermal)
+            g = generator(model, P)
+            u = bondpropagator(model, P, dt)
+            got = sort(eigvals(matrixof(u)); by = key)
+            want = sort(exp.(dt * eigvals(g)); by = key)
+            @test got ≈ want atol = 1e-8
+        end
+    end
+
+    @testset "the Lindblad generator is the textbook one" begin
+        # Two sites, so the one-local part is halved on each and the bond term appears once.
+        H = 1.5 / 4 * kron(Z, Z)
+        expected = dense_liouvillian(H, [kron(one(jump), jump), kron(jump, one(jump))] ./ sqrt(2))
+        g = generator(lindblad, P)
+        @test sort(real(eigvals(g))) ≈ sort(real(eigvals(expected))) atol = 1e-8
+    end
+
+    @testset "trace preservation" begin
+        # <<I| exp(dt L) = <<I| for a Lindblad generator: the trace functional is left invariant.
+        w = kron(vectorisedidentity(P), vectorisedidentity(P))
+        preserved(model) = norm(transpose(w) * matrixof(bondpropagator(model, P, dt)) - transpose(w))
+
+        @test preserved(lindblad) < 1e-10
+        # The thermal generator is not trace preserving, so the same contraction must differ.
+        @test preserved(thermal) > 1e-3
+    end
+
+    @testset "zero time step gives the identity" begin
+        u = bondpropagator(lindblad, P, 0.0)
+        @test matrixof(u) ≈ Matrix{ComplexF64}(I, 16, 16) atol = 1e-12
+    end
+
+    @testset "shape matches PEPSKit's two-site operators" begin
+        u = bondpropagator(lindblad, P, dt)
+        F = fuse(P ⊗ P')
+        @test (numout(u), numin(u)) == (2, 2)
+        @test codomain(u) == F ⊗ F
+        @test domain(u) == F ⊗ F
+    end
+end
