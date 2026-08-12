@@ -61,13 +61,21 @@ end
 """
     $(TYPEDSIGNATURES)
 
-Expectation value of a one-site operator in the reduced density matrix `rdm`.
+Expectation value of a product of one-site operators in the reduced density matrix `rdm`, one operator
+per site in the order the sites were given to [`partialtrace`](@ref).
 """
-function expval(rdm::AbstractTensorMap, op::AbstractMatrix)
-    numind(rdm) == 2 ||
-        throw(ArgumentError("expected a one-site reduced density matrix, got $(numind(rdm)) indices"))
-    m = reshape(convert(Array, rdm), size(op))
-    return tr(m * op)
+function expval(rdm::AbstractTensorMap, ops::AbstractMatrix...)
+    n = length(ops)
+    numout(rdm) == n || throw(
+        ArgumentError("got $n operators for a $(numout(rdm))-site reduced density matrix")
+    )
+    d = size(first(ops), 1)
+    all(op -> size(op) == (d, d), ops) ||
+        throw(DimensionMismatch("operators differ in size"))
+
+    # The dense reshape runs its composite index with the last site slowest, so the operator for the
+    # first site is the last `kron` factor.
+    return tr(reshape(convert(Array, rdm), d^n, d^n) * reduce(kron, reverse(ops)))
 end
 
 Base.show(io::IO, dm::DensityMatrix) =

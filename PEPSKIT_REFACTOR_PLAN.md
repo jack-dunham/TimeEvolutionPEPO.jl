@@ -128,8 +128,11 @@ and is optional.
 
 ### Pre-existing defects found by task 0.1
 
-1. **Reversed physical legs on the two-site propagator — fixed.** Evolution ran with `dρ/dt = +i[H,ρ]` and
-   with `D[conj(L)]` instead of `D[L]`. `tebdtensor` built the vectorised superoperator as a matrix
+All three are now resolved, and only the first needed a fix; the other two ceased to exist when the
+subsystems holding them were replaced.
+
+1. **Reversed physical legs on the Trotter propagator — fixed.** Evolution ran with `dρ/dt = +i[H,ρ]`
+   and with `D[conj(L)]` instead of `D[L]`. `tebdtensor` built the vectorised superoperator as a matrix
    whose composite index runs ket-slowest (row major), then moved it into the eight-leg array with
    `copyto!`, which fills the fastest axis first — reversing each group of four legs, which both
    exchanges ket with bra and reverses the two sites.
@@ -141,38 +144,46 @@ and is optional.
    which is every term the tests and documentation use. B9 pins it with a three-period stripe, where
    a site's two neighbours along an axis hold different states; a checkerboard is not enough, since
    there both neighbours hold the same state.
+
    The governing convention is PEPSKit's `PEPOTensor : P ⊗ P´ ← N ⊗ E ⊗ S ⊗ W` — index 1 outgoing
    (ket, left-multiplied), index 2 incoming (bra, right-multiplied), as confirmed by
    `trace_physicalspaces` contracting `O[p p; N E S W]` and by `_apply_sitegate` applying `gate * a`
-   to index 1 and `a * gate` to index 2. The vectorisations in `vectorise`/`thermalvectorise` already
-   matched that ordering; only the conversion was wrong, so the fix replaces the `copyto!` with a
-   reshape into the reversed leg order followed by `permutedims` back.
+   to index 1 and `a * gate` to index 2.
 
-   Evidence: B6 moved from 1.13 to 4.4e-16 and its Hamiltonian-reversed figure from 4.4e-16 to 1.13;
-   B2 from 2.30 to 2.8e-6; a jump operator with `conj(L) ≠ ±L` moved from matching `D[conj(L)]` to
-   matching `D[L]` at 3.9e-15. B1, B3 and B4 were unchanged, as expected — their operators are
-   insensitive to the reversal, which is why the defect survived.
-
-   The `Ising` fast path had the same reversal at `src/model/heisenberg.jl:207`, where
-   `TensorMap(L * op * L, space, space)` reshapes the matrix leg-1-fastest. B8 covers it and both
-   conversions now go through `vectorised_tensormap` in `src/tensorkitutils.jl`.
+   The `Ising` fast path had the same reversal at `src/model/heisenberg.jl:207`. Both conversions went
+   through `vectorised_tensormap`, which now lives in `src/propagator.jl`.
 
    Two sites keep the defect and are deliberately untouched, both unreachable:
    `tebdtensor(model::Ising, p, method, dt)` at `src/model/heisenberg.jl:222` returns
    `TensorMap(data, space, D1 * D2')` with `data` never assigned, so it raises `UndefVarError` if
    called; and `tebdtensor(model::AbstractMatrix, …)` at `src/evolution/dynamicalmap.jl:401` is
    reached only through `timestepper`, which has no live callers.
-2. **`pepositedata` prepares `ρ⁴`, not `ρ`** (`src/pepo/pepo.jl:100-114`). It writes the input matrix
-   into all four directional tensors and contracts them in a chain through the physical index. Pure
-   states are projectors and `ThermalState` is the identity, so every example in the docs and tests
-   is unaffected; any mixed initial state is silently replaced by `ρ⁴/tr(ρ⁴)`. Fix in Phase 1, where
-   the constructors are rewritten onto PEPSKit's product-state builders anyway.
-3. **Bond dimension above the rank the gate can generate produces garbage** (B7). Padded bond weights
-   contain exact zeros, which simple update inverts. The failure is silent and severe: a one-local
-   model that is exact at `D=1,2` is wrong by 2.0 at `D=4` and by 72.5 at `D=8`. The documented
-   example `PEPO(rho, ℂ^2, ℂ^4)` is in this regime for any gate of rank below 4. PEPSKit guards the
-   same operation with `sdiag_pow(s, pow; tol)`, so Phase 3/4 adoption resolves it; until then, keep
-   `D` at or below the gate rank reported by the compression log.
+2. **The product-state constructor prepared `ρ⁴`** (`src/pepo/pepo.jl:100-114`) — resolved by
+   construction. `productpepo` writes the local density matrix straight into the tensor, so a mixed
+   initial state is prepared as requested, to 1e-16 across every Pauli component. `bloch` also now
+   rejects Bloch vectors longer than one rather than returning a non-positive matrix.
+3. **Bond dimension above the rank the propagator generates produced garbage** — resolved by
+   construction. PEPSKit guards the weight inversion with `sdiag_pow(s, pow; tol)`, so B7 now agrees
+   at every `D` from 1 to 8, where the old code deviated by 2.02 at `D = 4` and 72.5 at `D = 8`.
+
+### Benchmarks on the new stack
+
+`test/exact_benchmarks.jl` records the old-API run and no longer loads. The checks live with the
+subsystems they exercise, all against dense linear algebra:
+
+| | file | result |
+|:---|:---|:---|
+| B1 | `simulation_test.jl`, `simpleupdate_test.jl` | one-local Lindblad trajectory vs `exp(t𝓛)`, < 1e-8 |
+| B2 | `benchmarks_test.jl` | interacting derivative vs the exact generator, < 1e-3; reversed `H` excluded by > 1 |
+| B3 | `simpleupdate_test.jl` | trace, hermiticity, positivity after an interacting sweep |
+| B4 | `benchmarks_test.jl` | high-temperature limit, `d⟨ZZ⟩/dβ = -J/4` and `d⟨X⟩/dβ = h` within 5e-2, fixing `β = t` |
+| B5 | `state_test.jl` | mixed states prepared as requested, 1e-10 |
+| B6 | `simulation_test.jl` | Larmor precession, < 1e-8; reversed convention excluded by > 0.1 |
+| B7 | `benchmarks_test.jl` | agrees at `D = 1, 2, 4, 8` |
+| B9 | `benchmarks_test.jl` | asymmetric term on a stripe, < 1e-3; exchanged sites excluded by > 1 |
+
+B8 compared the `Ising` fast path against the generic one; both are parked pending the FSM and cluster
+work, so it has no counterpart yet.
 
 ### Trajectory recording (optional, `test/generate_reference_output.jl`)
 
