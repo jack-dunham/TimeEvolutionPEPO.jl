@@ -8,11 +8,6 @@ struct NoGauge end
     postol::Float64 = eps()
 end
 
-@kwdef mutable struct MCF <: AbstractGauge
-    tol::Float64=1e-10
-    maxiter::Int=1000
-end
-
 function Base.show(io::IO, m::MIME"text/plain", sim::AbstractGauge)
     shownested(io, m, sim)
     return nothing

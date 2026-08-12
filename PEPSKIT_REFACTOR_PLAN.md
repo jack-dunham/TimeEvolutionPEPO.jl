@@ -23,7 +23,7 @@ run `Pkg.test()` without asking; run the specific test files named in each task.
 | `SimpleUpdate`, `SVDU`, `trotterstep!` | `SimpleUpdate` (`purified` flag), `su_iter` | their `purified=false` is `exp(-Hdt/2) ρ exp(-Hdt/2)` |
 | `FET`, `isometries`, `updatetensors` | `FullEnvTruncation`, `ALSTruncation`, `bond_truncate`, `bondenv_ctm` | |
 | `WTG`, `simple_update_gauge!`, `src/dev/vidalgauge.jl` | `SUGauge` + `gauge_fix` | `SUGauge` *is* gauge fixing by trivial simple update |
-| `MCF`, `src/dev/beliefpropagation.jl` | `BPGauge`, `BeliefPropagation`, `BPEnv`, `SUWeight(::BPEnv)` | |
+| `src/dev/beliefpropagation.jl` | `BPGauge`, `BeliefPropagation`, `BPEnv`, `SUWeight(::BPEnv)` | |
 | `truncdim`/`truncbelow`/`truncspace` args | `TruncationStrategy`: `truncrank`/`trunctol`/`truncspace`, `FixedSpaceTruncation`, `SiteDependentTruncation` | |
 | `mpinv`, `safepinv` | `sdiag_pow` | |
 | `_permute`, `permutedom`, `swap`, rotations | `utility/{util,indexing,rotations}.jl` | keep only what has no equivalent |
@@ -32,6 +32,14 @@ run `Pkg.test()` without asking; run the specific test files named in each task.
 No PEPSKit equivalent — keep: `src/model/**` (term algebra, `Liouvillian`, `Dissipator`, `Ising`,
 `fsm.jl`, `mpo.jl`, `pepso.jl`), `negativity`, NTU, `Simulation`/`SimulationInfo`/`simulate!`,
 `bondentropy`.
+
+The minimal canonical form is also unmatched: PEPSKit's gauges are `SUGauge` and `BPGauge`, which are
+different fixed points, and the third `gauge_fix` in `algorithms/ctmrg/gaugefix.jl` fixes the CTMRG
+environment's gauge for fixed-point differentiation. It is parked in `src/dev/mcf.jl` for a later
+rewrite onto `InfinitePEPO`. Two defects to repair when that happens: it throws for unit cells larger
+than 1×1, and its `fixgauge!(x, ::MCF)` takes two arguments where the only callers, in
+`truncation/isometries.jl`, pass three — so selecting `SimpleUpdate(gauge = MCF())` raises a
+`MethodError` rather than gauging. Its one working entry point is `IterativeSU` with `gauge == -1`.
 
 ## 1. Conversion rules (the correctness of every later phase depends on these)
 
@@ -82,9 +90,9 @@ This file is scaffolding. It is deleted at the end of Phase 5 once `PEPO` is gon
 
 ### 0.1 Exact benchmarks (done; `test/exact_benchmarks.jl`, report in `test/reference/benchmarks.txt`)
 
-Seven benchmarks compare the package against references computed independently with dense linear
-algebra, so a disagreement locates an error in the package rather than a change in it. Results at
-commit `ba2345c`:
+Nine benchmarks compare the package against references computed independently with dense linear
+algebra, so a disagreement locates an error in the package rather than a change in it. The results
+below are as first recorded at commit `ba2345c`; B8 and B9 were added later and are shown post-fix:
 
 | | subject | result |
 |:---|:---|:---|
