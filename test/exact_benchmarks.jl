@@ -377,10 +377,72 @@ function b4(; dt = 0.005, numsteps = 4, J = 1.5, h = 1.0, D = 4)
     )
 end
 
+"""
+B8: the `Ising` fast path against the generic path. At zero coupling the Ising gate reduces to a pure
+local exponential (`cosh(0) = 1`, `sinh(0) = 0`), so the two paths build the same operator and must
+agree exactly; the generic path's absolute correctness comes from B1 and B6. The interacting rows are
+diagnostics: the two paths split the Trotter step differently, so a difference shrinking with `dt` is
+expected, while a `dt`-independent difference is not.
+"""
+function b8(; h = 1.0, a = 1.5, dt = 0.05, numsteps = 6)
+    X, Y, Z = PAULI
+    alg = CTMRG(; bonddim = 4, tol = 1.0e-10, maxiter = 100, verbose = false)
+    v0 = (1.0, 0.0, 0.0)
+
+    function trajectory(model, Dbond, τ, nsteps)
+        Random.seed!(SEED)
+        sim = quiet(
+            () -> Simulation(PEPO(fill(v0, 2, 2), 2, Dbond), model, TEBD(); timestep = τ),
+        )
+        out = NamedTuple[]
+        callback = function (s)
+            rdm = onesite_rdm(quantumstate(s), alg)
+            push!(
+                out,
+                (
+                    t = simulationinfo(s).simtime,
+                    x = real(expval(rdm, X)), y = real(expval(rdm, Y)),
+                    z = real(expval(rdm, Z)),
+                ),
+            )
+            return nothing
+        end
+        quiet(() -> simulate!(callback, sim; numsteps = nsteps, maxshots = nsteps, verbose = false))
+        return out
+    end
+
+    discrepancy(r1, r2) = maximum(
+        max(abs(p.x - q.x), abs(p.y - q.y), abs(p.z - q.z)) for (p, q) in zip(r1, r2)
+    )
+
+    nojump = Dissipator(0.0 * Z)
+    free_ising = Model(Ising(0.0 * LocalOp(X, X), [h * LocalOp(Z)], nojump))
+    free_generic = Model(0.0 * LocalOp(X, X) + h * LocalOp(Z) + nojump)
+    deviation = discrepancy(
+        trajectory(free_ising, 1, dt, numsteps), trajectory(free_generic, 1, dt, numsteps)
+    )
+
+    jump = 0.5 * (Y - im * Z)
+    rows = NamedTuple[]
+    for τ in (dt, dt / 2)
+        steps = round(Int, numsteps * dt / τ)
+        d = discrepancy(
+            trajectory(Model(Ising(a * LocalOp(X, X), [h * LocalOp(Z)], Dissipator(jump))), 4, τ, steps),
+            trajectory(Model(a * LocalOp(X, X) + h * LocalOp(Z) + Dissipator(jump)), 4, τ, steps),
+        )
+        push!(rows, (dt = τ, steps = steps, interacting_discrepancy = d))
+    end
+
+    return (
+        name = "B8", description = "Ising fast path against the generic path at zero coupling",
+        deviation = deviation, tolerance = 1.0e-8, rows = rows,
+    )
+end
+
 function run_benchmarks(dir::AbstractString = BENCHMARK_DIR)
     mkpath(dir)
     results = []
-    for f in (b1, b2, b3, b4, b5, b6, b7)
+    for f in (b1, b2, b3, b4, b5, b6, b7, b8)
         try
             push!(results, f())
         catch e

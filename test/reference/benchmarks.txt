@@ -1,5 +1,5 @@
-# exact benchmarks, commit f2e96e2
-# working tree:  M src/model/equation.jl;  M test/reference/benchmarks.txt
+# exact benchmarks, commit 0696970
+# working tree:  M src/model/equation.jl;  M src/model/heisenberg.jl;  M src/tensorkitutils.jl;  M test/exact_benchmarks.jl;  M test/reference/benchmarks.txt
 
 B1  AGREES
   one-local Lindblad, D=1, exact single-site exponential
@@ -95,3 +95,9 @@ B7  DISAGREES
     (D = 2, deviation = 2.1094237467877974e-15)
     (D = 4, deviation = 1.990028110792485)
     (D = 8, deviation = 1.0339794498789994)
+
+B8  AGREES
+  Ising fast path against the generic path at zero coupling
+  deviation 8.882e-16  tolerance 1.0e-08
+    (dt = 0.05, steps = 6, interacting_discrepancy = 0.00046700753955952745)
+    (dt = 0.025, steps = 12, interacting_discrepancy = 0.00011704906826298656)

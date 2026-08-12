@@ -95,6 +95,7 @@ commit `ba2345c`:
 | B5 | product-state constructor prepares the requested `ρ` | disagrees, 0.476; **1.7e-16 against `ρ⁴`** |
 | B6 | Larmor precession, sign of `H` in a `Liouvillian` | disagrees, 1.13; **4.4e-16 with the sign reversed** |
 | B7 | one-local model at bond dimension above the gate rank | disagrees: `D=1` 1.1e-15, `D=2` 2.1e-15, `D=4` 2.02, `D=8` 72.5 |
+| B8 | `Ising` fast path against the generic path at zero coupling | agrees, 8.9e-16 (after the fix below; 1.13 before) |
 
 These benchmarks, not trajectory comparisons, are the completion criterion for later phases: they
 check against exact results rather than against the current implementation, so they remain valid
@@ -121,11 +122,15 @@ and is optional.
    matching `D[L]` at 3.9e-15. B1, B3 and B4 were unchanged, as expected — their operators are
    insensitive to the reversal, which is why the defect survived.
 
-   Still to do: `tebdtensor(model::Ising, …)` at `src/model/heisenberg.jl:260` reshapes a one-site
-   superoperator the same way and has the same reversal. No benchmark covers the `Ising` fast path,
-   so it needs a benchmark of its own before being changed. The dead
-   `tebdtensor(model::AbstractMatrix, …)` in `src/evolution/dynamicalmap.jl:401` shares the defect
-   and is reached only through `timestepper`, which has no live callers.
+   The `Ising` fast path had the same reversal at `src/model/heisenberg.jl:207`, where
+   `TensorMap(L * op * L, space, space)` reshapes the matrix leg-1-fastest. B8 covers it and both
+   conversions now go through `vectorised_tensormap` in `src/tensorkitutils.jl`.
+
+   Two sites keep the defect and are deliberately untouched, both unreachable:
+   `tebdtensor(model::Ising, p, method, dt)` at `src/model/heisenberg.jl:222` returns
+   `TensorMap(data, space, D1 * D2')` with `data` never assigned, so it raises `UndefVarError` if
+   called; and `tebdtensor(model::AbstractMatrix, …)` at `src/evolution/dynamicalmap.jl:401` is
+   reached only through `timestepper`, which has no live callers.
 2. **`pepositedata` prepares `ρ⁴`, not `ρ`** (`src/pepo/pepo.jl:100-114`). It writes the input matrix
    into all four directional tensors and contracts them in a chain through the physical index. Pure
    states are projectors and `ThermalState` is the identity, so every example in the docs and tests

@@ -204,8 +204,8 @@ function tebdtensor(model::Ising, p1::IndexSpace, p2::IndexSpace, dt; kwargs...)
 
     L = exp(dt / 2 * lop)
 
-    # k1 k2 b1 b2 
-    tensor = TensorMap(L * op * L, space, space)
+    # k1 k2 b1 b2
+    tensor = vectorised_tensormap(L * op * L, space, space)
 
     H = permute(tensor, (1, 3, 5, 7), (2, 4, 6, 8))
 

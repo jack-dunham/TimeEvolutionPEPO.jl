@@ -110,13 +110,7 @@ function tebdtensor(
         data += sum(vecf, terms(model))
     end
 
-    # The composite index of `data` runs ket-slowest (row major) while `reshape` fills the fastest
-    # axis first, so each group of four legs arrives reversed and is permuted back.
-    d = dims(spacecod * spacedom)
-    revdims = (d[4], d[3], d[2], d[1], d[8], d[7], d[6], d[5])
-    arr = permutedims(reshape(exp(dt * data), revdims), (4, 3, 2, 1, 8, 7, 6, 5))
-
-    tensor = TensorMap(arr, spacecod, spacedom)
+    tensor = vectorised_tensormap(exp(dt * data), spacecod, spacedom)
 
     # move site one to codomain and site two to domain
     tensor = permute(tensor, (1, 3, 5, 7), (2, 4, 6, 8))
