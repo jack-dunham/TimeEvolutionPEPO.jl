@@ -1,186 +1,98 @@
 module TimeEvolutionPEPO
 
-import TensorKit.AdjointTensorMap
-import TensorKit.IndexTuple
-using Accessors
-using Combinatorics
+# Mid-refactor onto PEPSKit (see PEPSKIT_REFACTOR_PLAN.md). Only the state and observable layers are
+# live; every include commented out below awaits its PEPSKit-based replacement and is unloaded, not
+# deleted. Do not assume any of it works against TensorKit 0.17.
+
 using DocStringExtensions
-using KrylovKit
 using LinearAlgebra
-using Logging
+using PEPSKit
 using Random
 using TensorKit
-using TensorRenormalizationGroups
-using TupleTools
-using VectorInterface
 
-const TRGroups = TensorRenormalizationGroups
+using PEPSKit: EAST, NORTH, SOUTH, WEST
+
 const PEPOKit = TimeEvolutionPEPO
-
-import TensorRenormalizationGroups: AbsTen, SquareSymmetric, TenAbs
 
 export PEPOKit
 
-## Essential TRGroups reexports
-export UnitCell, Square, SquareSymmetric
-export VUMPS, CTMRG
-export tensortype
+## PEPSKit reexports
+export InfinitePEPO, InfinitePartitionFunction, SUWeight, CTMRGEnv
+export leading_boundary, initialize_ctmrg_environment, RandomInitialization
+export reduced_densitymatrix, correlation_length
 #
-
-export delta
-
-export cj, conjugate
 
 export PAULI, LADDER, SPIN1
+export cj, conjugate
 
-# PEPO
-export UnitCellBonds
-export ThermalState
+export ThermalState, bloch, productpepo, bondentropy
 
-export AbstractPEPO, PEPO
-export expandspace, subpepo, unsymmetrise, bondweights, bondentropy, physicalspace
-export Bond
+export DensityMatrix, partialtrace, expval, tracenetwork, isconverged
 
-export TEBD, AxialTEBD, GlobalTEBD, ClusterMPO, GlobalTEBD, ClusterPEPO
-export LocalUpdate, GlobalUpdate
-export SimpleUpdate, SVDU, NTU, FET, IterativeSU
-
-export Simulation, SimulationInfo
-export simulate!, updatetimestep!
-export quantumstate, timestep, trotterorder, simulationinfo
-
-export EVB, DZM, WTG, MCF, NoGauge
-
-export clustermpo, MPO
-
-export Hamiltonian, Liouvillian, Dissipator, TrotterLayer, Model, Ising
-
-export isaxial, isexpandable, dissipator
-
-export AbstractTerm, AbstractSingleTerm, AbstractSumOfTerms
-export AbstractAxialTerm, AbstractRadialTerm, AbstractManhattanTerm
-export LocalOp, ExpOp, GaussOp, GaussOp2d, PowOp, PowOp2d
-
-export AbstractDensityMatrix, DensityMatrix, PurifiedDensityMatrix
-export trace, partialtrace
-export expval, negativity, correlator, correlationlength
-
-export permutebasis
-
-include("utils.jl")
-include("tensorkitutils.jl")
 include("linalg.jl")
-include("convergenceinfo.jl")
-include("abstractlattice.jl")
-include("edgelattice.jl")
-include("updatestyle.jl")
+include("state.jl")
+include("observables.jl")
 
+# Awaiting replacement, in the order the plan takes them:
+#
+# include("utils.jl")
+# include("tensorkitutils.jl")
+# include("convergenceinfo.jl")
+# include("abstractlattice.jl")
+# include("edgelattice.jl")
+# include("updatestyle.jl")
 # include("sparsetensormap.jl")
-
-## PEPO OBJECTS
-include("pepo/weights.jl")
-include("pepo/abstractpepo.jl")
-include("pepo/pepo.jl")
-include("pepo/axialpepo.jl")
-
-### UPDATABLE PEPOS
-# include("pepo/abstractupdatablepepo.jl")
-# include("pepo/localpepo.jl")
-# include("pepo/globalpepo.jl")
-
-### OTHER
-include("pepo/hilbertschmidt.jl")
-
-include("model/abstractaxis.jl")
-
-include("contract/vumps.jl")
-include("contract/ctmrg.jl")
-
-include("gauge/abstractgauge.jl")
-include("gauge/wtg.jl")
-include("dev/mcf.jl")
-
-include("truncation/clu/clu.jl")
-include("truncation/truncation.jl")
-include("truncation/isometries.jl")
-include("truncation/iterative.jl")
-
-include("evolution/abstractevolution.jl")
-include("evolution/timeevolution.jl")
-
-include("truncation/simpleupdate.jl")
-
-## MODEL AND EQUATION
-include("model/abstractterm.jl")
-# Load these in this order
-include("model/terms/localop.jl")
-include("model/terms/linop.jl")
-include("model/terms/expop.jl")
-include("model/terms/gaussop.jl")
-include("model/terms/powop.jl")
-include("model/terms/nnnop.jl")
-# Load these in this order
-include("model/hamiltonian.jl")
-include("model/liouvillian.jl")
-include("model/ising.jl")
-include("model/trotterlayer.jl")
-include("model/model.jl")
-
-include("model/equation.jl")
-include("model/mpo.jl")
-include("model/pepso.jl")
-include("model/fsm.jl")
-
-include("model/heisenberg.jl")
-include("model/longrangeheisenberg.jl")
-include("model/axialheisenberg.jl")
-
-include("evolution/dynamicalmap.jl")
-
-include("simulation.jl")
-include("densitymatrix.jl")
-
-# include("dev/tno_evolve.jl")
-# include("dev/longrange.jl")
-# include("dev/beliefpropagation.jl")
-include("dev/vidalgauge.jl")
-
-# using PrecompileTools: @setup_workload, @compile_workload
 #
-# @setup_workload begin
-#     X, Y, Z = PAULI
-#     @compile_workload begin
-#         warnlogger = ConsoleLogger(stderr, Logging.Warn)
-#         oldlogger = global_logger(warnlogger)
+# include("pepo/weights.jl")
+# include("pepo/abstractpepo.jl")
+# include("pepo/pepo.jl")
+# include("pepo/axialpepo.jl")
+# include("pepo/hilbertschmidt.jl")
 #
-#         model = Model(1.5 / 4 * LocalOp(Z, Z) + Dissipator(0.5 * (Y - im * Z)))
+# include("model/abstractaxis.jl")
 #
-#         sim = Simulation(
-#             PEPO{SquareSymmetric}((0, 0, -1), fill(ℂ^2, 2, 2), ℂ^1),
-#             model,
-#             TEBD();
-#             timestep=1e-1,
-#         )
+# include("contract/vumps.jl")
+# include("contract/ctmrg.jl")
 #
-#         simulate!(sim; numsteps=1)
+# include("gauge/abstractgauge.jl")
+# include("gauge/wtg.jl")
+# include("dev/mcf.jl")
 #
-#         dmc = DensityMatrix(quantumstate(sim), CTMRG(; bonddim=1))
-#         dmv = DensityMatrix(quantumstate(sim), VUMPS(; bonddim=1))
-#         dmp = PurifiedDensityMatrix(quantumstate(sim), VUMPS(; bonddim=1))
+# include("truncation/clu/clu.jl")
+# include("truncation/truncation.jl")
+# include("truncation/isometries.jl")
+# include("truncation/iterative.jl")
 #
-#         # `partialtrace` calls a generated function, so compile the common use cases
-#         partialtrace(dmc, (1, 1))
-#         partialtrace(dmc, (1, 1), (2, 1))
-#         partialtrace(dmc, (1, 1), (1, 2))
-#         partialtrace(dmc, (1, 1), (2, 2))
+# include("evolution/abstractevolution.jl")
+# include("evolution/timeevolution.jl")
 #
-#         partialtrace(dmv, (1, 1))
-#         partialtrace(dmv, (2, 1))
+# include("truncation/simpleupdate.jl")
 #
-#         partialtrace(dmp, (1, 1))
+# include("model/abstractterm.jl")
+# include("model/terms/localop.jl")
+# include("model/terms/linop.jl")
+# include("model/terms/expop.jl")
+# include("model/terms/gaussop.jl")
+# include("model/terms/powop.jl")
+# include("model/terms/nnnop.jl")
+# include("model/hamiltonian.jl")
+# include("model/liouvillian.jl")
+# include("model/ising.jl")
+# include("model/trotterlayer.jl")
+# include("model/model.jl")
+# include("model/equation.jl")
+# include("model/mpo.jl")
+# include("model/pepso.jl")
+# include("model/fsm.jl")
+# include("model/heisenberg.jl")
+# include("model/longrangeheisenberg.jl")
+# include("model/axialheisenberg.jl")
 #
-#         global_logger(oldlogger)
-#     end
-# end
+# include("evolution/dynamicalmap.jl")
+#
+# include("simulation.jl")
+# include("densitymatrix.jl")
+#
+# include("dev/vidalgauge.jl")
 
 end # module
