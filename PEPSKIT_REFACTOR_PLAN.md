@@ -95,6 +95,7 @@ commit `ba2345c`:
 | B5 | product-state constructor prepares the requested `ρ` | disagrees, 0.476; **1.7e-16 against `ρ⁴`** |
 | B6 | Larmor precession, sign of `H` in a `Liouvillian` | disagrees, 1.13; **4.4e-16 with the sign reversed** |
 | B7 | one-local model at bond dimension above the gate rank | disagrees: `D=1` 1.1e-15, `D=2` 2.1e-15, `D=4` 2.02, `D=8` 72.5 |
+| B8 | `Ising` fast path against the generic path at zero coupling | agrees, 8.9e-16 (after the fix below; 1.13 before) |
 
 These benchmarks, not trajectory comparisons, are the completion criterion for later phases: they
 check against exact results rather than against the current implementation, so they remain valid
@@ -103,15 +104,33 @@ and is optional.
 
 ### Pre-existing defects found by task 0.1
 
-1. **The Hamiltonian in a `Liouvillian` enters with the wrong sign.** Evolution is `dρ/dt = +i[H,ρ]`
-   instead of `-i[H,ρ]` (B6: reversing the sign of `H` reproduces the package to 4.4e-16 in the
-   simplest possible setting — one spin, `H = (h/2)Z`, `D=1`, no dissipation). B2 confirms it for a
-   two-body term. The thermal path is unaffected (B4 agrees, and `β = t`), so the error is in
-   `vectorise` for the Hamiltonian part of a Liouvillian, not in `thermalvectorise`. Every Lindblad
-   result the package has produced corresponds to `-H`. On a bipartite lattice with this tutorial's
-   dissipator, `J → -J` is partly absorbed by a sublattice rotation, so single-site `⟨X⟩` may be
-   unaffected while correlators and sublattice-resolved `⟨Z⟩` are not. Fix before Phase 4 and record
-   the change separately from refactor changes.
+1. **Reversed physical legs on the Trotter gate — fixed.** Evolution ran with `dρ/dt = +i[H,ρ]` and
+   with `D[conj(L)]` instead of `D[L]`. `tebdtensor` built the vectorised superoperator as a matrix
+   whose composite index runs ket-slowest (row major), then moved it into the eight-leg array with
+   `copyto!`, which fills the fastest axis first — reversing each group of four legs, which both
+   exchanges ket with bra and reverses the two sites. The site reversal is invisible for terms
+   symmetric under exchanging the two sites, which is every term the tests and documentation use.
+   The governing convention is PEPSKit's `PEPOTensor : P ⊗ P´ ← N ⊗ E ⊗ S ⊗ W` — index 1 outgoing
+   (ket, left-multiplied), index 2 incoming (bra, right-multiplied), as confirmed by
+   `trace_physicalspaces` contracting `O[p p; N E S W]` and by `_apply_sitegate` applying `gate * a`
+   to index 1 and `a * gate` to index 2. The vectorisations in `vectorise`/`thermalvectorise` already
+   matched that ordering; only the conversion was wrong, so the fix replaces the `copyto!` with a
+   reshape into the reversed leg order followed by `permutedims` back.
+
+   Evidence: B6 moved from 1.13 to 4.4e-16 and its Hamiltonian-reversed figure from 4.4e-16 to 1.13;
+   B2 from 2.30 to 2.8e-6; a jump operator with `conj(L) ≠ ±L` moved from matching `D[conj(L)]` to
+   matching `D[L]` at 3.9e-15. B1, B3 and B4 were unchanged, as expected — their operators are
+   insensitive to the reversal, which is why the defect survived.
+
+   The `Ising` fast path had the same reversal at `src/model/heisenberg.jl:207`, where
+   `TensorMap(L * op * L, space, space)` reshapes the matrix leg-1-fastest. B8 covers it and both
+   conversions now go through `vectorised_tensormap` in `src/tensorkitutils.jl`.
+
+   Two sites keep the defect and are deliberately untouched, both unreachable:
+   `tebdtensor(model::Ising, p, method, dt)` at `src/model/heisenberg.jl:222` returns
+   `TensorMap(data, space, D1 * D2')` with `data` never assigned, so it raises `UndefVarError` if
+   called; and `tebdtensor(model::AbstractMatrix, …)` at `src/evolution/dynamicalmap.jl:401` is
+   reached only through `timestepper`, which has no live callers.
 2. **`pepositedata` prepares `ρ⁴`, not `ρ`** (`src/pepo/pepo.jl:100-114`). It writes the input matrix
    into all four directional tensors and contracts them in a chain through the physical index. Pure
    states are projectors and `ThermalState` is the identity, so every example in the docs and tests

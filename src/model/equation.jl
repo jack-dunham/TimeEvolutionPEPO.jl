@@ -89,7 +89,6 @@ function tebdtensor(
     spacedom = p1 * p2 * p1' * p2'
 
     data = zeros(ComplexF64, dim(spacecod), dim(spacedom))
-    symdata = Array{ComplexF64}(undef, dims(spacecod * spacedom))
 
     if model isa Hamiltonian
         vecf = thermalvectorise
@@ -111,9 +110,7 @@ function tebdtensor(
         data += sum(vecf, terms(model))
     end
 
-    copyto!(symdata, exp(dt * data))
-
-    tensor = TensorMap(symdata, spacecod, spacedom)
+    tensor = vectorised_tensormap(exp(dt * data), spacecod, spacedom)
 
     # move site one to codomain and site two to domain
     tensor = permute(tensor, (1, 3, 5, 7), (2, 4, 6, 8))

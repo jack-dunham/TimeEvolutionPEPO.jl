@@ -143,3 +143,18 @@ function posapprox!(t::AbsTen{N,N}; tol=1e3 * eps(), verbose=false) where {N}
 
     return t
 end
+
+"""
+    $(TYPEDSIGNATURES)
+
+Wrap the matrix of a vectorised superoperator as a `TensorMap` on `cod ← dom`. The composite index of
+such a matrix runs ket-slowest (row major) whereas `reshape` fills the fastest axis first, so the legs
+of each group arrive reversed and are permuted back here.
+"""
+function vectorised_tensormap(mat::AbstractMatrix, cod::TensorSpace, dom::TensorSpace)
+    nc, nd = length(dims(cod)), length(dims(dom))
+    perm = (reverse(1:nc)..., reverse((nc + 1):(nc + nd))...)
+    d = dims(cod * dom)
+    arr = permutedims(reshape(mat, map(i -> d[i], perm)), perm)
+    return TensorMap(arr, cod, dom)
+end
