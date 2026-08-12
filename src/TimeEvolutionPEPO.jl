@@ -13,7 +13,7 @@ using TensorKit
 using TupleTools
 
 using PEPSKit: EAST, NORTH, SOUTH, WEST
-using PEPSKit: PEPOTensor, GenericMPSTensor
+using PEPSKit: PEPOTensor, GenericMPSTensor, absorb_weight
 using MatrixAlgebraKit: TruncationStrategy
 
 const PEPOKit = TimeEvolutionPEPO
@@ -41,6 +41,7 @@ export dissipator, oneterms, isaxial, isexpandable
 export generator, bondpropagator
 export reducedbond_first, reducedbond_last, undo_reducedbond_first, undo_reducedbond_last
 export applypropagator
+export bondstep!, trotterstep!
 
 include("linalg.jl")
 include("state.jl")
@@ -60,6 +61,7 @@ include("model/ising.jl")
 
 include("propagator.jl")
 include("reducedbond.jl")
+include("simpleupdate.jl")
 
 # Awaiting replacement, in the order the plan takes them:
 #
