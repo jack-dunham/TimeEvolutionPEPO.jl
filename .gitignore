@@ -6,3 +6,4 @@ src/models/
 dev/
 !src/dev
 /CLAUDE.md
+/.nvim.lua
