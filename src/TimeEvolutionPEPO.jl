@@ -65,6 +65,13 @@ include("model/hamiltonian.jl")
 include("model/liouvillian.jl")
 include("model/ising.jl")
 
+# `PowOp` and `GaussOp` fit a power law as a sum of exponentials with routines defined here; only the
+# `fsm*` builders in this file need porting, and they are not called at load time.
+include("model/longrangeheisenberg.jl")
+# The finite-state machine that turns a long-range term into a PEPO. Its bond dimension is the state
+# count; only `GaussOp2d` has a rule, so the axial `PowOp{ExpOp}` has no route through it.
+include("model/fsm.jl")
+
 include("propagator.jl")
 include("reducedbond.jl")
 include("simpleupdate.jl")
@@ -111,9 +118,7 @@ include("simulation.jl")
 # include("model/equation.jl")
 # include("model/mpo.jl")
 # include("model/pepso.jl")
-# include("model/fsm.jl")
 # include("model/heisenberg.jl")
-# include("model/longrangeheisenberg.jl")
 # include("model/axialheisenberg.jl")
 #
 # include("evolution/dynamicalmap.jl")
