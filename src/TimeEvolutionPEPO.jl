@@ -41,13 +41,17 @@ export dissipator, oneterms, isaxial, isexpandable
 
 export generator, bondpropagator
 export reducedbond_first, reducedbond_last, undo_reducedbond_first, undo_reducedbond_last
-export applypropagator
+export applypropagator, truncatebond, fusephysical
+export FullEnvTruncation, ALSTruncation, bondenvironment
 export bondstep!, axissweep!, timestep!
 export trotterise
 
 export Simulation, SimulationInfo, simulate!
 export quantumstate, bondweights, timestep, simulationinfo, weightdistance
 export isconverged, convergence, numiter, isfinished, simtime, walltime
+
+export gaugefix!, bpenvironment
+export SUGauge, BPGauge, BPEnv, BeliefPropagation, gauge_fix
 
 include("linalg.jl")
 include("state.jl")
@@ -78,6 +82,7 @@ include("simpleupdate.jl")
 include("trotterdecomposition.jl")
 include("convergenceinfo.jl")
 include("simulation.jl")
+include("gauge.jl")
 
 # Awaiting replacement, in the order the plan takes them:
 #

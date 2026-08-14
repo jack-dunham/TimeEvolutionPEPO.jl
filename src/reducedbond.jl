@@ -58,12 +58,59 @@ function applypropagator(
         a::GenericMPSTensor{S, 3}, b::GenericMPSTensor{S, 3},
         propagator::AbstractTensorMap, trunc::TruncationStrategy
     ) where {S}
-    @tensor ab[-1 -2 -3; -4 -5 -6] :=
-        propagator[-2 -3 -5 -6; k1 c1 k2 c2] * a[-1 k1 c1 x] * b[x k2 c2 -4]
-
-    u, s, v, ϵ = svd_trunc!(permute(ab, ((1, 2, 3), (4, 5, 6))); trunc)
+    u, s, v, ϵ = svd_trunc!(applypropagator(a, b, propagator); trunc)
     u, v = PEPSKit.absorb_s(u, s, v)
 
     # `v` arrives as `χ ← (bond, ket, bra)`; the second tensor of a bond is `(bond, ket, bra) ← χ`.
     return u, s, permute(v, ((1, 3, 4), (2,))), ϵ
+end
+
+"""
+    $(TYPEDSIGNATURES)
+
+Apply `propagator` to the pair without truncating, returning the merged tensor split as
+`(χ ⊗ ket₁ ⊗ bra₁) ← (bond ⊗ ket₂ ⊗ bra₂)`.
+"""
+function applypropagator(
+        a::GenericMPSTensor{S, 3}, b::GenericMPSTensor{S, 3}, propagator::AbstractTensorMap
+    ) where {S}
+    @tensor ab[-1 -2 -3; -4 -5 -6] :=
+        propagator[-2 -3 -5 -6; k1 c1 k2 c2] * a[-1 k1 c1 x] * b[x k2 c2 -4]
+    return permute(ab, ((1, 2, 3), (4, 5, 6)))
+end
+
+"""
+    $(TYPEDSIGNATURES)
+
+Isometry fusing a site's physical pair into one leg. Used only to hand a reduced bond tensor to
+PEPSKit's `bond_truncate`, which takes one physical index; the state itself keeps ket and bra apart.
+"""
+fusephysical(P::IndexSpace) = isomorphism(fuse(P ⊗ P'), P ⊗ P')
+
+"""
+    $(TYPEDSIGNATURES)
+
+Truncate an evolved pair against the bond environment `benv`, using `FullEnvTruncation` or
+`ALSTruncation`. The physical pair of each reduced tensor is fused for the call and unfused after.
+"""
+function truncatebond(
+        ab::AbstractTensorMap, benv::AbstractTensorMap, alg, P::IndexSpace
+    )
+    # Split without truncating, so the pair enters the optimisation at its full bond dimension.
+    u, s, v, = svd_trunc!(copy(ab); trunc = notrunc())
+    u, v = PEPSKit.absorb_s(u, s, v)
+    a = u
+    b = permute(v, ((1, 3, 4), (2,)))
+
+    F = fusephysical(P)
+    Fd = F'
+    @tensor af[-1 -2; -3] := a[-1 k c -3] * F[-2; k c]
+    @tensor bf[-1 -2; -3] := b[-1 k c -3] * F[-2; k c]
+
+    a′, s′, b′, info = PEPSKit.bond_truncate(af, bf, benv, alg)
+
+    @tensor aout[-1 -2 -3; -4] := a′[-1 f -4] * Fd[-2 -3; f]
+    @tensor bout[-1 -2 -3; -4] := b′[-1 f -4] * Fd[-2 -3; f]
+
+    return aout, s′, bout, info
 end

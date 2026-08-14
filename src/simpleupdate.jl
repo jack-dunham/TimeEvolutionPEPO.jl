@@ -8,11 +8,13 @@
 Update the bond joining `sites` in place: absorb the neighbouring weights, apply `propagator` to the
 pair, truncate, and write the two tensors and the new bond weight back. Returns the truncation error.
 
-Without `trunc` the bond space is preserved, taken from the weight currently on that bond.
+Without `trunc` the bond space is preserved, taken from the weight currently on that bond. Passing
+`truncalg` (a `FullEnvTruncation` or `ALSTruncation`) together with `env`, the CTMRG boundary of the
+PEPO sandwiched with its adjoint, truncates against that environment instead of by a bare SVD.
 """
 function bondstep!(
         state::InfinitePEPO, weights::SUWeight, propagator::AbstractTensorMap,
-        sites::Vector{CartesianIndex{2}}; trunc = nothing
+        sites::Vector{CartesianIndex{2}}; trunc = nothing, truncalg = nothing, env = nothing
     )
     length(sites) == 2 || throw(ArgumentError("a bond joins two sites, got $(length(sites))"))
 
@@ -33,7 +35,21 @@ function bondstep!(
 
     a, X = reducedbond_first(A)
     b, Y = reducedbond_last(B)
-    a, s, b, ϵ = applypropagator(a, b, propagator, truncation)
+
+    a, s, b, ϵ = if isnothing(truncalg)
+        applypropagator(a, b, propagator, truncation)
+    else
+        # The environment metric is the Hilbert-Schmidt norm: `env` is the boundary of the PEPO
+        # sandwiched with its adjoint, and both physical legs sit on the reduced tensors, so `X'X`
+        # in `bondenv_ctm` is a purely virtual contraction.
+        benv = PEPSKit.bondenv_ctm(bond[2], bond[3], X, Y, env)
+        P = space(A, 1)
+        aout, sout, bout, info = truncatebond(
+            applypropagator(a, b, propagator), benv, truncalg, P
+        )
+        (aout, sout, bout, info.fid)
+    end
+
     A = undo_reducedbond_first(a, X)
     B = undo_reducedbond_last(b, Y)
 
@@ -64,7 +80,7 @@ therefore applies it twice, which is why [`trotterise`](@ref) halves it.
 """
 function axissweep!(
         state::InfinitePEPO, weights::SUWeight, propagator::AbstractTensorMap, axis::Int;
-        trunc = nothing
+        trunc = nothing, truncalg = nothing, env = nothing
     )
     axis in (1, 2) || throw(ArgumentError("axis must be 1 or 2, got $axis"))
     Nr, Nc, = size(state)
@@ -75,7 +91,7 @@ function axissweep!(
     for r in 1:Nr, c in 1:Nc
         site1 = CartesianIndex(r, c)
         site2 = axis == 1 ? CartesianIndex(r, c + 1) : CartesianIndex(r + 1, c)
-        ϵ = max(ϵ, bondstep!(state, weights, propagator, [site1, site2]; trunc))
+        ϵ = max(ϵ, bondstep!(state, weights, propagator, [site1, site2]; trunc, truncalg, env))
     end
 
     return ϵ
@@ -88,11 +104,12 @@ One time step: sweep each `(propagator, axis)` of a Trotter decomposition in tur
 largest truncation error.
 """
 function timestep!(
-        state::InfinitePEPO, weights::SUWeight, decomposition::AbstractVector; trunc = nothing
+        state::InfinitePEPO, weights::SUWeight, decomposition::AbstractVector;
+        trunc = nothing, truncalg = nothing, env = nothing
     )
     ϵ = 0.0
     for (propagator, axis) in decomposition
-        ϵ = max(ϵ, axissweep!(state, weights, propagator, axis; trunc))
+        ϵ = max(ϵ, axissweep!(state, weights, propagator, axis; trunc, truncalg, env))
     end
     return ϵ
 end
