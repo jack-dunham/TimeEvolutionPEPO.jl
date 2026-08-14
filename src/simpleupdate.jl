@@ -73,8 +73,6 @@ function bondstep!(
         (aout, sout, bout, info.fid)
     end
 
-    a, s, b = _restorearrow(a, s, b, space(A, 4))
-
     A = undo_reducedbond_first(a, X)
     B = undo_reducedbond_last(b, Y)
 
@@ -96,34 +94,21 @@ end
 """
     $(TYPEDSIGNATURES)
 
-Give the updated bond the arrow `V` the bond carried before the update, flipping the two reduced
-tensors and the weight together so the contraction is unchanged.
-
-The SVD in [`applypropagator`](@ref) sets the arrow itself, and after `_bond_rotation` maps the
-rotated frame's east bond back onto a north-south bond that arrow is the opposite one. Without this
-the first update of every vertical bond flips the north and south legs it writes back, and a CTMRG
-environment built at the start of the sweep no longer contracts with the state.
-"""
-function _restorearrow(
-        a::GenericMPSTensor{S, 3}, s::DiagonalTensorMap, b::GenericMPSTensor{S, 3}, V::S
-    ) where {S}
-    space(a, 4) == V && return a, s, b
-    return flip(a, 4), DiagonalTensorMap(flip(s, (1, 2))), flip(b, 1)
-end
-
-"""
-    $(TYPEDSIGNATURES)
-
 Update every bond of the unit cell along `axis` (1 for the column direction, 2 for the row direction),
 returning the largest truncation error.
 
 Each site sits on two bonds of a given axis and each bond carries half of the one-local part of
 `propagator` (see `twolocal`), so one sweep applies that part once per site. Sweeping both axes
 therefore applies it twice, which is why [`trotterise`](@ref) halves it.
+
+With `truncalg` the CTMRG boundary is recomputed before each bond, from `envalg`, so that it always
+describes the state the bond is about to be updated in. Every bond rewrites the two site tensors it
+joins, and the arrow on a bond written back by a vertical update is the opposite of the one it had,
+so an environment built any earlier disagrees with the state it is contracted against.
 """
 function axissweep!(
         state::InfinitePEPO, weights::SUWeight, propagator::AbstractTensorMap, axis::Int;
-        trunc = nothing, truncalg = nothing, env = nothing
+        trunc = nothing, truncalg = nothing, envalg = nothing
     )
     axis in (1, 2) || throw(ArgumentError("axis must be 1 or 2, got $axis"))
     Nr, Nc, = size(state)
@@ -131,9 +116,11 @@ function axissweep!(
         throw(ArgumentError("a two-site update needs a unit cell of at least 2x2, got ($Nr, $Nc)"))
 
     ϵ = 0.0
+    env = nothing
     for r in 1:Nr, c in 1:Nc
         site1 = CartesianIndex(r, c)
         site2 = axis == 1 ? CartesianIndex(r, c + 1) : CartesianIndex(r + 1, c)
+        isnothing(truncalg) || ((env, _) = bondenvironment(state, envalg; env₀ = env))
         ϵ = max(ϵ, bondstep!(state, weights, propagator, [site1, site2]; trunc, truncalg, env))
     end
 
@@ -146,9 +133,8 @@ end
 One time step: sweep each `(propagator, axis)` of a Trotter decomposition in turn, returning the
 largest truncation error.
 
-With `truncalg` the CTMRG boundary is recomputed before each axis sweep, warm-started from the
-previous one, since the sweep before it rewrote every site tensor. `envalg` is a
-[`BondEnvironment`](@ref) or the boundary bond dimension.
+`truncalg` selects environment-based truncation and needs `envalg`, a [`BondEnvironment`](@ref) or
+the boundary bond dimension; [`axissweep!`](@ref) then solves for a boundary before every bond.
 """
 function timestep!(
         state::InfinitePEPO, weights::SUWeight, decomposition::AbstractVector;
@@ -158,10 +144,8 @@ function timestep!(
         throw(ArgumentError("environment-based truncation needs both `truncalg` and `envalg`"))
 
     ϵ = 0.0
-    env = nothing
     for (propagator, axis) in decomposition
-        isnothing(truncalg) || ((env, _) = bondenvironment(state, envalg; env₀ = env))
-        ϵ = max(ϵ, axissweep!(state, weights, propagator, axis; trunc, truncalg, env))
+        ϵ = max(ϵ, axissweep!(state, weights, propagator, axis; trunc, truncalg, envalg))
     end
     return ϵ
 end
