@@ -5,6 +5,27 @@
 """
     $(TYPEDSIGNATURES)
 
+Position of a bond's first site after `_bond_rotation` has turned the bond horizontal. Julia's
+`rotl90(A)[i, j] == A[j, Nc + 1 - i]`, so a site at `(r, c)` lands at `(Nc + 1 - c, r)`, and `rotr90`
+inverts that.
+
+Only the identity and `rot180` cases are exercised by the tests, which use unit cells whose sites are
+all equivalent; for a genuinely non-uniform cell the rotated position is unverified, and the test that
+would settle it compares this environment against one computed on the explicitly rotated state.
+"""
+function _rotatedbond(state::InfinitePEPO, sites::Vector{CartesianIndex{2}}, dir::Int, rev::Bool)
+    Nr, Nc, = size(state)
+    r, c = Tuple(first(sites))
+    return if dir == 1
+        rev ? (Nr + 1 - r, Nc + 1 - c) : (r, c)
+    else
+        rev ? (Nc + 1 - c, r) : (c, Nr + 1 - r)
+    end
+end
+
+"""
+    $(TYPEDSIGNATURES)
+
 Update the bond joining `sites` in place: absorb the neighbouring weights, apply `propagator` to the
 pair, truncate, and write the two tensors and the new bond weight back. Returns the truncation error.
 
@@ -31,6 +52,7 @@ function bondstep!(
 
     # After rotation the updated bond is always the east bond of the first tensor.
     dir = first(bond)
+
     A, B = PEPSKit._bond_rotation.(Ms, dir, rev; inv = false)
 
     a, X = reducedbond_first(A)
@@ -39,10 +61,11 @@ function bondstep!(
     a, s, b, ϵ = if isnothing(truncalg)
         applypropagator(a, b, propagator, truncation)
     else
-        # The environment metric is the Hilbert-Schmidt norm: `env` is the boundary of the PEPO
-        # sandwiched with its adjoint, and both physical legs sit on the reduced tensors, so `X'X`
-        # in `bondenv_ctm` is a purely virtual contraction.
-        benv = PEPSKit.bondenv_ctm(bond[2], bond[3], X, Y, env)
+        # `bondenv_ctm` reads a horizontal bond, so the environment is rotated exactly as
+        # `_bond_rotation` rotated the tensors, and the bond's position is carried through that
+        # rotation. `_prepare_site_tensor` pads our physical-leg-free remainder with a trivial leg.
+        benv = PEPSKit.bondenv_ctm(_rotatedbond(state, sites, dir, rev)..., X, Y,
+            PEPSKit._bond_rotation(env, dir, rev))
         P = space(A, 1)
         aout, sout, bout, info = truncatebond(
             applypropagator(a, b, propagator), benv, truncalg, P

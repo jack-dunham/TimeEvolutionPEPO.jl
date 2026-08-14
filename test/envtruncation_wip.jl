@@ -115,10 +115,15 @@ end # EnvTruncationSetup
     end
 end
 
-# NOT DISCOVERED: the `_test` suffix is dropped because this path does not work yet.
+
+# NOT DISCOVERED: the `_test` suffix is dropped because this path is incomplete.
 #
-# `bondenv_ctm` contracts `twistdual(X, 1)[pX DNX0 DX0 DSX0 DWX0] * conj(X[pX DNX1 DX1 DSX1 DWX1])`,
-# tracing a physical index between the two layers. That index exists because PEPSKit's split leaves one
-# physical leg on the orthogonal remainder; ours leaves none, since a Liouvillian propagator needs both
-# on the reduced tensor. The environment must therefore be mirrored for a four-leg remainder, dropping
-# the `pX`/`pY` contraction, which is one more function than the four in src/reducedbond.jl.
+# What works: `bondenv_ctm` accepts our physical-leg-free remainder, because
+# `_prepare_site_tensor(t::PEPSOrth)` pads it with a trivial leg, and axis-1 bonds build a valid
+# environment. `_rotatedbond` plus `_bond_rotation(env, dir, rev)` handles the vertical bonds' frame.
+#
+# What does not: the environment is computed once per time step, while every `bondstep!` rewrites two
+# site tensors and a bond space. By the second axis the state no longer matches the environment and the
+# contraction fails on a dual mismatch. A full-environment update has to recompute the environment as
+# the sweep proceeds - per bond, or at least per axis - which is the cost that distinguishes it from
+# simple update. Threading that through `axissweep!` is the remaining work.
