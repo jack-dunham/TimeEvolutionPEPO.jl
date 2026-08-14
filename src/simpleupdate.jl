@@ -6,12 +6,8 @@
     $(TYPEDSIGNATURES)
 
 Position of a bond's first site after `_bond_rotation` has turned the bond horizontal. Julia's
-`rotl90(A)[i, j] == A[j, Nc + 1 - i]`, so a site at `(r, c)` lands at `(Nc + 1 - c, r)`, and `rotr90`
-inverts that.
-
-Only the identity and `rot180` cases are exercised by the tests, which use unit cells whose sites are
-all equivalent; for a genuinely non-uniform cell the rotated position is unverified, and the test that
-would settle it compares this environment against one computed on the explicitly rotated state.
+`rotr90(A)[i, j] == A[Nr + 1 - j, i]`, so a site at `(r, c)` lands at `(c, Nr + 1 - r)`, and `rotl90`
+sends it to `(Nc + 1 - c, r)`.
 """
 function _rotatedbond(state::InfinitePEPO, sites::Vector{CartesianIndex{2}}, dir::Int, rev::Bool)
     Nr, Nc, = size(state)
@@ -100,28 +96,28 @@ returning the largest truncation error.
 Each site sits on two bonds of a given axis and each bond carries half of the one-local part of
 `propagator` (see `twolocal`), so one sweep applies that part once per site. Sweeping both axes
 therefore applies it twice, which is why [`trotterise`](@ref) halves it.
-
-With `truncalg` the CTMRG boundary is recomputed before each bond, from `envalg`, so that it always
-describes the state the bond is about to be updated in. Every bond rewrites the two site tensors it
-joins, and the arrow on a bond written back by a vertical update is the opposite of the one it had,
-so an environment built any earlier disagrees with the state it is contracted against.
 """
 function axissweep!(
         state::InfinitePEPO, weights::SUWeight, propagator::AbstractTensorMap, axis::Int;
-        trunc = nothing, truncalg = nothing, envalg = nothing
+        trunc = nothing, truncalg = nothing, env = nothing
     )
     axis in (1, 2) || throw(ArgumentError("axis must be 1 or 2, got $axis"))
     Nr, Nc, = size(state)
     (Nr >= 2 && Nc >= 2) ||
         throw(ArgumentError("a two-site update needs a unit cell of at least 2x2, got ($Nr, $Nc)"))
 
+    # Vertical bonds run south to north: the other order sets `rev` in `_nn_bondrev`, and the update
+    # then writes each bond back with the opposite arrow.
+    prop = axis == 1 ? propagator : _swapsites(propagator)
+
     ϵ = 0.0
-    env = nothing
     for r in 1:Nr, c in 1:Nc
-        site1 = CartesianIndex(r, c)
-        site2 = axis == 1 ? CartesianIndex(r, c + 1) : CartesianIndex(r + 1, c)
-        isnothing(truncalg) || ((env, _) = bondenvironment(state, envalg; env₀ = env))
-        ϵ = max(ϵ, bondstep!(state, weights, propagator, [site1, site2]; trunc, truncalg, env))
+        site1, site2 = if axis == 1
+            CartesianIndex(r, c), CartesianIndex(r, c + 1)
+        else
+            CartesianIndex(r + 1, c), CartesianIndex(r, c)
+        end
+        ϵ = max(ϵ, bondstep!(state, weights, prop, [site1, site2]; trunc, truncalg, env))
     end
 
     return ϵ
@@ -130,11 +126,19 @@ end
 """
     $(TYPEDSIGNATURES)
 
+Exchange the two sites of a two-site propagator, whose physical legs are ordered
+`(ket₁, bra₁, ket₂, bra₂)` in both codomain and domain.
+"""
+_swapsites(propagator::AbstractTensorMap) = permute(propagator, ((3, 4, 1, 2), (7, 8, 5, 6)))
+
+"""
+    $(TYPEDSIGNATURES)
+
 One time step: sweep each `(propagator, axis)` of a Trotter decomposition in turn, returning the
 largest truncation error.
 
 `truncalg` selects environment-based truncation and needs `envalg`, a [`BondEnvironment`](@ref) or
-the boundary bond dimension; [`axissweep!`](@ref) then solves for a boundary before every bond.
+the boundary bond dimension. One CTMRG boundary is solved for per axis sweep.
 """
 function timestep!(
         state::InfinitePEPO, weights::SUWeight, decomposition::AbstractVector;
@@ -144,8 +148,10 @@ function timestep!(
         throw(ArgumentError("environment-based truncation needs both `truncalg` and `envalg`"))
 
     ϵ = 0.0
+    env = nothing
     for (propagator, axis) in decomposition
-        ϵ = max(ϵ, axissweep!(state, weights, propagator, axis; trunc, truncalg, envalg))
+        isnothing(truncalg) || ((env, _) = bondenvironment(state, envalg; env₀ = env))
+        ϵ = max(ϵ, axissweep!(state, weights, propagator, axis; trunc, truncalg, env))
     end
     return ϵ
 end

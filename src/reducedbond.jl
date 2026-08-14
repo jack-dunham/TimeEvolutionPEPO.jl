@@ -117,9 +117,7 @@ CTMRG boundary of the PEPO sandwiched with its adjoint — the Hilbert-Schmidt m
 environment-based bond truncation is optimised against. Returns the environment and the convergence
 info.
 
-`env₀` warm-starts the boundary solve. A bond update can change the virtual space it writes back, so
-the warm start is used only when its network legs still match the state's; otherwise the solve
-restarts from a random environment.
+`env₀` warm-starts the solve when its network legs match the state's, and is ignored otherwise.
 """
 function bondenvironment(state::InfinitePEPO, alg::BondEnvironment; env₀ = nothing)
     network = InfiniteSquareNetwork(state)
