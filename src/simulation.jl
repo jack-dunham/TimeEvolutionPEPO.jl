@@ -70,12 +70,15 @@ Run `numsteps` time steps. `callback` is passed `sim` itself.
 - `maxtime::Float64 = Inf`: stop once this much wall-clock time has elapsed
 - `breaktol::Float64 = 0.0`: stop once the change in bond weights per unit time falls below this
 - `verbose::Bool = true`: log progress at `@info`
+- `trunc`, `truncalg`, `envalg`: passed to [`timestep!`](@ref); without them each bond is truncated
+  by a bare SVD to the space it already has
 """
 simulate!(sim::Simulation; kwargs...) = simulate!(identity, sim; kwargs...)
 
 function simulate!(
         callback, sim::Simulation; numsteps::Integer, maxshots::Integer = numsteps,
-        maxtime::Float64 = Inf, breaktol::Float64 = 0.0, verbose::Bool = true
+        maxtime::Float64 = Inf, breaktol::Float64 = 0.0, verbose::Bool = true,
+        trunc = nothing, truncalg = nothing, envalg = nothing
     )
     info = sim.info
     info.finished = false
@@ -89,7 +92,7 @@ function simulate!(
 
     step = 0
     while step < numsteps
-        timestep!(sim.state, sim.weights, sim.decomposition)
+        timestep!(sim.state, sim.weights, sim.decomposition; trunc, truncalg, envalg)
         step += 1
 
         info.convergence = weightdistance(previous, sim.weights, sim.timestep)

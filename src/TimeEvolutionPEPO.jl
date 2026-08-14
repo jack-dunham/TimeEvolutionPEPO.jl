@@ -42,7 +42,7 @@ export dissipator, oneterms, isaxial, isexpandable
 export generator, bondpropagator
 export reducedbond_first, reducedbond_last, undo_reducedbond_first, undo_reducedbond_last
 export applypropagator, truncatebond, fusephysical
-export FullEnvTruncation, ALSTruncation, bondenvironment
+export FullEnvTruncation, ALSTruncation, BondEnvironment, bondenvironment
 export bondstep!, axissweep!, timestep!
 export trotterise
 

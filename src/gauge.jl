@@ -52,18 +52,3 @@ function bpenvironment(state::InfinitePEPO; alg = BeliefPropagation(), kwargs...
     env, info = leading_boundary(env₀, InfiniteSquareNetwork(state), alg)
     return env, info
 end
-
-"""
-    $(TYPEDSIGNATURES)
-
-CTMRG boundary of the PEPO sandwiched with its adjoint — the Hilbert-Schmidt metric that
-environment-based bond truncation is optimised against.
-"""
-function bondenvironment(state::InfinitePEPO, bonddim; tol = 1.0e-8, maxiter = 100, verbosity = 0)
-    network = InfiniteSquareNetwork(state)
-    env₀ = initialize_ctmrg_environment(
-        ComplexF64, network, RandomInitialization(), _indexspace(bonddim)
-    )
-    env, info = leading_boundary(env₀, network; tol, maxiter, verbosity)
-    return env, info
-end

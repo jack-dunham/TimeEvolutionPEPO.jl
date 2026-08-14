@@ -48,10 +48,10 @@ end # EnvTruncationSetup
         decomposition = trotterise(zero(Hamiltonian) + Dissipator(jump), P, dt)
         alg = FullEnvTruncation(; trunc = truncspace(ComplexSpace(1)), maxiter = 20)
 
+        envalg = BondEnvironment(4)
         deviation = 0.0
         for step in 1:nsteps
-            env, = quiet(() -> bondenvironment(state, 4))
-            quiet(() -> timestep!(state, weights, decomposition; truncalg = alg, env))
+            quiet(() -> timestep!(state, weights, decomposition; truncalg = alg, envalg))
             m = onesite(state; bonddim = 4)
             exact = evolve_dense(bloch(v0), G, step * dt)
             deviation = max(
@@ -84,10 +84,10 @@ end # EnvTruncationSetup
         fet_weights = SUWeight(fet_state)
         alg = FullEnvTruncation(; trunc = truncspace(ComplexSpace(D)), maxiter = 30)
 
+        envalg = BondEnvironment(8)
         for _ in 1:6
             quiet(() -> timestep!(svd_state, svd_weights, decomposition))
-            env, = quiet(() -> bondenvironment(fet_state, 8))
-            quiet(() -> timestep!(fet_state, fet_weights, decomposition; truncalg = alg, env))
+            quiet(() -> timestep!(fet_state, fet_weights, decomposition; truncalg = alg, envalg))
         end
 
         svd_error = norm(onesite(svd_state) - target)
@@ -103,9 +103,9 @@ end # EnvTruncationSetup
         decomposition = trotterise(lindblad(), P, dt)
         alg = ALSTruncation(; trunc = truncspace(ComplexSpace(D)), maxiter = 20)
 
+        envalg = BondEnvironment(8)
         for _ in 1:3
-            env, = quiet(() -> bondenvironment(state, 8))
-            quiet(() -> timestep!(state, weights, decomposition; truncalg = alg, env))
+            quiet(() -> timestep!(state, weights, decomposition; truncalg = alg, envalg))
         end
 
         m = onesite(state)
@@ -114,16 +114,3 @@ end # EnvTruncationSetup
         @test minimum(real, eigvals(Hermitian((m + m') / 2))) > -1e-6
     end
 end
-
-
-# NOT DISCOVERED: the `_test` suffix is dropped because this path is incomplete.
-#
-# What works: `bondenv_ctm` accepts our physical-leg-free remainder, because
-# `_prepare_site_tensor(t::PEPSOrth)` pads it with a trivial leg, and axis-1 bonds build a valid
-# environment. `_rotatedbond` plus `_bond_rotation(env, dir, rev)` handles the vertical bonds' frame.
-#
-# What does not: the environment is computed once per time step, while every `bondstep!` rewrites two
-# site tensors and a bond space. By the second axis the state no longer matches the environment and the
-# contraction fails on a dual mismatch. A full-environment update has to recompute the environment as
-# the sweep proceeds - per bond, or at least per axis - which is the cost that distinguishes it from
-# simple update. Threading that through `axissweep!` is the remaining work.

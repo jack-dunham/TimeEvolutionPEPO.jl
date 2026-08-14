@@ -73,6 +73,8 @@ function bondstep!(
         (aout, sout, bout, info.fid)
     end
 
+    a, s, b = _restorearrow(a, s, b, space(A, 4))
+
     A = undo_reducedbond_first(a, X)
     B = undo_reducedbond_last(b, Y)
 
@@ -89,6 +91,24 @@ function bondstep!(
     weights[bond...] = normalize!(s, Inf)
 
     return ϵ
+end
+
+"""
+    $(TYPEDSIGNATURES)
+
+Give the updated bond the arrow `V` the bond carried before the update, flipping the two reduced
+tensors and the weight together so the contraction is unchanged.
+
+The SVD in [`applypropagator`](@ref) sets the arrow itself, and after `_bond_rotation` maps the
+rotated frame's east bond back onto a north-south bond that arrow is the opposite one. Without this
+the first update of every vertical bond flips the north and south legs it writes back, and a CTMRG
+environment built at the start of the sweep no longer contracts with the state.
+"""
+function _restorearrow(
+        a::GenericMPSTensor{S, 3}, s::DiagonalTensorMap, b::GenericMPSTensor{S, 3}, V::S
+    ) where {S}
+    space(a, 4) == V && return a, s, b
+    return flip(a, 4), DiagonalTensorMap(flip(s, (1, 2))), flip(b, 1)
 end
 
 """
@@ -125,13 +145,22 @@ end
 
 One time step: sweep each `(propagator, axis)` of a Trotter decomposition in turn, returning the
 largest truncation error.
+
+With `truncalg` the CTMRG boundary is recomputed before each axis sweep, warm-started from the
+previous one, since the sweep before it rewrote every site tensor. `envalg` is a
+[`BondEnvironment`](@ref) or the boundary bond dimension.
 """
 function timestep!(
         state::InfinitePEPO, weights::SUWeight, decomposition::AbstractVector;
-        trunc = nothing, truncalg = nothing, env = nothing
+        trunc = nothing, truncalg = nothing, envalg = nothing
     )
+    isnothing(truncalg) == isnothing(envalg) ||
+        throw(ArgumentError("environment-based truncation needs both `truncalg` and `envalg`"))
+
     ϵ = 0.0
+    env = nothing
     for (propagator, axis) in decomposition
+        isnothing(truncalg) || ((env, _) = bondenvironment(state, envalg; env₀ = env))
         ϵ = max(ϵ, axissweep!(state, weights, propagator, axis; trunc, truncalg, env))
     end
     return ϵ
