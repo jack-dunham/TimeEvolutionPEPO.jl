@@ -87,4 +87,24 @@ end # PropagatorSetup
         @test codomain(u) == P ⊗ P' ⊗ P ⊗ P'
         @test domain(u) == P ⊗ P' ⊗ P ⊗ P'
     end
+
+    @testset "one-local terms are placed per endpoint" begin
+        X, Y, Z = PAULI
+        P = ComplexSpace(2)
+
+        # Splitting a uniform model across its two endpoints must reproduce the symmetric path.
+        uniform = 1.5 / 4 * LocalOp(Z, Z) + LocalOp(X) + Dissipator(0.5 * (Y - im * Z))
+        @test generator(uniform, uniform, P) ≈ generator(uniform, P)
+
+        # A field on the first site only must equal kron(X, I) in the vectorised generator, at half
+        # weight, and must differ from the same field on the second site.
+        first_only = zero(Hamiltonian) + LocalOp(X)
+        empty = zero(Hamiltonian)
+        g1 = generator(first_only, empty, P)
+        g2 = generator(empty, first_only, P)
+        @test !(g1 ≈ g2)
+
+        # Both halves together are the symmetric term.
+        @test g1 + g2 ≈ generator(first_only, first_only, P)
+    end
 end

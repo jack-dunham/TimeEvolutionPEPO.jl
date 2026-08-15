@@ -19,30 +19,44 @@ end
 """
     $(TYPEDSIGNATURES)
 
-Two-site generator of `model` as a matrix, in the vectorisation the term algebra uses: composite index
-`(ket₁, ket₂, bra₁, bra₂)`, ket slowest. A `Hamiltonian` gives the thermal generator and a
-`Liouvillian` the Lindblad one.
+Two-site generator of `anchor` and `neighbour` as a matrix, in the vectorisation the term algebra
+uses: composite index `(ket₁, ket₂, bra₁, bra₂)`, ket slowest. A `Hamiltonian` gives the thermal
+generator and a `Liouvillian` the Lindblad one.
 """
-function generator(model::AbstractTerm, P::IndexSpace)
+function generator(anchor::AbstractTerm, neighbour::AbstractTerm, P::IndexSpace)
     d = dim(P)
     data = zeros(ComplexF64, d^4, d^4)
 
-    if model isa Hamiltonian
-        vecf = thermalvectorise
-    elseif model isa Liouvillian
-        vecf = vectorise
-        jumps = dissipator(model)
-        length(jumps) > 0 && (data += vectorise(jumps, 2))
-    else
-        throw(ArgumentError("no generator defined for a model of type $(typeof(model))"))
-    end
+    vecf = _vectorisation(anchor)
+    vecf === _vectorisation(neighbour) || throw(
+        ArgumentError(
+            "a bond cannot mix a thermal and a Lindblad generator: " *
+                "got $(typeof(anchor)) and $(typeof(neighbour))"
+        ),
+    )
 
-    # One-local terms are shared between the two sites of the bond, hence the halving in `twolocal`.
-    length(oneterms(model)) > 0 && (data += sum(vecf, oneterms(model)))
-    length(terms(model)) > 0 && (data += sum(vecf, terms(model)))
+    # Two-local terms belong to the bond and come from the anchor; one-local terms belong to a site.
+    length(terms(anchor)) > 0 && (data += sum(vecf, terms(anchor)))
+
+    for (slot, site) in ((1, anchor), (2, neighbour))
+        for h in oneterms(site)
+            data += onsite(vecf(LocalOp{2}), slot)(Matrix{ComplexF64}(h))
+        end
+        jumps = dissipator(site)
+        isnothing(jumps) && continue
+        for L in terms(jumps)
+            data += onsite(_dissipatorvec, slot)(L)
+        end
+    end
 
     return data
 end
+
+_vectorisation(::Hamiltonian) = thermalvectorise
+_vectorisation(::Liouvillian) = vectorise
+_vectorisation(t) = throw(ArgumentError("no generator defined for a model of type $(typeof(t))"))
+
+generator(model::AbstractTerm, P::IndexSpace) = generator(model, model, P)
 
 """
     $(TYPEDSIGNATURES)
