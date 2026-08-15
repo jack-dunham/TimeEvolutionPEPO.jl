@@ -220,6 +220,16 @@ generator(t::Ising, P::IndexSpace) = generator(_equation(t), P)
 generator(a::Ising, b::Ising, P::IndexSpace) = generator(_equation(a), _equation(b), P)
 ```
 
+Also add, for the route check Task 3 introduces — `terms(::Ising)` does not exist, and an `Ising`
+coupling is nearest-neighbour by construction, so the check is vacuous for it:
+
+```julia
+_checkroute(::Ising) = nothing
+```
+
+Task 3 defines `_checkroute` in `src/trotterdecomposition.jl`; if Task 3 has not run yet, add this
+line there as part of Task 3 instead and leave a note in your report.
+
 If `Ising` is loaded before `Hamiltonian`/`Liouvillian`, move these definitions to the bottom of `src/propagator.jl` instead — check the include order in `src/TimeEvolutionPEPO.jl:61-77` before choosing.
 
 - [ ] **Step 4: Run the test**
@@ -305,16 +315,32 @@ In `trotterise`, the destructuring line becomes:
 
 - [ ] **Step 4: Add the error for terms with no propagator route**
 
-Still in `trotterise`, before building the propagator, reject terms that are not nearest-neighbour. `isaxial` is true for long-range axial terms too, so test for the concrete single-term types that `generator` can vectorise:
+Define this as a **named helper**, not inline — Task 7 rewrites `trotterise`'s loop and must be able to
+call it rather than duplicate it. `isaxial` is true for long-range axial terms too, so test for the
+concrete single-term types that `generator` can vectorise:
 
 ```julia
-        all(t -> t isa LocalOp, terms(term)) || throw(
-            ArgumentError(
-                "no propagator route for $(typeof(first(filter(t -> !(t isa LocalOp), terms(term))))): " *
-                    "only nearest-neighbour terms can be exponentiated into a two-site propagator"
-            ),
-        )
+"""
+    $(TYPEDSIGNATURES)
+
+Throw unless every term of `t` can be exponentiated into a two-site propagator.
+"""
+function _checkroute(t::AbstractTerm)
+    unroutable = filter(x -> !(x isa LocalOp), collect(terms(t)))
+    isempty(unroutable) || throw(
+        ArgumentError(
+            "no propagator route for $(typeof(first(unroutable))): only nearest-neighbour " *
+                "terms can be exponentiated into a two-site propagator"
+        ),
+    )
+    return nothing
+end
+
+# An Ising coupling is nearest-neighbour by construction, and `terms` is not defined for it.
+_checkroute(::Ising) = nothing
 ```
+
+Call `_checkroute(term)` in `trotterise`'s loop before building the propagator.
 
 - [ ] **Step 5: Run the test**
 
@@ -600,14 +626,10 @@ Append to `test/model_test.jl`:
     @testset "distribute! spreads over existing layers" begin
         model = Model(LocalOp(X, X), LocalOp(Y, Y))
         distribute!(model, LocalOp(Z))
+        # The layer count is unchanged; the numerical share is checked in the next testitem, once
+        # trotterise accepts a Model.
         @test length(model) == 2
-
-        # Each layer must carry half the field, matching it written in by hand.
-        byhand = Model(
-            LocalOp(X, X) + 0.5 * LocalOp(Z), LocalOp(Y, Y) + 0.5 * LocalOp(Z)
-        )
-        P = ComplexSpace(2)
-        @test trotterise(model, P, 0.1) == trotterise(byhand, P, 0.1)
+        @test length(oneterms(model[1][1, 1])) == 1
     end
 
     @testset "distributing over no layers is an error" begin
@@ -622,7 +644,8 @@ Append to `test/model_test.jl`:
 end
 ```
 
-`trotterise(model, P, dt)` is Task 7; this test is expected to stay red until then. Note that in the commit message.
+Every testset here must pass at the end of this task. The numerical check on `distribute!`'s `1/n`
+share needs `trotterise(::Model, …)` and so lives in Task 7.
 
 - [ ] **Step 2: Run it and confirm it fails**
 
@@ -778,6 +801,17 @@ Append to `test/model_test.jl`:
         propagators, = first(decomposition)
         @test size(propagators) == (2, 2)
         @test !(propagators[1, 1] ≈ propagators[1, 2])
+    end
+
+    @testset "distribute! gives each layer a 1/n share" begin
+        # Moved here from Task 6: the check needs trotterise to accept a Model.
+        distributed = Model(LocalOp(X, X), LocalOp(Y, Y))
+        distribute!(distributed, LocalOp(Z))
+        byhand = Model(LocalOp(X, X) + 0.5 * LocalOp(Z), LocalOp(Y, Y) + 0.5 * LocalOp(Z))
+        got = trotterise(distributed, P, 0.1)
+        want = trotterise(byhand, P, 0.1)
+        @test length(got) == length(want)
+        @test all(first(g)[1, 1] ≈ first(w)[1, 1] for (g, w) in zip(got, want))
     end
 
     @testset "the one-local part is halved across the two axes" begin
