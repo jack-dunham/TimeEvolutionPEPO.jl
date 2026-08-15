@@ -14,8 +14,20 @@ Base.lastindex(h::AbstractTerm) = length(h)
 
 Base.getindex(h::AbstractTerm, i) = getindex(terms(h),i)
 
+"""
+    $(TYPEDSIGNATURES)
+
+Whether a term is a compact form of a sum that has to be expanded before it can be exponentiated,
+as `PowOp` is for a sum of `ExpOp`s.
+"""
 isexpandable(::AbstractTerm) = false
 
+"""
+    $(TYPEDSIGNATURES)
+
+Whether every term has support along a single lattice axis, as opposed to a radial or Manhattan
+distance.
+"""
 isaxial(::AbstractTerm) = true
 isaxial(::AbstractRadialTerm) = false
 isaxial(::AbstractManhattanTerm) = false

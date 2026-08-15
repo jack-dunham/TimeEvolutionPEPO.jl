@@ -32,8 +32,20 @@ function Simulation(
     return Simulation(info, model, state, weights, trotterise(model, P, timestep), timestep)
 end
 
+"""
+    $(TYPEDSIGNATURES)
+
+The density-matrix PEPO a simulation is evolving. Mutated in place by [`simulate!`](@ref).
+"""
 quantumstate(sim::Simulation) = sim.state
+
+"""
+    $(TYPEDSIGNATURES)
+
+The bond weights of a simulation's state, one per bond of the unit cell.
+"""
 bondweights(sim::Simulation) = sim.weights
+
 timestep(sim::Simulation) = sim.timestep
 
 """

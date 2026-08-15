@@ -3,75 +3,89 @@ CurrentModule = TimeEvolutionPEPO
 ShareDefaultModule = true
 ```
 ```@setup
-using TimeEvolutionPEPO, TensorKit, TensorRenormalizationGroups
+using TimeEvolutionPEPO, TensorKit
 ```
-# State representation using the `PEPO` type
+# State representation
 
-In the TimeEvolutionPEPO.jl package, the tensor network representation of the state is represented computationally using an object of the type `PEPO`.
-For more details, and a full list of constructors of `PEPO` objects, please see the relevant [library documentation]().
+The state is a PEPSKit `InfinitePEPO` whose tensors are local density matrices, paired with an
+`SUWeight` holding one weight per bond of the unit cell. Both types come from PEPSKit and are
+re-exported here; see the [PEPSKit documentation](https://quantumkithub.github.io/PEPSKit.jl/stable/)
+for their full interface.
 
 ## Construction
 
-A `PEPO` can be construct directly by defining the local density matrices on each lattice site in the unit cell.
-Currently, only product states can be constructed this way.
-One must also choose the bond dimension for each bond in the unit cell.
+`productpepo` builds the PEPO of a product state from a local density matrix and a bond dimension.
+The density matrix can be given directly, or as a spin-1/2 Bloch vector.
+
 ```@repl
 bonddim = 4
-state = PEPO((0,0,-1), bonddim); # Initalise a spin-1/2 product state with all spins pointing down
-rho = 0.5 * (one(PAULI[3]) - PAULI[3]) # Or construct rho from the bloch vector explictly
-state == PEPO(rho, bonddim) # These are equivalent
-```
-We can also specify a non-trivial unit cell by passing matrices to the `PEPO` constructor: 
-```@repl
-rhoA = (0,0,-1)
-rhoB = (0,0,+1)
-size(PEPO([rhoA rhoB; rhoB rhoA], bonddim)) == (2, 2)
-```
-Passing an integer as the bond dimension to the `PEPO` constructor is a convenient shortcut for constructing a tensor network with a trivial (non-symmetric) local and bond space, i.e. one of type `ComplexSpace`.
-```@repl
-bondspace = ComplexSpace(bonddim)
-bondspace === ℂ^bonddim # optional unicode short-hand for the above (from TensorKit.jl)
-PEPO(rho, bonddim) == PEPO(rho, bondspace)
-```
-In this specific case, where spaces are trivial, usually the size of the local vector space can be obtained automatically from the first argument to the `PEPO` constructor.
-When this is not the case, or if one wishes to specify a non-trivial space with a symmetry, the local space must also be specified as the second argument, with the third argument now representing the bond space.
-```@repl
-PEPO(rho, U1Space(-1=>1, 1=>1), U1Space(0=>4));
-```
-Of course, not all initial states are compatible with all symmetric vector spaces. For example:
-```@repl
-PEPO([0 1; 1 1], U1Space(-1=>1, 1=>1), U1Space(0=>4));
-```
-In the above, the products state defined by the input density matrix is not U(1) symmetric, and is therefore incompatible with this representation space.
-
-## Interface
-
-Objects of type `PEPO` subtype the `AbstractUnitCell` abstract type from the TensorRenormalizationGroups.jl backend package, i.e.
-```@repl
-PEPO <: TensorRenormalizationGroups.AbstractUnitCell
-```
-and therefore can be indexed similarly (with periodic boundary conditions).
-While it is unlikely that you will need to work with the `PEPO` object directly, there are some convenience functions that maybe be useful in this case. 
-The bond space of a `PEPO` can be increased  in dimension by calling:
-```@repl
-state_expanded = expandspace(state, ComplexSpace(6));
-space(state_expanded[1,1])
-```
-One can also convert a symmetric `PEPO` (one defined with respect vector spaces of type `GradedSpace`) to aa trivial one using the `unsymmetrise` function.
-If `PEPO` is already trivial, then this function has no effect.
-```@repl
-state === unsymmetrise(state)
+state = productpepo((0, 0, -1), bonddim);       # all spins pointing down
+rho = bloch((0, 0, -1))                          # the same state, written out
+state[1, 1] ≈ productpepo(rho, bonddim)[1, 1]
 ```
 
-## Converting to base Julia
+A non-trivial unit cell comes from passing a matrix of local states, one entry per site.
 
-If one wishes to strip the tensors out of the `PEPO` objects (for example to use in a different package),
-then one can just broadcast to a matrix of the correct type:
 ```@repl
-PType = tensortype(state)
-matrix_of_tensormaps = Matrix{PType}(undef, size(state))
-matrix_of_tensormaps .= state;
-matrix_of_tensormaps[1,1] === state[1,1]
+up, down = (0, 0, 1), (0, 0, -1)
+size(productpepo([down up; up down], bonddim))
 ```
-The `TensorMap` elements can then be converted to standard Julia arrays by broadcasting over `matrix_of_tensormaps`.
 
+`ThermalState()` selects the infinite-temperature density matrix, the usual starting point for
+annealing.
+
+```@repl
+convert(Array, productpepo(ThermalState(), 1)[1, 1])[:, :, 1, 1, 1, 1]
+```
+
+The bond argument is a dimension or a `TensorKit` space; an integer is shorthand for a trivial
+`ComplexSpace`.
+
+```@repl
+productpepo(rho, ComplexSpace(4))[1, 1] ≈ productpepo(rho, 4)[1, 1]
+```
+
+Only the first basis vector of each virtual space carries the product state; the rest is padded with
+zeros, so the bond dimension is available for the evolution to fill.
+
+!!! note
+    `productpepo` builds trivial (non-symmetric) physical and virtual spaces. Constructing a state on
+    a symmetric space, for instance to preserve total spin or particle number, is not supported by
+    this constructor.
+
+## Index conventions
+
+Tensors follow PEPSKit's `PEPOTensor` convention: physical indices in the codomain, virtual indices in
+the domain, ordered north, east, south, west.
+
+```@repl
+space(state[1, 1])
+```
+
+Index 1 is the ket and index 2 the bra, so that an operator on index 1 left-multiplies the density
+matrix and one on index 2 right-multiplies it. The vectorisation that follows from this ordering is
+described in [Conventions and the `TensorMap` type](@ref).
+
+## Bond weights
+
+The bond weights are held outside the tensors, as PEPSKit's `SUWeight`, rather than absorbed into
+them. `SUWeight(state)` gives the trivial weights.
+
+```@repl
+weights = SUWeight(state);
+size(weights)
+```
+
+For a state under evolution the weights are the Schmidt spectra of the bonds, so their entropy
+measures how much entanglement each bond carries.
+
+```@repl
+bondentropy(weights)
+bondentropy(weights; normalized = true)
+```
+
+A product state has Schmidt spectrum `(1, 0, …)` on every bond. The trivial weights are not that
+spectrum — they are invertible, which the spectrum is not — so they act as a gauge choice that the
+first bond update replaces.
+
+A `Simulation` carries both, reachable with `quantumstate` and `bondweights`.

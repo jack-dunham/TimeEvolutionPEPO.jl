@@ -27,9 +27,20 @@ end
 Base.convert(::Type{Hamiltonian}, term::AbstractTerm) = Hamiltonian(term)
 
 terms(h::Hamiltonian) = h.terms
+"""
+    $(TYPEDSIGNATURES)
+
+The one-local terms of a model, held separately from the two-local ones because a bond carries half
+of them per site.
+"""
 oneterms(h::Hamiltonian) = h.oneterms
 
 # Hamiltonians have no lindblad operators associated with them
+"""
+    $(TYPEDSIGNATURES)
+
+The `Dissipator` of a model, or `nothing` for a `Hamiltonian`.
+"""
 dissipator(::Hamiltonian) = nothing
 
 Base.zero(::Type{<:Hamiltonian}) = Hamiltonian()
