@@ -7,3 +7,4 @@ dev/
 !src/dev
 /CLAUDE.md
 /.nvim.lua
+.superpowers/

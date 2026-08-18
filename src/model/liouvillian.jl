@@ -25,6 +25,9 @@ terms(D::Dissipator) = D.terms
 
 isaxial(::Dissipator) = false
 
+_anticomm(L) = kron(L' * L, one(L)) + kron(one(L), transpose(L' * L))
+_dissipatorvec(L) = kron(L, transpose(L')) - 1 / 2 * _anticomm(L)
+
 function vectorise(dissipator::Dissipator, locality=2)
     if isempty(dissipator)
         throw(
@@ -34,14 +37,10 @@ function vectorise(dissipator::Dissipator, locality=2)
         )
     end
 
-    anticomm = L -> kron(L' * L, one(L)) + kron(one(L), transpose(L' * L))
-
-    vec_local = L -> kron(L, transpose(L')) - 1 / 2 * anticomm(L)
-
     if locality == 1
-        f = vec_local
+        f = _dissipatorvec
     elseif locality == 2
-        f = twolocal(vec_local)
+        f = twolocal(_dissipatorvec)
     else
         throw(
             ArgumentError(

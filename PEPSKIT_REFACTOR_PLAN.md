@@ -7,6 +7,21 @@ Conventions for every task below: use the `julia_eval` MCP tool, never `bash jul
 lines you touched (JuliaFormatter BlueStyle). ReTestItems discovers `test/*_test.jl` only. Do not
 run `Pkg.test()` without asking; run the specific test files named in each task.
 
+**Nothing in `src/` is deleted.** Code whose behaviour PEPSKit does not directly provide moves to
+`src/dev/` with its include commented out, to be refactored later. Code that PEPSKit does replace also
+moves there rather than being removed, and only stops being loaded once its replacement demonstrably
+works — replace first, park second, in that order and never the reverse. This applies per subsystem,
+not per file: most files mix replaced and unreplaced behaviour (`pepo/weights.jl` holds `setweight!`
+alongside `bondentropy`; `truncation/truncation.jl` holds the `FET` and `SVDU` structs alongside
+`NTU`), so the unit of work is a subsystem's replacement landing, at which point the old files behind
+it are parked whole.
+
+Two mappings in §0 are unverified and must not drive a parking decision until checked: `WTG` is not a
+state gauge — `fixgauge!(iso, metric, ::WTG)` gauges the truncation isometries, so its analogue is
+`contractions/bondenv/gaugefix.jl`, not `SUGauge` — and the product-state constructors in
+`pepo/pepo.jl` have no PEPSKit builder beyond `infinite_temperature_density_matrix`, which covers only
+the identity.
+
 ## 0. API mapping
 
 | Current | PEPSKit replacement | Notes |
@@ -23,7 +38,7 @@ run `Pkg.test()` without asking; run the specific test files named in each task.
 | `SimpleUpdate`, `SVDU`, `trotterstep!` | `SimpleUpdate` (`purified` flag), `su_iter` | their `purified=false` is `exp(-Hdt/2) ρ exp(-Hdt/2)` |
 | `FET`, `isometries`, `updatetensors` | `FullEnvTruncation`, `ALSTruncation`, `bond_truncate`, `bondenv_ctm` | |
 | `WTG`, `simple_update_gauge!`, `src/dev/vidalgauge.jl` | `SUGauge` + `gauge_fix` | `SUGauge` *is* gauge fixing by trivial simple update |
-| `MCF`, `src/dev/beliefpropagation.jl` | `BPGauge`, `BeliefPropagation`, `BPEnv`, `SUWeight(::BPEnv)` | |
+| `src/dev/beliefpropagation.jl` | `BPGauge`, `BeliefPropagation`, `BPEnv`, `SUWeight(::BPEnv)` | |
 | `truncdim`/`truncbelow`/`truncspace` args | `TruncationStrategy`: `truncrank`/`trunctol`/`truncspace`, `FixedSpaceTruncation`, `SiteDependentTruncation` | |
 | `mpinv`, `safepinv` | `sdiag_pow` | |
 | `_permute`, `permutedom`, `swap`, rotations | `utility/{util,indexing,rotations}.jl` | keep only what has no equivalent |
@@ -32,6 +47,14 @@ run `Pkg.test()` without asking; run the specific test files named in each task.
 No PEPSKit equivalent — keep: `src/model/**` (term algebra, `Liouvillian`, `Dissipator`, `Ising`,
 `fsm.jl`, `mpo.jl`, `pepso.jl`), `negativity`, NTU, `Simulation`/`SimulationInfo`/`simulate!`,
 `bondentropy`.
+
+The minimal canonical form is also unmatched: PEPSKit's gauges are `SUGauge` and `BPGauge`, which are
+different fixed points, and the third `gauge_fix` in `algorithms/ctmrg/gaugefix.jl` fixes the CTMRG
+environment's gauge for fixed-point differentiation. It is parked in `src/dev/mcf.jl` for a later
+rewrite onto `InfinitePEPO`. Two defects to repair when that happens: it throws for unit cells larger
+than 1×1, and its `fixgauge!(x, ::MCF)` takes two arguments where the only callers, in
+`truncation/isometries.jl`, pass three — so selecting `SimpleUpdate(gauge = MCF())` raises a
+`MethodError` rather than gauging. Its one working entry point is `IterativeSU` with `gauge == -1`.
 
 ## 1. Conversion rules (the correctness of every later phase depends on these)
 
@@ -82,9 +105,9 @@ This file is scaffolding. It is deleted at the end of Phase 5 once `PEPO` is gon
 
 ### 0.1 Exact benchmarks (done; `test/exact_benchmarks.jl`, report in `test/reference/benchmarks.txt`)
 
-Seven benchmarks compare the package against references computed independently with dense linear
-algebra, so a disagreement locates an error in the package rather than a change in it. Results at
-commit `ba2345c`:
+Nine benchmarks compare the package against references computed independently with dense linear
+algebra, so a disagreement locates an error in the package rather than a change in it. The results
+below are as first recorded at commit `ba2345c`; B8 and B9 were added later and are shown post-fix:
 
 | | subject | result |
 |:---|:---|:---|
@@ -96,6 +119,7 @@ commit `ba2345c`:
 | B6 | Larmor precession, sign of `H` in a `Liouvillian` | disagrees, 1.13; **4.4e-16 with the sign reversed** |
 | B7 | one-local model at bond dimension above the gate rank | disagrees: `D=1` 1.1e-15, `D=2` 2.1e-15, `D=4` 2.02, `D=8` 72.5 |
 | B8 | `Ising` fast path against the generic path at zero coupling | agrees, 8.9e-16 (after the fix below; 1.13 before) |
+| B9 | asymmetric two-site term on a three-period stripe, site ordering | agrees, 6.6e-5; 1.60 against the exchanged ordering |
 
 These benchmarks, not trajectory comparisons, are the completion criterion for later phases: they
 check against exact results rather than against the current implementation, so they remain valid
@@ -104,44 +128,62 @@ and is optional.
 
 ### Pre-existing defects found by task 0.1
 
-1. **Reversed physical legs on the Trotter gate — fixed.** Evolution ran with `dρ/dt = +i[H,ρ]` and
-   with `D[conj(L)]` instead of `D[L]`. `tebdtensor` built the vectorised superoperator as a matrix
+All three are now resolved, and only the first needed a fix; the other two ceased to exist when the
+subsystems holding them were replaced.
+
+1. **Reversed physical legs on the Trotter propagator — fixed.** Evolution ran with `dρ/dt = +i[H,ρ]`
+   and with `D[conj(L)]` instead of `D[L]`. `tebdtensor` built the vectorised superoperator as a matrix
    whose composite index runs ket-slowest (row major), then moved it into the eight-leg array with
    `copyto!`, which fills the fastest axis first — reversing each group of four legs, which both
-   exchanges ket with bra and reverses the two sites. The site reversal is invisible for terms
-   symmetric under exchanging the two sites, which is every term the tests and documentation use.
+   exchanges ket with bra and reverses the two sites.
+
+   The two halves differ in severity. Exchanging ket with bra is a physics error with no symmetry
+   excusing it. Reversing the two sites is a lattice inversion: applied to every bond of a
+   translation-invariant model it is a relabelling, unobservable unless the state itself breaks
+   inversion symmetry, and invisible outright for terms symmetric under exchanging the two sites —
+   which is every term the tests and documentation use. B9 pins it with a three-period stripe, where
+   a site's two neighbours along an axis hold different states; a checkerboard is not enough, since
+   there both neighbours hold the same state.
+
    The governing convention is PEPSKit's `PEPOTensor : P ⊗ P´ ← N ⊗ E ⊗ S ⊗ W` — index 1 outgoing
    (ket, left-multiplied), index 2 incoming (bra, right-multiplied), as confirmed by
    `trace_physicalspaces` contracting `O[p p; N E S W]` and by `_apply_sitegate` applying `gate * a`
-   to index 1 and `a * gate` to index 2. The vectorisations in `vectorise`/`thermalvectorise` already
-   matched that ordering; only the conversion was wrong, so the fix replaces the `copyto!` with a
-   reshape into the reversed leg order followed by `permutedims` back.
+   to index 1 and `a * gate` to index 2.
 
-   Evidence: B6 moved from 1.13 to 4.4e-16 and its Hamiltonian-reversed figure from 4.4e-16 to 1.13;
-   B2 from 2.30 to 2.8e-6; a jump operator with `conj(L) ≠ ±L` moved from matching `D[conj(L)]` to
-   matching `D[L]` at 3.9e-15. B1, B3 and B4 were unchanged, as expected — their operators are
-   insensitive to the reversal, which is why the defect survived.
-
-   The `Ising` fast path had the same reversal at `src/model/heisenberg.jl:207`, where
-   `TensorMap(L * op * L, space, space)` reshapes the matrix leg-1-fastest. B8 covers it and both
-   conversions now go through `vectorised_tensormap` in `src/tensorkitutils.jl`.
+   The `Ising` fast path had the same reversal at `src/model/heisenberg.jl:207`. Both conversions went
+   through `vectorised_tensormap`, which now lives in `src/propagator.jl`.
 
    Two sites keep the defect and are deliberately untouched, both unreachable:
    `tebdtensor(model::Ising, p, method, dt)` at `src/model/heisenberg.jl:222` returns
    `TensorMap(data, space, D1 * D2')` with `data` never assigned, so it raises `UndefVarError` if
    called; and `tebdtensor(model::AbstractMatrix, …)` at `src/evolution/dynamicalmap.jl:401` is
    reached only through `timestepper`, which has no live callers.
-2. **`pepositedata` prepares `ρ⁴`, not `ρ`** (`src/pepo/pepo.jl:100-114`). It writes the input matrix
-   into all four directional tensors and contracts them in a chain through the physical index. Pure
-   states are projectors and `ThermalState` is the identity, so every example in the docs and tests
-   is unaffected; any mixed initial state is silently replaced by `ρ⁴/tr(ρ⁴)`. Fix in Phase 1, where
-   the constructors are rewritten onto PEPSKit's product-state builders anyway.
-3. **Bond dimension above the rank the gate can generate produces garbage** (B7). Padded bond weights
-   contain exact zeros, which simple update inverts. The failure is silent and severe: a one-local
-   model that is exact at `D=1,2` is wrong by 2.0 at `D=4` and by 72.5 at `D=8`. The documented
-   example `PEPO(rho, ℂ^2, ℂ^4)` is in this regime for any gate of rank below 4. PEPSKit guards the
-   same operation with `sdiag_pow(s, pow; tol)`, so Phase 3/4 adoption resolves it; until then, keep
-   `D` at or below the gate rank reported by the compression log.
+2. **The product-state constructor prepared `ρ⁴`** (`src/pepo/pepo.jl:100-114`) — resolved by
+   construction. `productpepo` writes the local density matrix straight into the tensor, so a mixed
+   initial state is prepared as requested, to 1e-16 across every Pauli component. `bloch` also now
+   rejects Bloch vectors longer than one rather than returning a non-positive matrix.
+3. **Bond dimension above the rank the propagator generates produced garbage** — resolved by
+   construction. PEPSKit guards the weight inversion with `sdiag_pow(s, pow; tol)`, so B7 now agrees
+   at every `D` from 1 to 8, where the old code deviated by 2.02 at `D = 4` and 72.5 at `D = 8`.
+
+### Benchmarks on the new stack
+
+`test/exact_benchmarks.jl` records the old-API run and no longer loads. The checks live with the
+subsystems they exercise, all against dense linear algebra:
+
+| | file | result |
+|:---|:---|:---|
+| B1 | `simulation_test.jl`, `simpleupdate_test.jl` | one-local Lindblad trajectory vs `exp(t𝓛)`, < 1e-8 |
+| B2 | `benchmarks_test.jl` | interacting derivative vs the exact generator, < 1e-3; reversed `H` excluded by > 1 |
+| B3 | `simpleupdate_test.jl` | trace, hermiticity, positivity after an interacting sweep |
+| B4 | `benchmarks_test.jl` | high-temperature limit, `d⟨ZZ⟩/dβ = -J/4` and `d⟨X⟩/dβ = h` within 5e-2, fixing `β = t` |
+| B5 | `state_test.jl` | mixed states prepared as requested, 1e-10 |
+| B6 | `simulation_test.jl` | Larmor precession, < 1e-8; reversed convention excluded by > 0.1 |
+| B7 | `benchmarks_test.jl` | agrees at `D = 1, 2, 4, 8` |
+| B9 | `benchmarks_test.jl` | asymmetric term on a stripe, < 1e-3; exchanged sites excluded by > 1 |
+
+B8 compared the `Ising` fast path against the generic one; both are parked pending the FSM and cluster
+work, so it has no counterpart yet.
 
 ### Trajectory recording (optional, `test/generate_reference_output.jl`)
 
@@ -168,7 +210,24 @@ the two invocations in `test/reference/tolerance.txt`. That figure is the thresh
 comparison: a deviation below it is run-to-run variation, a deviation above it is a change in the
 computed results.
 
-### 0.2 TRGroups to TensorKit 0.17
+### 0.2 TRGroups migration — declined
+
+TRGroups stays on TensorKit 0.14. Raising the bound therefore breaks it while it is still a
+dependency, so task 0.3 and Phase 1 merge into a single stretch during which the package does not
+load and no benchmark can run. Two consequences that shape the work:
+
+- **Delete rather than port.** Anything the plan deletes later must not be migrated to TensorKit 0.17
+  first, since that work would be done blind and then thrown away. NTU, FET, `IterativeSU`,
+  `AxialPEPO`, the stepper zoo and the cluster/FSM code are all in that category.
+- **The exit criterion is the benchmark suite.** The stretch ends when the package loads with no
+  TRGroups dependency and B1, B3, B5, B6, B7, B9 run again. B2, B4 and B8 need the gate pipeline and
+  come back later in Phase 4.
+
+Dependency resolution was checked against the local PEPSKit clone and succeeds: TensorKit 0.17.1,
+MPSKit 0.13.13, MatrixAlgebraKit 0.6.9, KrylovKit 0.10.4, TensorOperations 5.7.0, Zygote 0.7.12 on
+Julia 1.12.5. Note KrylovKit moves 0.9.5 to 0.10.4, so it is a second migration surface.
+
+### 0.2b (superseded) TRGroups to TensorKit 0.17
 
 This work is discarded once TRGroups is dropped, but it keeps every later task runnable (~45 call
 sites: 24 `TensorMap(`, 13 `tsvd`, 5 truncation, 3 orth). Same mechanical edits as 0.3. If it is
@@ -248,16 +307,16 @@ This is the part with no upstream equivalent. Build it as a mirror of PEPSKit's 
 (`algorithms/time_evolution/simpleupdate.jl:80-117`), reusing everything except gate application.
 
 **Why an override is needed.** Their `_su_iter!` loops `for gate_ax in 1:2`, applying the same
-2-site `NNGate = AbstractTensorMap{T,S,2,2}` to the ket leg and then the bra leg, breaking after the
+2-site operator `NNGate = AbstractTensorMap{T,S,2,2}` to the ket leg and then the bra leg, breaking after the
 first when `purified`. A Liouvillian acts on `(ket₁,bra₁,ket₂,bra₂)` jointly and does not factorise
 that way.
 
 **Design.**
 
-1. `src/evolution/liouvillegate.jl`: gate type carrying the vectorised superoperator as a 2-2 map on
+1. `src/propagator.jl`: propagator carrying the vectorised superoperator as a 2-2 map on
    *fused* `ket⊗bra` physical spaces, so it satisfies the `NNGate` shape on the fused leg.
 2. Replace `trotterise`/`broadcastmodel` with a builder emitting
-   `LocalCircuit{LiouvilleGate}(lattice, [siteA, siteB] => gate, …)`. `LocalCircuit`'s operator type
+   `LocalCircuit{BondPropagator}(lattice, [siteA, siteB] => gate, …)`. `LocalCircuit`'s operator type
    is a free parameter (`gates::Vector{Pair{Vector{CartesianIndex{2}}, O}}`), so no piracy is
    needed. Keep the existing exponentiation (`tebdtensor`, `Ising`, `ExpOp`, `PowOp`) and the
    `Model`/`TrotterLayer` semantics — the layer structure is this package's design, not PEPSKit's.

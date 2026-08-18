@@ -165,7 +165,8 @@ end
 
 # We need both local terms that have support on two sites, and therefore need to divide
 # by two to avoid double counting in the brickwork pattern
-twolocal(f) = H -> 1 / 2 * (f(kron(one(H), H)) + f(kron(H, one(H))))
+onsite(f, slot::Int) = H -> 1 / 2 * f(slot == 1 ? kron(H, one(H)) : kron(one(H), H))
+twolocal(f) = H -> onsite(f, 1)(H) + onsite(f, 2)(H)
 
 struct J1J2Op
     a::Float64

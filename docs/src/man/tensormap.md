@@ -16,15 +16,15 @@ using TimeEvolutionPEPO, TensorKit
 
 ## Conventions
 
-TimeEvolutionPEPO follows the convention established by [TensorRenormalizationGroups](https://github.com/jack-dunham/TensorRenormalizationGroups.jl) that virtual indices are assigned to the domain and physical indices the codomain.
+TimeEvolutionPEPO follows PEPSKit's `PEPOTensor` convention, in which virtual indices are assigned to the domain and physical indices to the codomain, with the virtual indices ordered north, east, south, west.
 Specifically, the ordering of PEPO tensors in this package can be summarized by the following code;
 ```@repl
 ket = bra = ℂ^2; # Typical phyiscal Hilbert space dimension
-east = south = west = north = ℂ^4; # Example virtual dimension
-pepo = rand(ket * bra', east * south * west' * north');
+north = east = south = west = ℂ^4; # Example virtual dimension
+pepo = rand(ket * bra', north * east * south' * west');
 space(pepo)
 ```
-Note the dual spaces on the `bra`, `west`, and `north` vector spaces.
+Note the dual spaces on the `bra`, `south`, and `west` vector spaces.
 !!! warn
     The convention here is to order the ket space before the bra space such that 
     ```math
@@ -49,7 +49,7 @@ Note the dual spaces on the `bra`, `west`, and `north` vector spaces.
 If you wish to convert a `TensorMap` to an `Array`, then it is straightforward to do so:
 ```@repl
 s = ℂ^2
-convert(Array, TensorMap(rand, s * s, s))
+convert(Array, rand(s * s, s))
 ```
 however this is not a free operation.
 Conversely, a `TensorMap` can be constructed directly by supplying the data as an `Array` whose `size` matches the space supplied to the `TensorMap` constructor:
@@ -78,21 +78,9 @@ However the order assumed by TensorKit is different:
 U1Space(1 => 1, 0 => 1, -1 => 1)
 ```
 The basis of charge sectors is ordered instead like ``\{| 0 \rangle, | 1 \rangle, | -1 \rangle \}``.
-When constructing a `TensorMap` with symmetric vector spaces, one should make sure the data adheres to correct charge sector ordering.
-TimeEvolutionPEPO exports the `permutebasis` function:
-```jldoctest
-julia> perm = (2,1,3); # Need to swap first two basis vectors in Sz
-
-julia> Sz = SPIN1[3]
-3×3 Matrix{ComplexF64}:
- 1.0+0.0im  0.0+0.0im   0.0+0.0im
- 0.0+0.0im  0.0+0.0im   0.0+0.0im
- 0.0+0.0im  0.0+0.0im  -1.0+0.0im
-
-julia> permutebasis(Sz, perm)
-3×3 Matrix{ComplexF64}:
- 0.0+0.0im  0.0+0.0im   0.0+0.0im
- 0.0+0.0im  1.0+0.0im   0.0+0.0im
- 0.0+0.0im  0.0+0.0im  -1.0+0.0im
+When constructing a `TensorMap` with symmetric vector spaces, one should make sure the data adheres to correct charge sector ordering, permuting the rows and columns of a matrix written in the conventional basis before handing it over:
+```@repl
+Sz = SPIN1[3]
+perm = [2, 1, 3] # swap the first two basis vectors
+Sz[perm, perm]
 ```
-to perform the correct change-of-basis transformation.

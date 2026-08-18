@@ -1,84 +1,91 @@
 # Implementation and interfaces
 
-The top level function that is called every time step during a call to [`simulate!`](@ref) is the `timestep` function with the following signature:
-```julia
-timestep!(pepo, truncator_list, propagator_list, truncalg; kwargs...)
+```@meta
+CurrentModule = TimeEvolutionPEPO
 ```
-This then calls:
+
+## The time step
+
+[`simulate!`](@ref) calls one function per time step,
+
 ```julia
-trotterstep!(pepo, truncator, propagator, truncalg; kwargs...)
+timestep!(state, weights, decomposition; trunc, truncalg, envalg)
 ```
-on each element of for each `truncator` and `propagator` in the lists.
-Either of these methods can be specialized on to define custom functionality, however you may only need to customize small sections of the code, so various other interfaces for doing so are exposed and described in this section of the documentation.
 
-## Customizing simple update
+where `decomposition` is the vector of `(propagator, axis)` pairs [`trotterise`](@ref) produced. That
+sweeps each pair in turn,
 
-Simple update and similar methods (such as SVDU) can by customized by defining a subtype of `AbstractSimpleTruncationScheme` and then specializing on one of the following methods, in order of scope:
-
-| Method                      | Signature       | Default behaviour |
-|:--- |:----------------------- |:---------------------------------------------------------------------------------------- |
-| A | `updatetensors(pair, truncalg::AbstractSimpleTruncationScheme, bond::Bond)` | Truncates the `bond` connecting `pair` using the truncated SVD | 
-| B | `updatetensors(pair, environment, truncalg::AbstractSimpleTruncationScheme, bond::Bond)` | Assumes `environment` are the bond weights and absorbs these into `pair` before called method A. The bond weights are then removed from the new pair of tensors. |
-| C | `updatetensors(pepo, environment, propagator, truncalg::AbstractSimpleTruncationScheme, bond::Bond)` | Applies `propagator` to the pair of tensors `pepo[bond]` before calling method B |
-
-Each successive method in the above table allows you to customize the implementation at a point higher in the call stack, therefore you should specialize on the simplest method that allows you to do what you need to do.
-All three methods have defaults for `AbstractSimpleTruncationScheme`, so for example you can specialize on method C and still make use of the default implementations of method A and B if desired.
-
-For example, to define a simple update method that in addition to truncating to dimension `D` (the default), also truncates small singular values below a threshold, one can first define the struct:
 ```julia
-struct MySimpleUpdate <: AbstractSimpleTruncationScheme
-    tol::Float64
-end
+axissweep!(state, weights, propagator, axis; trunc, truncalg, env)
 ```
-and then define the method
+
+which walks every bond of the unit cell along `axis` and updates it,
+
 ```julia
-function updatetensors(evolvedpair, truncalg::MySimpleUpdate, bond)
-
-    # This is the only bit of information we actually need from `bond`.
-    axis = bondaxis(bond)
-
-    Q1, R, L, Q2 = reducevirtual(evolvedpair, axis); # see `?reducevirtual`
-
-    # The bond has vector space D * η, so D = domain(R, 1).
-    D = domain(R, 1)
-    
-    # Truncate to D, then truncate small singular-values further (see `?TensorKit.tsvd`)
-    trunc = truncdim(dim(D)) & truncbelow(truncalg.tol)
-
-    u, s, v, _ tsvd!(normalize!(R * L); trunc=trunc)
-
-    # Normalize to unit trace
-    tracenormalize!(s)
-
-    newpair = truncate(Q1 => Q2; u * sqrt(s) => sqrt(s) * v, axis) # see `?truncate`
-
-    # We always need to return the new bond weight, even though it's absorbed.
-    return newpair, s
-end
+bondstep!(state, weights, propagator, sites; trunc, truncalg, env)
 ```
-which well be called whenever `MySimpleUpdate` is used as a truncation algorithm.
 
-### Advanced customization using environments
+A bond update absorbs the neighbouring weights, splits both site tensors into a reduced bond tensor
+and an orthogonal remainder ([`reducedbond_first`](@ref), [`reducedbond_last`](@ref)), applies the
+propagator to the pair ([`applypropagator`](@ref)), truncates the bond between them, and writes the
+two tensors and the new weight back.
 
-For simple update methods, the [bond weights](@ref bondweights) of the PEPO play the role of the environment, and therefore one does not *need* to compute an environment to perform truncations. 
-Nevertheless, an environment can still be specified if desired.
+The pieces that make this an open-system update rather than PEPSKit's simple update are the reduced
+bond split and the propagator application: PEPSKit's `bond_tensor_first`/`bond_tensor_last` peel off
+one physical leg at a time, because a two-site gate acts on the ket and the bra in separate passes,
+whereas a Liouvillian acts on both at once. Everything else — cluster extraction, weight absorption,
+bond rotation and the truncations — is PEPSKit's and is reused unchanged.
 
-During the update of each bond, a call to the function `environment!` is made. 
-This has the following default behaviour:
+## Choosing how bonds are truncated
+
+Three keywords select the truncation, and they thread unchanged from `simulate!` down to
+`bondstep!`.
+
+| Keyword | Effect |
+|:--- |:--- |
+| `trunc` | A TensorKit `TruncationStrategy` for the SVD of the evolved pair. Defaults to the space the bond already has, so the bond dimension is preserved. |
+| `truncalg` | A `FullEnvTruncation` or `ALSTruncation`, which optimises the truncation against a bond environment instead of taking a bare SVD. |
+| `envalg` | A [`BondEnvironment`](@ref), giving the boundary bond dimension and tolerances for the CTMRG solve that builds that environment. Required with `truncalg`, and unused without it. |
+
+Without `truncalg` the bond weights play the role of the environment and no boundary contraction is
+needed — this is simple update. With it, one CTMRG boundary is solved for per axis sweep, warm-started
+from the previous one, and each bond is truncated against the environment [`truncatebond`](@ref)
+builds from it.
+
 ```julia
-environment!(truncator, pepo, truncalg::AbstractSimpleTruncationScheme, bond::Bond) = environment(pepo, truncalg, bond)
+alg = FullEnvTruncation(; trunc = truncspace(ComplexSpace(4)), maxiter = 30)
+simulate!(sim; numsteps = 20, truncalg = alg, envalg = BondEnvironment(16))
 ```
-The simpler, non-mutating method then defaults to:
-```julia
-environment(pepo, truncalg::AbstractSimpleTruncationScheme, bond::Bond) = bondweights(pepo)
-```
-Either of these methods can be specialized on, with the return value getting passed into method C of `updatetensors` as the `environment` argument.
 
-If the mutating version is used, then the following default should also be overridden:
+## Adding a truncation scheme
+
+A truncation scheme is a type PEPSKit's `bond_truncate` dispatches on, so a new one is added by
+defining
+
 ```julia
-newtruncators(pepo, propagator, truncalg::AbstractSimpleTruncationScheme) = SimpleUpdateState()
+PEPSKit.bond_truncate(a::MPSTensor, b::MPSTensor, benv::BondEnv, alg::MyTruncation)
 ```
-This should return the `truncator` argument to `environment!(truncator,...)`.
-This allows information to be passed between time steps that can be used to compute environments.
-For example, you may wish to use the `truncator` from the previous time step as a initial guess for some optimisation procedure that constructs an environment. 
-If this is not required, then the simpler `environment` method can be used.
+
+returning the updated pair, the bond weight and an info object carrying a `fid` field.
+[`truncatebond`](@ref) handles the rest: it splits the evolved pair, fuses each site's ket and bra
+into the single physical leg `bond_truncate` expects, calls it, and unfuses on the way out. The state
+itself keeps ket and bra apart throughout; the fusion exists only for the duration of that call.
+
+The environment `benv` is whatever [`bondenvironment`](@ref) and PEPSKit's `bondenv_ctm` produce for
+the bond, an `AbstractTensorMap{T,S,2,2}`. Supplying a different environment — a cluster environment
+rather than a boundary one, say — means computing that tensor instead and passing it to
+`bond_truncate` yourself.
+
+## Fixing the gauge
+
+[`gaugefix!`](@ref) rewrites a state and its weights into a fixed gauge in place, using either trivial
+simple update or a belief-propagation fixed point.
+
+```julia
+gaugefix!(sim)                                  # SUGauge
+env, info = bpenvironment(quantumstate(sim))
+gaugefix!(sim, BPGauge(), env)
+```
+
+Both algorithms are PEPSKit's. For the PEPO case PEPSKit fuses the two physical legs internally and
+unfuses on the way out, so the state stays a density-matrix PEPO throughout.
