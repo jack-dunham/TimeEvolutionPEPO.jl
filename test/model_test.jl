@@ -73,4 +73,13 @@ end
         push!(model, LocalOp(X, X))
         @test_throws ArgumentError push!(model, Dissipator(Z))
     end
+
+    @testset "distribute! rejects a term outside the model's family" begin
+        model = Model{Hamiltonian}()
+        push!(model, LocalOp(X, X))
+        @test_throws ArgumentError distribute!(model, Dissipator(Z))
+        # The rejected call must not have mutated any layer before throwing.
+        @test length(model) == 1
+        @test dissipator(model[1][1, 1]) === nothing
+    end
 end

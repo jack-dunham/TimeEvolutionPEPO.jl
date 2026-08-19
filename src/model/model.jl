@@ -21,9 +21,8 @@ struct Model{T <: AbstractTerm}
     layers::Vector{TrotterLayer}
 end
 
-# A term's own type parametrizes on its tuple of two-local operators (e.g. Hamiltonian{Tuple{}} vs.
-# Hamiltonian{Tuple{LocalOp{2}}}), so layers of the same family still differ in concrete type; `layers`
-# holds them unparametrized and `modelkind` recovers the family for the `push!`/`distribute!` checks.
+# A term's own type varies by concrete shape within a family; `layers` holds them unparametrized and
+# `modelkind` recovers the family for the `push!`/`distribute!` checks.
 modelkind(::Type{<:Hamiltonian}) = Hamiltonian
 modelkind(::Type{<:Liouvillian}) = Liouvillian
 modelkind(::Type{<:Ising}) = Ising
@@ -47,14 +46,19 @@ function Base.show(io::IO, ::MIME"text/plain", model::Model{T}) where {T}
     return print(io, "Model{$T} with $n Trotter layer", n == 1 ? "" : "s")
 end
 
-function Base.push!(model::Model{T}, layer) where {T}
-    l = TrotterLayer(layer)
+function _checkfamily(model::Model{T}, l::TrotterLayer) where {T}
     modelkind(eltype(l.data)) <: T || throw(
         ArgumentError(
             "cannot add a term of type $(eltype(l.data)) to a $(typeof(model)); " *
                 "construct a Model{$(promote_type(T, modelkind(eltype(l.data))))} instead"
         ),
     )
+    return nothing
+end
+
+function Base.push!(model::Model{T}, layer) where {T}
+    l = TrotterLayer(layer)
+    _checkfamily(model, l)
     push!(model.layers, l)
     return model
 end
@@ -68,6 +72,7 @@ step applies it once in total. Use [`push!`](@ref) instead to give the term a la
 function distribute!(model::Model, term)
     n = length(model)
     n > 0 || throw(ArgumentError("cannot distribute a term over a model with no layers"))
+    _checkfamily(model, TrotterLayer(term))
     share = (1 / n) * term
     for (i, layer) in enumerate(model.layers)
         model.layers[i] = TrotterLayer(map(t -> t + share, layer.data), layer.axis)
