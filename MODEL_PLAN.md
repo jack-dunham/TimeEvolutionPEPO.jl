@@ -1163,4 +1163,15 @@ git commit -m "docs: Model, TrotterLayer and site-dependent terms"
 
 **No code moves between files.** Tasks 5 and 6 rewrite `src/model/{trotterlayer,model}.jl` in place rather than relocating the superseded versions to `src/dev/`; Task 7 adds a `bondpropagator` method beside its sibling in `src/propagator.jl` rather than extracting a helper elsewhere. A relocation makes the diff unreadable, and rearranging files is a separate change.
 
-**Known risk.** Task 5's `promote_type` over `Hamiltonian{T}` parametric types is the least certain step: `mapreduce(typeof, promote_type, promoted)` on a matrix of `Hamiltonian{Tuple{LocalOp{2}}}` and `Hamiltonian{Tuple{}}` promotes to `Hamiltonian` only if a rule exists. If it falls back to `Any`, add `Base.promote_rule(::Type{<:Hamiltonian}, ::Type{<:Hamiltonian}) = Hamiltonian` alongside the `Liouvillian` rule in the same step.
+**Task 5's `promote_type` behaviour, measured** (so the implementer does not have to guess):
+
+```
+promote_type(Hamiltonian{Tuple{LocalOp{2}}}, Hamiltonian{Tuple{}})  ==  Hamiltonian
+promote_type(Hamiltonian{Tuple{LocalOp{2}}}, Liouvillian{Tuple{LocalOp{2}}})  ==  AbstractSumOfTerms
+mapreduce(typeof, promote_type, [a b; b a])  ==  Hamiltonian        # a, b both Hamiltonian
+```
+
+So no extra rule is needed for two `Hamiltonian`s — that already yields `Hamiltonian`. The
+`Base.promote_rule(::Type{<:Hamiltonian}, ::Type{<:Liouvillian}) = Liouvillian` line in Step 4 is
+**required**, not optional: without it a mixed layer becomes `TrotterLayer{AbstractSumOfTerms}`, which
+defeats the type parameter `Model{T}` relies on to reject dissipation.
