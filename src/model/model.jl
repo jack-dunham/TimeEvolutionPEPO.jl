@@ -67,7 +67,7 @@ end
     $(TYPEDSIGNATURES)
 
 Add `term` to every existing layer of `model`, scaled by `1 / length(model)`, so that a full time
-step applies it once in total. Use [`push!`](@ref) instead to give the term a layer of its own.
+step applies it once in total. Use `push!` instead to give the term a layer of its own.
 """
 function distribute!(model::Model, term)
     n = length(model)
