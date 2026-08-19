@@ -32,4 +32,12 @@ end # ModelSetup
     @testset "a non-axial term cannot be pinned to an axis" begin
         @test_throws ArgumentError TrotterLayer(Dissipator(Z), 1)
     end
+
+    @testset "an empty dissipator does not block pinning to an axis" begin
+        layer = TrotterLayer(Liouvillian(zero(Hamiltonian) + LocalOp(Z, Z)), 1)
+        @test layer.axis == 1
+        @test_throws ArgumentError TrotterLayer(
+            zero(Hamiltonian) + LocalOp(Z, Z) + Dissipator(Z), 1
+        )
+    end
 end

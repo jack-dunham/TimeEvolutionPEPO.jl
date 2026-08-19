@@ -23,7 +23,7 @@ Base.:+(D::Dissipator, h::AbstractTerm) = zero(Hamiltonian) + h + D
 
 terms(D::Dissipator) = D.terms
 
-isaxial(::Dissipator) = false
+isaxial(D::Dissipator) = isempty(terms(D))
 
 _anticomm(L) = kron(L' * L, one(L)) + kron(one(L), transpose(L' * L))
 _dissipatorvec(L) = kron(L, transpose(L')) - 1 / 2 * _anticomm(L)
