@@ -34,11 +34,14 @@ _indexspace(V::IndexSpace) = V
 Density-matrix PEPO of a product state, one tensor per unit-cell site. `init` is a local density
 matrix, a spin-1/2 Bloch vector, a [`ThermalState`](@ref), or a matrix of any of those giving the
 unit cell; `bond` is the virtual dimension or space, padded with zeros beyond the first basis vector.
+A matrix of numbers is one local density matrix, while a matrix of matrices, tuples or
+`ThermalState`s is a unit cell.
 
 Physical indices follow PEPSKit's `PEPOTensor` convention, `P ⊗ P´ ← N ⊗ E ⊗ S ⊗ W`, with index 1
 outgoing (ket, left-multiplied) and index 2 incoming (bra, right-multiplied).
 """
 productpepo(init, bond) = productpepo(fill(init, 1, 1), bond)
+productpepo(rho::AbstractMatrix{<:Number}, bond) = productpepo(fill(rho, 1, 1), bond)
 
 function productpepo(inits::AbstractMatrix, bond)
     V = _indexspace(bond)

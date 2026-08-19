@@ -69,4 +69,17 @@ end # StateSetup
         @test all(≈(log(3)), bondentropy(w))                       # trivial weights are flat
         @test all(≈(1.0), bondentropy(w; normalized = true))
     end
+
+    @testset "a bare density matrix is one site, not a unit cell" begin
+        rho = bloch((0.0, 0.0, -1.0))
+        @test size(productpepo(rho, 4)) == (1, 1, 1)
+        @test convert(Array, productpepo(rho, 4)[1, 1])[:, :, 1, 1, 1, 1] ≈ rho
+
+        # A unit cell of density matrices still works. `[A B; C D]` with matrix entries block-concatenates
+        # into one large matrix rather than building a matrix of matrices, so this uses `reshape` instead.
+        cell = reshape(
+            [bloch((0, 0, 1)), bloch((0, 0, -1)), bloch((0, 0, -1)), bloch((0, 0, 1))], 2, 2
+        )
+        @test size(productpepo(cell, 2)) == (2, 2, 1)
+    end
 end
