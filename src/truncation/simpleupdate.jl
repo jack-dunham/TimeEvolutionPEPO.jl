@@ -98,17 +98,13 @@ Each site sits on two bonds of a given axis and each bond carries half of the on
 therefore applies it twice, which is why [`trotterise`](@ref) halves it.
 """
 function axissweep!(
-        state::InfinitePEPO, weights::SUWeight, propagator::AbstractTensorMap, axis::Int;
+        state::InfinitePEPO, weights::SUWeight, propagators::AbstractMatrix, axis::Int;
         trunc = nothing, truncalg = nothing, env = nothing
     )
     axis in (1, 2) || throw(ArgumentError("axis must be 1 or 2, got $axis"))
     Nr, Nc, = size(state)
     (Nr >= 2 && Nc >= 2) ||
         throw(ArgumentError("a two-site update needs a unit cell of at least 2x2, got ($Nr, $Nc)"))
-
-    # Vertical bonds run south to north: the other order sets `rev` in `_nn_bondrev`, and the update
-    # then writes each bond back with the opposite arrow.
-    prop = axis == 1 ? propagator : _swapsites(propagator)
 
     ϵ = 0.0
     for r in 1:Nr, c in 1:Nc
@@ -117,10 +113,26 @@ function axissweep!(
         else
             CartesianIndex(r + 1, c), CartesianIndex(r, c)
         end
+        p = propagators[mod1(r, size(propagators, 1)), mod1(c, size(propagators, 2))]
+        # Vertical bonds run south to north: the other order sets `rev` in `_nn_bondrev`, and the
+        # update then writes each bond back with the opposite arrow.
+        prop = axis == 1 ? p : _swapsites(p)
         ϵ = max(ϵ, bondstep!(state, weights, prop, [site1, site2]; trunc, truncalg, env))
     end
 
     return ϵ
+end
+
+"""
+    $(TYPEDSIGNATURES)
+
+Compatibility form of [`axissweep!`](@ref) for a single bare propagator, applied to every bond of the
+unit cell.
+"""
+function axissweep!(
+        state::InfinitePEPO, weights::SUWeight, propagator::AbstractTensorMap, axis::Int; kwargs...
+    )
+    return axissweep!(state, weights, fill(propagator, 1, 1), axis; kwargs...)
 end
 
 """

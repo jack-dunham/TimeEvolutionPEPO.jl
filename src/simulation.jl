@@ -29,7 +29,19 @@ function Simulation(
         info::SimulationInfo = SimulationInfo()
     )
     P = only(unique(physicalspace(state)))
-    return Simulation(info, model, state, weights, trotterise(model, P, timestep), timestep)
+    decomposition = trotterise(model, P, timestep)
+
+    Nr, Nc, = size(state)
+    for (propagators, _) in decomposition
+        size(propagators) == (1, 1) || size(propagators) == (Nr, Nc) || throw(
+            DimensionMismatch(
+                "a model layer of size $(size(propagators)) cannot be applied to a " *
+                    "$Nr×$Nc unit cell: give a 1×1 layer or one matching the state"
+            ),
+        )
+    end
+
+    return Simulation(info, model, state, weights, decomposition, timestep)
 end
 
 """

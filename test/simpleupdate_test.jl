@@ -83,4 +83,15 @@ end # SimpleUpdateSetup
         state = productpepo((0, 0, -1), 1)
         @test_throws ArgumentError axissweep!(state, SUWeight(state), u, 1)
     end
+
+    @testset "a propagator matrix is indexed per bond" begin
+        state = productpepo(fill((0, 0, -1), 2, 2), 2)
+        weights = SUWeight(state)
+
+        # A 1x1 matrix must behave exactly as the bare tensor did.
+        prop = first(first(trotterise(LocalOp(Z, Z), P, 0.05)))
+        @test size(prop) == (1, 1)
+        ϵ = axissweep!(state, weights, prop, 1)
+        @test isfinite(ϵ)
+    end
 end
