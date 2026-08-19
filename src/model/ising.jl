@@ -89,3 +89,12 @@ function scalelocal(L::Ising, a)
 end
 
 isaxial(::Ising) = true
+
+# `Ising` stores its coupling as a single matrix with C == B; the equivalent term is a * C ⊗ C.
+_equation(t::Ising{Hamiltonian}) = Hamiltonian((t.a * LocalOp(t.CB, t.CB),), t.oneterms)
+function _equation(t::Ising{Liouvillian})
+    return Liouvillian(Hamiltonian((t.a * LocalOp(t.CB, t.CB),), t.oneterms), t.dissipator)
+end
+
+generator(t::Ising, P::IndexSpace) = generator(_equation(t), P)
+generator(a::Ising, b::Ising, P::IndexSpace) = generator(_equation(a), _equation(b), P)

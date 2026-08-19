@@ -107,4 +107,17 @@ end # PropagatorSetup
         # Both halves together are the symmetric term.
         @test g1 + g2 ≈ generator(first_only, first_only, P)
     end
+
+    @testset "Ising reaches a generator" begin
+        X, Y, Z = PAULI
+        P = ComplexSpace(2)
+        a = 1.5 / 4
+
+        ising = Ising(a * LocalOp(Z, Z), [LocalOp(X)], Dissipator(0.5 * (Y - im * Z)))
+        equivalent = a * LocalOp(Z, Z) + LocalOp(X) + Dissipator(0.5 * (Y - im * Z))
+
+        @test generator(ising, P) ≈ generator(equivalent, P)
+        # `size` is not defined for `AbstractTensorMap` in this TensorKit version; compare spaces instead.
+        @test space(bondpropagator(ising, P, 0.05)) == space(bondpropagator(equivalent, P, 0.05))
+    end
 end
