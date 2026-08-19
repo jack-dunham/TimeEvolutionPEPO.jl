@@ -4,8 +4,9 @@
 
 `trotterise` takes a term, or a vector of terms giving one Trotter layer each, and turns each layer
 into a single two-site propagator applied to every bond of a sweep. That covers uniform models only.
-The parked `Model`/`TrotterLayer` (`src/model/{model,trotterlayer}.jl`) carried a term *per site* and
-a rule for spreading one-local terms across layers; neither survived the refactor.
+The previous `Model`/`TrotterLayer` (`src/model/{model,trotterlayer}.jl`, still in the tree but no
+longer loaded) carried a term *per site* and a rule for spreading one-local terms across layers;
+neither survived the refactor.
 
 Restoring site dependence is not only a container question. `axissweep!` applies one propagator to
 every bond, and `twolocal` (`src/model/terms/localop.jl:168`) symmetrises a one-local term across a
@@ -22,7 +23,7 @@ broadcasts to any unit cell; any other size must equal the state's unit cell exa
 `Simulation`, so a 2×2 model against a 3×3 state is an error rather than a silent tiling.
 
 The alternative, separate matrices for couplings and fields, removes the ambiguity about what an
-index means but costs two containers and diverges from the parked API for no gain in expressiveness.
+index means but costs two containers and diverges from the previous API for no gain in expressiveness.
 
 **One-local terms are placed per endpoint.** A new `generator` method takes the two endpoints'
 one-local terms separately rather than symmetrising one term across the bond. Each site is touched
@@ -32,13 +33,13 @@ model must therefore produce the same propagators as today.
 
 **`push!` and `distribute!` are separate.** `push!` always appends a layer. `distribute!(model, term)`
 spreads a term over the existing layers with a `1/nlayers` prefactor, and throws on a model with no
-layers. The parked code triggered distribution by type — a bare `LocalOp{1}` or `Dissipator` was
+layers. The previous code triggered distribution by type — a bare `LocalOp{1}` or `Dissipator` was
 distributed, the same term wrapped in a `Hamiltonian` was not — which made the behaviour depend on
 something invisible at the call site, and the old manual had to document the distinction as a
 caveat.
 
 **`Model` keeps its type parameter.** `Model{Hamiltonian}` rejects a `Dissipator` or `Liouvillian`
-with an error naming `Model{Liouvillian}` as the fix. The parked version raised this by catching a
+with an error naming `Model{Liouvillian}` as the fix. The previous version raised this by catching a
 `convert` `MethodError` and inspecting its arguments; the check is made directly instead.
 
 

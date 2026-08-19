@@ -1,4 +1,4 @@
-# Parked tests
+# Superseded tests
 
 These target the API that PEPSKit replaced and no longer load. They are kept for reference, not
 deleted, and their filenames drop the `_test` suffix so ReTestItems does not discover them.

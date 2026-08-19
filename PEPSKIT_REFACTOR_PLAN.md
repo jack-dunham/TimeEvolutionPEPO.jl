@@ -10,13 +10,13 @@ run `Pkg.test()` without asking; run the specific test files named in each task.
 **Nothing in `src/` is deleted.** Code whose behaviour PEPSKit does not directly provide moves to
 `src/dev/` with its include commented out, to be refactored later. Code that PEPSKit does replace also
 moves there rather than being removed, and only stops being loaded once its replacement demonstrably
-works — replace first, park second, in that order and never the reverse. This applies per subsystem,
+works — replace first, remove second, in that order and never the reverse. This applies per subsystem,
 not per file: most files mix replaced and unreplaced behaviour (`pepo/weights.jl` holds `setweight!`
 alongside `bondentropy`; `truncation/truncation.jl` holds the `FET` and `SVDU` structs alongside
 `NTU`), so the unit of work is a subsystem's replacement landing, at which point the old files behind
-it are parked whole.
+it leave the live tree whole.
 
-Two mappings in §0 are unverified and must not drive a parking decision until checked: `WTG` is not a
+Two mappings in §0 are unverified and must not drive a decision to delete or move a file until checked: `WTG` is not a
 state gauge — `fixgauge!(iso, metric, ::WTG)` gauges the truncation isometries, so its analogue is
 `contractions/bondenv/gaugefix.jl`, not `SUGauge` — and the product-state constructors in
 `pepo/pepo.jl` have no PEPSKit builder beyond `infinite_temperature_density_matrix`, which covers only
@@ -50,7 +50,7 @@ No PEPSKit equivalent — keep: `src/model/**` (term algebra, `Liouvillian`, `Di
 
 The minimal canonical form is also unmatched: PEPSKit's gauges are `SUGauge` and `BPGauge`, which are
 different fixed points, and the third `gauge_fix` in `algorithms/ctmrg/gaugefix.jl` fixes the CTMRG
-environment's gauge for fixed-point differentiation. It is parked in `src/dev/mcf.jl` for a later
+environment's gauge for fixed-point differentiation. It is in `src/dev/mcf.jl` for a later
 rewrite onto `InfinitePEPO`. Two defects to repair when that happens: it throws for unit cells larger
 than 1×1, and its `fixgauge!(x, ::MCF)` takes two arguments where the only callers, in
 `truncation/isometries.jl`, pass three — so selecting `SimpleUpdate(gauge = MCF())` raises a
@@ -182,7 +182,7 @@ subsystems they exercise, all against dense linear algebra:
 | B7 | `benchmarks_test.jl` | agrees at `D = 1, 2, 4, 8` |
 | B9 | `benchmarks_test.jl` | asymmetric term on a stripe, < 1e-3; exchanged sites excluded by > 1 |
 
-B8 compared the `Ising` fast path against the generic one; both are parked pending the FSM and cluster
+B8 compared the `Ising` fast path against the generic one; both wait on the FSM and cluster
 work, so it has no counterpart yet.
 
 ### Trajectory recording (optional, `test/generate_reference_output.jl`)

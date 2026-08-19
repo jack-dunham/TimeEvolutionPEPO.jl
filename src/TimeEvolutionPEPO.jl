@@ -91,7 +91,6 @@ include("gauge.jl")
 # include("abstractlattice.jl")
 # include("edgelattice.jl")
 # include("updatestyle.jl")
-# include("sparsetensormap.jl")
 #
 # include("pepo/weights.jl")
 # include("pepo/abstractpepo.jl")

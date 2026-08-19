@@ -30,13 +30,13 @@ negativity, and the cluster-MPO/FSM construction.
 4. **The gaps stay here, rebuilt on PEPSKit primitives.** NTU becomes another bond-environment
    source feeding `bond_truncate`; negativity, the term algebra and the FSM/cluster-MPO code stay.
 
-## What gets parked
+## What leaves the live tree
 
 Nothing is deleted. Code PEPSKit does not replace moves to `src/dev/` with its include commented out,
 for a later refactor; code PEPSKit does replace moves there too, and stops being loaded only once the
 replacement demonstrably works. The listing below is therefore what leaves the live tree, not what is
 removed from the repository — and since most files mix replaced with unreplaced behaviour, they are
-parked whole, per subsystem, as each replacement lands.
+set aside whole, per subsystem, as each replacement lands.
 
 `src/pepo/`, `src/edgelattice.jl`, `src/abstractlattice.jl`, `src/contract/`, `src/gauge/`,
 `src/dev/vidalgauge.jl`, `src/truncation/{simpleupdate,isometries,truncation,iterative,clu}.jl`,
@@ -44,7 +44,7 @@ parked whole, per subsystem, as each replacement lands.
 `src/densitymatrix.jl` — on the order of 7.5k lines leaving the live tree, against roughly 1.5k lines
 of new adapter and Lindblad-update code.
 
-Of that, the parts with no PEPSKit counterpart stay parked and awaiting a rewrite rather than merely
+Of that, the parts with no PEPSKit counterpart move to `src/dev/` awaiting a rewrite rather than merely
 superseded: `NTU` and its cluster metric under `truncation/clu/`, `IterativeSU`, `WTG`, the
 product-state constructors, `bondentropy`, `negativity`, and the minimal canonical form already moved
 in `src/dev/mcf.jl`.
@@ -64,7 +64,7 @@ with it.
 - **Phase 3** — outsource thermal annealing to `SimpleUpdate` (this is a direct swap; PEPSKit's
   `purified` flag already covers both of our thermal conventions).
 - **Phase 4** — the local Lindblad update built on PEPSKit primitives.
-- **Phase 5** — rebuild NTU and `IterativeSU` as bond-environment sources, and park what remains.
+- **Phase 5** — rebuild NTU and `IterativeSU` as bond-environment sources, and dispose of what remains.
 
 Each of Phases 2–5 ends with two checks: the test files named for that phase pass, and the exact
 benchmarks in `test/exact_benchmarks.jl` still agree. Those benchmarks check against dense linear
@@ -93,14 +93,14 @@ Recorded, not fixed, per instruction. Detail and remediation points are in the p
 - **There will be a stretch with no working build — decided.** Raising the TensorKit bound breaks
   TRGroups, which stays on 0.14, so tasks 0.3 and Phase 1 merge into one stretch during which the
   package does not load and no benchmark can run. TRGroups is deliberately not migrated. The
-  mitigation is ordering: replace a subsystem, park what it supersedes, and keep that stretch as short
+  mitigation is ordering: replace a subsystem, remove what it supersedes, and keep that stretch as short
   as possible rather than porting code that is on its way to `src/dev/`.
 - **Dependency weight.** PEPSKit pulls in MPSKit, MPSKitModels, Zygote, OptimKit, MatrixAlgebraKit
   and OhMyThreads. Load and precompile time will get materially worse than the current ~12 s.
 - **Index conventions differ in three ways at once** (virtual-leg order, which legs are dual, and
   row/col vs col/row indexing), so the conversion layer is where silent errors will hide. It gets
   round-trip tests before anything depends on it.
-- **NTU and `IterativeSU` may stay parked rather than be rebuilt.** If PEPSKit's `FullEnvTruncation`
+- **NTU and `IterativeSU` may move to `src/dev/` rather than be rebuilt.** If PEPSKit's `FullEnvTruncation`
   plus `bondenv_ctm` covers what NTU was for, leaving it in `src/dev/` is cheaper than porting it.
   That call is deferred to Phase 5 and is yours to make; either way the code remains in the
   repository.

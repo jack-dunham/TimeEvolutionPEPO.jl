@@ -169,7 +169,7 @@ the same generator as before."
 
 ### Task 2: `generator` for `Ising`
 
-`Ising` is exported and documented but `generator` throws for it, so the type cannot be evolved. Give it a plain generator by expressing it as the equivalent `Hamiltonian`/`Liouvillian`. The low-rank exponentiation the parked `equation.jl` provided is **not** part of this task.
+`Ising` is exported and documented but `generator` throws for it, so the type cannot be evolved. Give it a plain generator by expressing it as the equivalent `Hamiltonian`/`Liouvillian`. The low-rank exponentiation the no-longer-loaded `equation.jl` provided is **not** part of this task.
 
 **Files:**
 - Modify: `src/model/ising.jl` (append)
@@ -248,7 +248,7 @@ git commit -m "fix: give Ising a generator
 
 Ising was exported and documented but generator threw for it, so the type could
 not be evolved. It is expanded to the equivalent Hamiltonian or Liouvillian; the
-low-rank exponentiation the parked equation.jl provided is not restored here."
+low-rank exponentiation the unloaded equation.jl provided is not restored here."
 ```
 
 ---
@@ -435,8 +435,8 @@ one local state; a matrix of matrices, tuples or ThermalStates is a unit cell."
 ### Task 5: `TrotterLayer`
 
 **Files:**
-- Rewrite in place: `src/model/trotterlayer.jl` — its current contents are the parked TRGroups-based version, which uses the removed `broadcastmodel` and does not load. Replace them; **do not `git mv` the file anywhere.** Git history is the record of the old version.
-- Modify: `src/TimeEvolutionPEPO.jl` (add `include("model/trotterlayer.jl")` after `include("model/ising.jl")`; export `TrotterLayer`; remove the commented parked include for it)
+- Rewrite in place: `src/model/trotterlayer.jl` — its current contents are the superseded TRGroups-based version, which uses the removed `broadcastmodel` and does not load. Replace them; **do not `git mv` the file anywhere.** Git history is the record of the old version.
+- Modify: `src/TimeEvolutionPEPO.jl` (add `include("model/trotterlayer.jl")` after `include("model/ising.jl")`; export `TrotterLayer`; remove its commented-out include)
 - Test: `test/model_test.jl` (new file)
 
 **Interfaces:**
@@ -561,7 +561,7 @@ Base.promote_rule(::Type{<:Hamiltonian}, ::Type{<:Liouvillian}) = Liouvillian
 
 - [ ] **Step 5: Wire the include and export**
 
-In `src/TimeEvolutionPEPO.jl`, add `include("model/trotterlayer.jl")` after `include("model/ising.jl")` and before `include("propagator.jl")`, add `TrotterLayer` to the model export line, and delete the commented `# include("model/trotterlayer.jl")` from the parked block.
+In `src/TimeEvolutionPEPO.jl`, add `include("model/trotterlayer.jl")` after `include("model/ising.jl")` and before `include("propagator.jl")`, add `TrotterLayer` to the model export line, and delete the commented `# include("model/trotterlayer.jl")` from the block of unloaded includes.
 
 - [ ] **Step 6: Run the test**
 
@@ -579,7 +579,7 @@ git commit -m "feat: TrotterLayer carries a term per unit-cell site
 
 data[r, c] is anchored at site (r, c): its two-local part is the coupling to the
 neighbour in the +axis direction, its one-local part belongs to that site alone.
-Indexing wraps periodically so a 1x1 layer is uniform. Replaces the parked
+Indexing wraps periodically so a 1x1 layer is uniform. Replaces the superseded
 TRGroups-based version in place; git history holds the old one."
 ```
 
@@ -588,7 +588,7 @@ TRGroups-based version in place; git history holds the old one."
 ### Task 6: `Model`
 
 **Files:**
-- Rewrite in place: `src/model/model.jl` — its current contents are the parked version, which does not load. Replace them; **do not `git mv` the file anywhere.**
+- Rewrite in place: `src/model/model.jl` — its current contents are the superseded version, which does not load. Replace them; **do not `git mv` the file anywhere.**
 - Modify: `src/TimeEvolutionPEPO.jl` (include after `trotterlayer.jl`; export `Model`, `distribute!`)
 - Test: `test/model_test.jl`
 
@@ -748,9 +748,9 @@ git add src/model/model.jl src/TimeEvolutionPEPO.jl test/model_test.jl
 git commit -m "feat: Model holds an ordered list of Trotter layers
 
 push! always appends a layer; distribute! spreads a term over the existing
-layers with a 1/nlayers prefactor and throws on an empty model. The parked
+layers with a 1/nlayers prefactor and throws on an empty model. The superseded
 version triggered distribution by argument type, which made the behaviour
-depend on whether the term was wrapped. Replaces the parked version in place."
+depend on whether the term was wrapped. Replaces the superseded version in place."
 ```
 
 ---
@@ -1161,6 +1161,6 @@ git commit -m "docs: Model, TrotterLayer and site-dependent terms"
 
 **Type consistency.** `layerterm` (Task 3) is used by `TrotterLayer` (Task 5). `scalelayer` (Task 5) is used by `trotterise` (Task 7). `_layerpropagators` (Task 7) is consumed by nothing else. `_swapsites` already exists in `src/simpleupdate.jl`. `_checkroute` is a named helper from Task 3 that Task 7 calls, never redefines.
 
-**No code moves between files.** Tasks 5 and 6 rewrite `src/model/{trotterlayer,model}.jl` in place rather than relocating the parked versions to `src/dev/`; Task 7 adds a `bondpropagator` method beside its sibling in `src/propagator.jl` rather than extracting a helper elsewhere. A relocation makes the diff unreadable, and rearranging files is a separate change.
+**No code moves between files.** Tasks 5 and 6 rewrite `src/model/{trotterlayer,model}.jl` in place rather than relocating the superseded versions to `src/dev/`; Task 7 adds a `bondpropagator` method beside its sibling in `src/propagator.jl` rather than extracting a helper elsewhere. A relocation makes the diff unreadable, and rearranging files is a separate change.
 
 **Known risk.** Task 5's `promote_type` over `Hamiltonian{T}` parametric types is the least certain step: `mapreduce(typeof, promote_type, promoted)` on a matrix of `Hamiltonian{Tuple{LocalOp{2}}}` and `Hamiltonian{Tuple{}}` promotes to `Hamiltonian` only if a rule exists. If it falls back to `Any`, add `Base.promote_rule(::Type{<:Hamiltonian}, ::Type{<:Hamiltonian}) = Hamiltonian` alongside the `Liouvillian` rule in the same step.
