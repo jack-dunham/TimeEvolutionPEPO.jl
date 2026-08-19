@@ -117,8 +117,7 @@ end # PropagatorSetup
         equivalent = a * LocalOp(Z, Z) + LocalOp(X) + Dissipator(0.5 * (Y - im * Z))
 
         @test generator(ising, P) ≈ generator(equivalent, P)
-        # `size` is not defined for `AbstractTensorMap` in this TensorKit version; compare spaces instead.
-        @test space(bondpropagator(ising, P, 0.05)) == space(bondpropagator(equivalent, P, 0.05))
+        @test bondpropagator(ising, P, 0.05) ≈ bondpropagator(equivalent, P, 0.05)
     end
 
     @testset "bare terms are promoted to layers" begin
