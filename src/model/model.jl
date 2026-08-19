@@ -1,84 +1,76 @@
-abstract type AbstractModel end
+# A model is an ordered list of Suzuki-Trotter layers, swept in order once per time step.
 
 """
 $(TYPEDEF)
+
+An ordered list of [`TrotterLayer`](@ref)s, exponentiated and swept in order once per time step.
+Terms in the same layer are exponentiated together rather than Trotterised apart.
+
+The type parameter is `Hamiltonian`, `Liouvillian` or `Ising`; a `Model{Hamiltonian}` rejects
+dissipative terms.
+
+# Constructors
+
+    Model(layers...)
+    Model(layers::AbstractVector)
+    Model{T}()
+
+See also: [`distribute!`](@ref), [`trotterise`](@ref)
 """
-struct Model{HL<:Union{Hamiltonian,Liouvillian,Ising}} <: AbstractModel
-    layers::Vector{TrotterLayer{HL}}
-    function Model{T}(terms::Vector) where {T}
-        layers = map(TrotterLayer, terms)
-        return new{T}(layers)
-    end
-    Model{T}() where {T} = new{T}([])
+struct Model{T <: AbstractTerm}
+    layers::Vector{TrotterLayer}
 end
 
-Model(HL::Vararg) = Model(collect(HL))
+# A term's own type parametrizes on its tuple of two-local operators (e.g. Hamiltonian{Tuple{}} vs.
+# Hamiltonian{Tuple{LocalOp{2}}}), so layers of the same family still differ in concrete type; `layers`
+# holds them unparametrized and `modelkind` recovers the family for the `push!`/`distribute!` checks.
+modelkind(::Type{<:Hamiltonian}) = Hamiltonian
+modelkind(::Type{<:Liouvillian}) = Liouvillian
+modelkind(::Type{<:Ising}) = Ising
 
-Model(H::T) where {T} = Model{layertype(T)}([H])
-Model(H::Vector{T}) where {T} = Model{layertype(T)}(H)
-
-Base.eltype(::Model{HL}) where {HL} = HL
-
-function Base.promote_rule(::Type{<:AbstractTerm}, ::Type{<:Union{Dissipator,Liouvillian}})
-    return Liouvillian
+function Model(layers::AbstractVector)
+    wrapped = map(TrotterLayer, layers)
+    T = mapreduce(l -> modelkind(eltype(l.data)), promote_type, wrapped)
+    return Model{T}(wrapped)
 end
 
-# Model{T}(HL::Vararg) where {T} = Model{T}(collect(HL))
+Model(layers...) = Model(collect(layers))
+Model{T}() where {T} = Model{T}(TrotterLayer[])
 
-Base.iterate(model::Model, state=1) = iterate(model.layers, state)
 Base.length(model::Model) = length(model.layers)
+Base.iterate(model::Model, state = 1) = iterate(model.layers, state)
+Base.eltype(::Model{T}) where {T} = T
+Base.getindex(model::Model, i) = model.layers[i]
 
-function Base.show(io::IO, ::MIME"text/plain", model::Model)
-    print(io, "$(typeof(model)) with $(length(model)) Trotter layer")
-    length(model) > 1 && print(io, "s")
-    return nothing
+function Base.show(io::IO, ::MIME"text/plain", model::Model{T}) where {T}
+    n = length(model)
+    return print(io, "Model{$T} with $n Trotter layer", n == 1 ? "" : "s")
 end
-
-Base.sum(t::TrotterLayer) = t
 
 function Base.push!(model::Model{T}, layer) where {T}
-    push!(model.layers, TrotterLayer(sum(layer)))
+    l = TrotterLayer(layer)
+    modelkind(eltype(l.data)) <: T || throw(
+        ArgumentError(
+            "cannot add a term of type $(eltype(l.data)) to a $(typeof(model)); " *
+                "construct a Model{$(promote_type(T, modelkind(eltype(l.data))))} instead"
+        ),
+    )
+    push!(model.layers, l)
     return model
 end
 
-function Base.push!(model::Model{T}, layer::TrotterLayer) where {T}
-    try
-        push!(model.layers, layer)
-    catch e
-        if e isa MethodError
-            if e.f === convert
-                type, value = e.args
-                if all(S -> S <: TrotterLayer{Hamiltonian}, (type, TrotterLayer{T}))
-                    if value isa Union{TrotterLayer{Liouvillian},TrotterLayer{Dissipator}}
-                        @error "Failed to `push!` term of type `$(typeof(value))` to `$(typeof(model))`. You should instead construct an instance of the type `Model{Liouvillian}` to add terms of type `Dissipator` and `Liouvillian`."
-                    end
-                end
-            end
-        end
-        rethrow()
-    end
-    return model
-end
-function Base.push!(model::Model, layer::TrotterLayer{<:Union{Dissipator,LocalOp{1}}})
-    l = length(model)
+"""
+    $(TYPEDSIGNATURES)
 
-    broadcast!(+, model.layers, model.layers, 1 / l * layer)
-    return model
-end
-
-function Base.append!(m1::Model, m2::Model)
-    for layer in m2
-        push!(m1, m2)
-    end
-    return m1
-end
-function Base.push!(model::Model, term::AbstractTerm)
-    if isexpandable(term)
-        for subterm in expandterm(term)
-            push!(model, expandterm(subterm))
-        end
-    else
-        push!(model, TrotterLayer(term))
+Add `term` to every existing layer of `model`, scaled by `1 / length(model)`, so that a full time
+step applies it once in total. Use [`push!`](@ref) instead to give the term a layer of its own.
+"""
+function distribute!(model::Model, term)
+    n = length(model)
+    n > 0 || throw(ArgumentError("cannot distribute a term over a model with no layers"))
+    share = (1 / n) * term
+    for (i, layer) in enumerate(model.layers)
+        model.layers[i] = TrotterLayer(map(t -> t + share, layer.data), layer.axis)
     end
     return model
 end
