@@ -122,3 +122,46 @@ end
         @test !(both ≈ pinned)
     end
 end
+
+@testitem "staggered field against exp(tL)" setup = [ModelSetup] begin
+    X, Y, Z = PAULI
+    P = ComplexSpace(2)
+
+    # A one-local Lindbladian on one sublattice only. At D = 1 with no coupling every site evolves
+    # independently, so both sublattices are checked against dense linear algebra.
+    jump = 0.5 * (Y - im * Z)
+    v0 = (0.0, 0.0, -1.0)
+    # nsteps = 5 (t = 0.1) only separates the sublattices by 0.076; 15 steps clears the 0.1 bar.
+    dt, nsteps = 0.02, 15
+
+    active = zero(Hamiltonian) + LocalOp(X) + Dissipator(jump)
+    idle = zero(Hamiltonian) + LocalOp(X)   # hamiltonian-only sublattice, no dissipation
+
+    layer = TrotterLayer([active idle; idle active])
+    sim = quiet(() -> Simulation(productpepo(fill(v0, 2, 2), 1), Model([layer]); timestep = dt))
+    quiet(() -> simulate!(sim; numsteps = nsteps, verbose = false))
+
+    dense(H, jumps) = begin
+        d = 2
+        Id = Matrix{ComplexF64}(I, d, d)
+        G = -im * (kron(Id, H) - kron(transpose(H), Id))
+        for L in jumps
+            LdL = L' * L
+            G += kron(conj(L), L) - (kron(Id, LdL) + kron(transpose(LdL), Id)) / 2
+        end
+        G
+    end
+
+    evolve(G) = reshape(exp(nsteps * dt * G) * vec(bloch(v0)), 2, 2)
+    want_active = evolve(dense(Matrix(X), [jump]))
+    want_idle = evolve(dense(Matrix(X), Matrix{ComplexF64}[]))
+
+    dm = quiet(() -> DensityMatrix(quantumstate(sim), 4))
+    got_active = reshape(convert(Array, partialtrace(dm, (1, 1))), 2, 2)
+    got_idle = reshape(convert(Array, partialtrace(dm, (1, 2))), 2, 2)
+
+    @test got_active ≈ want_active atol = 1e-8
+    @test got_idle ≈ want_idle atol = 1e-8
+    # The two sublattices must actually differ, or the test proves nothing.
+    @test norm(want_active - want_idle) > 0.1
+end
