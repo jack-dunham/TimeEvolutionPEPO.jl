@@ -1,8 +1,8 @@
 module TimeEvolutionPEPO
 
-# Mid-refactor onto PEPSKit (see PEPSKIT_REFACTOR_PLAN.md). Only the state and observable layers are
-# live; every include commented out below awaits its PEPSKit-based replacement and is unloaded, not
-# deleted. Do not assume any of it works against TensorKit 0.17.
+# Mid-refactor onto PEPSKit. Several files below hold their PEPSKit-based replacement under the name of
+# the code they superseded, so a path is no indication of its contents; the includes commented out at
+# the bottom are the unloaded remainder and do not work against TensorKit 0.17.
 
 using Accessors
 using DocStringExtensions
@@ -56,8 +56,8 @@ export gaugefix!, bpenvironment
 export SUGauge, BPGauge, BPEnv, BeliefPropagation, gauge_fix
 
 include("linalg.jl")
-include("state.jl")
-include("observables.jl")
+include("pepo/pepo.jl")
+include("densitymatrix.jl")
 
 ## Term algebra: matrix-level code, carried over unchanged
 include("model/abstractterm.jl")
@@ -80,13 +80,13 @@ include("model/longrangeheisenberg.jl")
 # count; only `GaussOp2d` has a rule, so the axial `PowOp{ExpOp}` has no route through it.
 include("model/fsm.jl")
 
-include("propagator.jl")
-include("reducedbond.jl")
-include("simpleupdate.jl")
-include("trotterdecomposition.jl")
+include("model/equation.jl")
+include("truncation/isometries.jl")
+include("truncation/simpleupdate.jl")
+include("evolution/dynamicalmap.jl")
 include("convergenceinfo.jl")
 include("simulation.jl")
-include("gauge.jl")
+include("gauge/abstractgauge.jl")
 
 # Awaiting replacement, in the order the plan takes them:
 #
@@ -98,7 +98,6 @@ include("gauge.jl")
 #
 # include("pepo/weights.jl")
 # include("pepo/abstractpepo.jl")
-# include("pepo/pepo.jl")
 # include("pepo/axialpepo.jl")
 # include("pepo/hilbertschmidt.jl")
 #
@@ -107,29 +106,23 @@ include("gauge.jl")
 # include("contract/vumps.jl")
 # include("contract/ctmrg.jl")
 #
-# include("gauge/abstractgauge.jl")
 # include("gauge/wtg.jl")
 # include("dev/mcf.jl")
 #
 # include("truncation/clu/clu.jl")
 # include("truncation/truncation.jl")
-# include("truncation/isometries.jl")
 # include("truncation/iterative.jl")
 #
 # include("evolution/abstractevolution.jl")
 # include("evolution/timeevolution.jl")
 #
-# include("truncation/simpleupdate.jl")
 #
-# include("model/equation.jl")
 # include("model/mpo.jl")
 # include("model/pepso.jl")
 # include("model/heisenberg.jl")
 # include("model/axialheisenberg.jl")
 #
-# include("evolution/dynamicalmap.jl")
 #
-# include("densitymatrix.jl")
 #
 # include("dev/vidalgauge.jl")
 
