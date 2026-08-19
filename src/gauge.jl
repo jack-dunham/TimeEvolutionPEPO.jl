@@ -52,3 +52,56 @@ function bpenvironment(state::InfinitePEPO; alg = BeliefPropagation(), kwargs...
     env, info = leading_boundary(env₀, InfiniteSquareNetwork(state), alg)
     return env, info
 end
+
+"""
+$(TYPEDEF)
+
+Settings for the CTMRG boundary that environment-based bond truncation is optimised against: the
+boundary space and the tolerances handed to `leading_boundary`.
+
+# Constructors
+
+    BondEnvironment(bonddim; tol = 1e-8, maxiter = 100, verbosity = 0)
+
+`bonddim` is a dimension or an `ElementarySpace`.
+"""
+Base.@kwdef struct BondEnvironment{S <: ElementarySpace}
+    space::S
+    tol::Float64 = 1.0e-8
+    maxiter::Int = 100
+    verbosity::Int = 0
+end
+
+function BondEnvironment(bonddim::Union{Integer, ElementarySpace}; kwargs...)
+    return BondEnvironment(; space = _indexspace(bonddim), kwargs...)
+end
+
+"""
+    $(TYPEDSIGNATURES)
+
+CTMRG boundary of the PEPO sandwiched with its adjoint — the Hilbert-Schmidt metric that
+environment-based bond truncation is optimised against. Returns the environment and the convergence
+info.
+
+`env₀` warm-starts the solve when its network legs match the state's, and is ignored otherwise.
+"""
+function bondenvironment(state::InfinitePEPO, alg::BondEnvironment; env₀ = nothing)
+    network = InfiniteSquareNetwork(state)
+    fresh = initialize_ctmrg_environment(ComplexF64, network, RandomInitialization(), alg.space)
+    start = (!isnothing(env₀) && _matchesnetwork(env₀, fresh)) ? env₀ : fresh
+    return leading_boundary(start, network; alg.tol, alg.maxiter, alg.verbosity)
+end
+
+function bondenvironment(
+        state::InfinitePEPO, bonddim::Union{Integer, ElementarySpace}; env₀ = nothing, kwargs...
+    )
+    return bondenvironment(state, BondEnvironment(bonddim; kwargs...); env₀)
+end
+
+# An edge tensor carries the network's two virtual legs at positions 2 and 3.
+function _matchesnetwork(env::CTMRGEnv, reference::CTMRGEnv)
+    size(env.edges) == size(reference.edges) || return false
+    return all(zip(env.edges, reference.edges)) do (e, r)
+        return space(e, 2) == space(r, 2) && space(e, 3) == space(r, 3)
+    end
+end
