@@ -30,15 +30,27 @@ end # ModelSetup
     end
 
     @testset "a non-axial term cannot be pinned to an axis" begin
-        @test_throws ArgumentError TrotterLayer(Dissipator(Z), 1)
+        gauss = quiet() do
+            GaussOp2d(Z, Z, 1.0)
+        end
+        @test_throws ArgumentError TrotterLayer(gauss, 1)
     end
 
-    @testset "an empty dissipator does not block pinning to an axis" begin
+    @testset "a dissipative layer can be pinned to an axis" begin
         layer = TrotterLayer(Liouvillian(zero(Hamiltonian) + LocalOp(Z, Z)), 1)
         @test layer.axis == 1
-        @test_throws ArgumentError TrotterLayer(
-            zero(Hamiltonian) + LocalOp(Z, Z) + Dissipator(Z), 1
+
+        layer = TrotterLayer(zero(Hamiltonian) + LocalOp(Z, Z) + Dissipator(Z), 1)
+        @test layer.axis == 1
+    end
+
+    @testset "a dissipative Liouvillian and an equivalent dissipative Ising agree on pinning" begin
+        liouvillian = TrotterLayer(
+            Liouvillian(zero(Hamiltonian) + LocalOp(Z, Z), Dissipator(Z)), 1
         )
+        ising = TrotterLayer(Ising(LocalOp(Z, Z), Dissipator(Z)), 1)
+        @test liouvillian.axis == 1
+        @test ising.axis == 1
     end
 end
 
@@ -84,14 +96,17 @@ end
     end
 
     @testset "distribute! leaves the model untouched when a later layer rejects the axial merge" begin
-        # `free` has no pinned axis, so merging the dissipative share succeeds; `pinned` is pinned to
+        # `free` has no pinned axis, so merging the non-axial share succeeds; `pinned` is pinned to
         # axis 1, so the same merge makes it non-axial and throws.
-        free = TrotterLayer(convert(Liouvillian, zero(Hamiltonian) + LocalOp(Y, Y)))
-        pinned = TrotterLayer(convert(Liouvillian, zero(Hamiltonian) + LocalOp(X, X)), 1)
+        gauss = quiet() do
+            GaussOp2d(Z, Z, 1.0)
+        end
+        free = TrotterLayer(convert(Hamiltonian, LocalOp(Y, Y)))
+        pinned = TrotterLayer(convert(Hamiltonian, LocalOp(X, X)), 1)
         model = Model([free, pinned])
         originalfree, originalpinned = model[1], model[2]
 
-        @test_throws ArgumentError distribute!(model, Dissipator(Z))
+        @test_throws ArgumentError distribute!(model, gauss)
         @test model[1] === originalfree
         @test model[2] === originalpinned
     end
