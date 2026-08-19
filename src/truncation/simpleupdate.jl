@@ -1,357 +1,157 @@
-function newtruncators(pepo, ::AbstractTimeStepper, ::AbstractSimpleTruncationScheme)
-    return SimpleUpdateState()
-end
-# Simple update interface
-environment(pepo, truncalg::AbstractSimpleTruncationScheme, bond) = bondweights(pepo)
-function environment!(truncator, pepo, truncalg::AbstractSimpleTruncationScheme, bond)
-    return environment(pepo, truncalg, bond)
-end
+# One simple-update sweep for a Liouvillian propagator, mirroring PEPSKit's `_su_iter!`. Only the
+# reduced bond split and the propagator application differ; cluster extraction, weight absorption and
+# bond rotation are PEPSKit's.
 
-function trotterstep!(
-    pepo::PEPO,
-    truncator,
-    stepper::LocalStepper,
-    truncalg::AbstractSimpleTruncationScheme,
-    kwargs...,
-)
+"""
+    $(TYPEDSIGNATURES)
 
-    # Evolve and then truncate each bond in sequence
-    size(pepo) < (2, 2) && throw(ArgumentError(""))
-
-    infidelity = similar(TRGroups.getdata(pepo))
-
-    allbonds = bonds(pepo, stepper.axis)
-
-    for bond in allbonds
-        env = environment!(truncator, pepo, truncalg, bond)
-
-        # println("alt:", altbonds[i])
-
-        # Evolved the pair of tensors connected by `bond`, leaving the original pair
-        # unmutated.
-
-        if hasfield(typeof(truncalg), :reduce)
-            if truncalg.reduce === :post
-                pair = evolve(pepo, stepper, bond)
-                newpair, newweight = updatetensors(pair, env, truncalg, bond)
-            elseif truncalg.reduce === :pre
-                newpair, newweight = updatetensors(pepo, env, stepper, truncalg, bond)
-            end
-        else
-            pair = evolve(pepo, stepper, bond)
-            newpair, newweight = updatetensors(pair, env, truncalg, bond)
-        end
-
-        pepo[bond] = mapreduce(copy, =>, newpair)
-        setweight!(pepo, newweight, bond; copy=false)
+Position of a bond's first site after `_bond_rotation` has turned the bond horizontal. Julia's
+`rotr90(A)[i, j] == A[Nr + 1 - j, i]`, so a site at `(r, c)` lands at `(c, Nr + 1 - r)`, and `rotl90`
+sends it to `(Nc + 1 - c, r)`.
+"""
+function _rotatedbond(state::InfinitePEPO, sites::Vector{CartesianIndex{2}}, dir::Int, rev::Bool)
+    Nr, Nc, = size(state)
+    r, c = Tuple(first(sites))
+    return if dir == 1
+        rev ? (Nr + 1 - r, Nc + 1 - c) : (r, c)
+    else
+        rev ? (Nc + 1 - c, r) : (c, Nr + 1 - r)
     end
-
-    # simple_update_gauge!(pepo; reset=false, verbose=true)
-    quicknormalize!(pepo)
-    hermitianize!(pepo)
-    #
-    return pepo, infidelity
 end
 
-# isometries for sequential simple update
-function isometries!(pair::Pair, pepo::AbstractPEPO, bond::Bond, truncalg::SimpleUpdate)
-    D = bondspace(pepo, bond)
+"""
+    $(TYPEDSIGNATURES)
 
-    trunc = truncspace(D)
+Update the bond joining `sites` in place: absorb the neighbouring weights, apply `propagator` to the
+pair, truncate, and write the two tensors and the new bond weight back. Returns the truncation error.
 
-    zeta = truncalg.zeta
-
-    iso, s, infid = simpleupdate!(pair, bondweights(pepo), bond; trunc=trunc, zeta=zeta)
-
-    return iso, s, infid
-end
-
-function isometries(pair::Pair, pepo::AbstractPEPO, bond::Bond, truncalg::SimpleUpdate)
-    return isometries(pair, bondweights(pepo), bond, truncalg; D=bondspace(pepo, bond))
-end
-function isometries(
-    pair::Pair, weights::UnitCellBonds, bond::Bond, truncalg::SimpleUpdate; D, axial=false
-)
-    trunc = truncspace(D)
-
-    zeta = truncalg.zeta
-
-    iso, s, infid = simpleupdate(pair, weights, bond; axial=axial, trunc=trunc, zeta=zeta)
-
-    return iso, s, infid
-end
-
-# For updating in parellel
-function parallelisometries(
-    pepo::AbstractPEPO, bond::Bond, truncalg::SimpleUpdate; kwargs...
-)
-    a, b = pepo[bond]
-
-    pair = copy(a) => copy(b)
-
-    return isometries!(pair, pepo, bond, truncalg)
-end
-
-function parallelisometries(
-    pair::Pair, pepo::AbstractPEPO, bond::Bond, truncalg::SimpleUpdate
-)
-    return isometries(pair, pepo, bond, truncalg)
-end
-# Sequential simple update
-function simpleupdate!(pair, weights, bond; trunc, absorb=true, axial=false, kwargs...)
-    axis = bondaxis(bond)
-
-    if absorb
-        pair = absorb_adjacent_weights(pair, weights, bond; inverse=false, axial=axial)
-    end
-
-    iso, s, f = simple_update_svd!(pair; trunc=trunc, absorb=true, axis=axis, kwargs...)
-
-    if absorb
-        pair = absorb_adjacent_weights(pair, weights, bond; inverse=true, axial=axial)
-    end
-
-    infid = 1 - f(pair[1], pair[2])
-
-    return iso, s, infid
-end
-
-function vidalupdate(pair, weights, bond; trunc, axial=false, kwargs...)
-    axis = bondaxis(bond)
-
-    pair = absorb_adjacent_weights(pair, weights, bond; inverse=false, axial=axial)
-
-    # iso, s, f = simple_update_svd!(pair; trunc=trunc, absorb=false, axis=axis, kwargs...)
-    pair, s = simple_update_tensors(pair; axis=axis)
-
-    pair = absorb_adjacent_weights(pair, weights, bond; inverse=true, axial=axial)
-
-    return pair, s
-end
-
-function simpleupdate(pair, weights, bond; trunc, axial=false, absorb=true, kwargs...)
-    axis = bondaxis(bond)
-
-    newpair = mapreduce(copy, =>, pair)
-
-    if absorb
-        newpair = absorb_adjacent_weights(pair, weights, bond; axial=axial, inverse=false)
-    end
-
-    iso, s, infid = simple_update_svd(
-        newpair; trunc=trunc, absorb=true, axis=axis, kwargs...
+Without `trunc` the bond space is preserved, taken from the weight currently on that bond. Passing
+`truncalg` (a `FullEnvTruncation` or `ALSTruncation`) together with `env`, the CTMRG boundary of the
+PEPO sandwiched with its adjoint, truncates against that environment instead of by a bare SVD.
+"""
+function bondstep!(
+        state::InfinitePEPO, weights::SUWeight, propagator::AbstractTensorMap,
+        sites::Vector{CartesianIndex{2}}; trunc = nothing, truncalg = nothing, env = nothing
     )
+    length(sites) == 2 || throw(ArgumentError("a bond joins two sites, got $(length(sites))"))
 
-    return iso, s, infid
-end
-
-function simple_update_svd(pair; axis, kwargs...)
-    (P, Q), (u0, v0) = rankreduce(pair; axis=axis)
-
-    (u, v), s, infid = isometries_from_svd(P, Q, u0, v0; axis=axis, kwargs...)
-
-    return pinv(u0) * u => v * pinv(v0), s, infid
-end
-
-function simple_update_svd!(pair, center=nothing; axis, kwargs...)
-    (P, Q), (u0, v0) = rankreduce!(pair, center; axis=axis)
-
-    iso, s, infid = isometries_from_svd(P, Q, u0, v0; axis=axis, kwargs...)
-
-    return iso, s, infid
-end
-
-function isometries_from_svd(P, Q, u0, v0; zeta=Inf, trunc, absorb=true, axis)
-    u, s, v, err2 = safetsvd!(normalize(u0 * v0); trunc=trunc)
-
-    # rmul!(s, 1 / tr(s))
-    maxnormalize!(s)
-
-    uv = u => v
-
-    if absorb
-        uv, s = applyweight(uv, s, zeta)
-        f = (P, Q) -> localfidelity(u, v, P, Q, u0, v0; axis=axis)
+    bond, rev = PEPSKit._nn_bondrev(sites...)
+    truncation = if isnothing(trunc)
+        V = space(weights[bond...], 1)
+        truncspace(isdual(V) ? flip(V) : V)   # `truncspace` rejects dual spaces
     else
-        zeta < Inf && rescale!(s, copy(s), zeta)
-        f = (P, Q) -> 0
-        # f = fidelity(u * sqrt(s), sqrt(s) * v, P, Q, u0, v0)
+        trunc
     end
 
-    return uv, s, f
-end
+    Ms, open_vaxs, = PEPSKit._get_cluster(state, sites)
+    PEPSKit._absorb_weight!(Ms, sites, open_vaxs, weights)
 
-function hori_weights(uten::T, vten::T, U, V; axial) where {T<:AbsTen{2,4}}
-    s1, w1, n1 = U
-    e2, s2, n2 = V
+    # After rotation the updated bond is always the east bond of the first tensor.
+    dir = first(bond)
 
-    if axial
-        @tensoropt begin
-            unew[k b; e ss w nn] := uten[k b; e s w n] * s1[s; ss] * n1[nn; n]
-            vnew[k b; e ss w nn] := vten[k b; e s w n] * s2[s; ss] * n2[nn; n]
-        end
+    A, B = PEPSKit._bond_rotation.(Ms, dir, rev; inv = false)
+
+    a, X = reducedbond_first(A)
+    b, Y = reducedbond_last(B)
+
+    a, s, b, ϵ = if isnothing(truncalg)
+        applypropagator(a, b, propagator, truncation)
     else
-        @tensoropt begin
-            unew[k b; e ss ww nn] := uten[k b; e s w n] * s1[s; ss] * w1[ww; w] * n1[nn; n]
-            vnew[k b; ee ss w nn] := vten[k b; e s w n] * s2[s; ss] * e2[e; ee] * n2[nn; n]
-        end
-    end
-    return unew, vnew
-end
-function hori_weights(uten::T, vten::T, U, V; axial) where {T<:AbsTen{2,5}}
-    s1, w1, n1 = U
-    e2, s2, n2 = V
-
-    if axial
-        @tensoropt begin
-            unew[k b; e1 e2 ss w1 w2 nn] :=
-                uten[k b; e1 e2 s w1 w2 n] * s1[s; ss] * n1[nn; n]
-            vnew[k b; e1 e2 ss w1 w2 nn] :=
-                vten[k b; e1 e2 s w1 w2 n] * s2[s; ss] * n2[nn; n]
-        end
-    else
-        @tensoropt begin
-            unew[k b; e1 e2 ss ww nn] :=
-                uten[k b; e1 e2 s w n] * s1[s; ss] * w1[ww; w] * n1[nn; n]
-            vnew[k b; ee ss w1 w2 nn] :=
-                vten[k b; e s w1 w2 n] * s2[s; ss] * e2[e; ee] * n2[nn; n]
-        end
-    end
-    return unew, vnew
-end
-
-function vert_weights(uten::T, vten::T, U, V; axial) where {T<:AbsTen{2,4}}
-    e1, w1, n1 = U
-    e2, s2, w2 = V
-
-    if axial
-        @tensoropt begin
-            unew[k b; ee s ww n] := uten[k b; e s w n] * e1[e; ee] * w1[ww; w]
-            vnew[k b; ee s ww n] := vten[k b; e s w n] * e2[e; ee] * w2[ww; w]
-        end
-    else
-        @tensoropt begin
-            unew[k b; ee s ww nn] := uten[k b; e s w n] * e1[e; ee] * w1[ww; w] * n1[nn; n]
-            vnew[k b; ee ss ww n] := vten[k b; e s w n] * s2[s; ss] * e2[e; ee] * w2[ww; w]
-        end
+        # `bondenv_ctm` reads a horizontal bond, so the environment is rotated exactly as
+        # `_bond_rotation` rotated the tensors, and the bond's position is carried through that
+        # rotation. `_prepare_site_tensor` pads our physical-leg-free remainder with a trivial leg.
+        benv = PEPSKit.bondenv_ctm(_rotatedbond(state, sites, dir, rev)..., X, Y,
+            PEPSKit._bond_rotation(env, dir, rev))
+        P = space(A, 1)
+        aout, sout, bout, info = truncatebond(
+            applypropagator(a, b, propagator), benv, truncalg, P
+        )
+        (aout, sout, bout, info.fid)
     end
 
-    return unew, vnew
+    A = undo_reducedbond_first(a, X)
+    B = undo_reducedbond_last(b, Y)
+
+    A = PEPSKit._bond_rotation(A, dir, rev; inv = true)
+    B = PEPSKit._bond_rotation(B, dir, rev; inv = true)
+    rev && (s = transpose(s))
+
+    siteA, siteB = sites
+    A = absorb_weight(A, weights, siteA[1], siteA[2], open_vaxs[1]; inv = true)
+    B = absorb_weight(B, weights, siteB[1], siteB[2], open_vaxs[2]; inv = true)
+
+    state[siteA] = normalize!(A, Inf)
+    state[siteB] = normalize!(B, Inf)
+    weights[bond...] = normalize!(s, Inf)
+
+    return ϵ
 end
 
-function vert_weights(uten::T, vten::T, U, V; axial) where {T<:AbsTen{2,5}}
-    e1, w1, n1 = U
-    e2, s2, w2 = V
+"""
+    $(TYPEDSIGNATURES)
 
-    if axial
-        @tensoropt begin
-            unew[k b; ee s1 s2 ww n1 n2] :=
-                uten[k b; e s1 s2 w n1 n2] * e1[e; ee] * w1[ww; w]
-            vnew[k b; ee s1 s2 ww n1 n2] :=
-                vten[k b; e s1 s2 w n1 n2] * e2[e; ee] * w2[ww; w]
+Update every bond of the unit cell along `axis` (1 for the column direction, 2 for the row direction),
+returning the largest truncation error.
+
+Each site sits on two bonds of a given axis and each bond carries half of the one-local part of
+`propagator` (see `twolocal`), so one sweep applies that part once per site. Sweeping both axes
+therefore applies it twice, which is why [`trotterise`](@ref) halves it.
+"""
+function axissweep!(
+        state::InfinitePEPO, weights::SUWeight, propagator::AbstractTensorMap, axis::Int;
+        trunc = nothing, truncalg = nothing, env = nothing
+    )
+    axis in (1, 2) || throw(ArgumentError("axis must be 1 or 2, got $axis"))
+    Nr, Nc, = size(state)
+    (Nr >= 2 && Nc >= 2) ||
+        throw(ArgumentError("a two-site update needs a unit cell of at least 2x2, got ($Nr, $Nc)"))
+
+    # Vertical bonds run south to north: the other order sets `rev` in `_nn_bondrev`, and the update
+    # then writes each bond back with the opposite arrow.
+    prop = axis == 1 ? propagator : _swapsites(propagator)
+
+    ϵ = 0.0
+    for r in 1:Nr, c in 1:Nc
+        site1, site2 = if axis == 1
+            CartesianIndex(r, c), CartesianIndex(r, c + 1)
+        else
+            CartesianIndex(r + 1, c), CartesianIndex(r, c)
         end
-    else
-        @tensoropt begin
-            unew[k b; ee s1 s2 ww nn] :=
-                uten[k b; e s1 s2 w n] * e1[e; ee] * w1[ww; w] * n1[nn; n]
-            vnew[k b; ee ss ww n1 n2] :=
-                vten[k b; e s w n1 n2] * s2[s; ss] * e2[e; ee] * w2[ww; w]
-        end
+        ϵ = max(ϵ, bondstep!(state, weights, prop, [site1, site2]; trunc, truncalg, env))
     end
-    return unew, vnew
+
+    return ϵ
 end
 
-function absorb_adjacent_weights(
-    pair::TensorPair{2}, weights::UnitCellBonds, bond::Bond; kwargs...
-)
-    return absorb_adjacent_weights(sqrt, pair, weights, bond; kwargs...)
-end
-function absorb_adjacent_weights(
-    f, pair::TensorPair{2}, weights::UnitCellBonds, bond::Bond; inverse=false, axial=false
-)
-    uten, vten = pair
+"""
+    $(TYPEDSIGNATURES)
 
-    if inverse
-        func = w -> pinv(f(w))
-    else
-        func = w -> f(w)
+Exchange the two sites of a two-site propagator, whose physical legs are ordered
+`(ket₁, bra₁, ket₂, bra₂)` in both codomain and domain.
+"""
+_swapsites(propagator::AbstractTensorMap) = permute(propagator, ((3, 4, 1, 2), (7, 8, 5, 6)))
+
+"""
+    $(TYPEDSIGNATURES)
+
+One time step: sweep each `(propagator, axis)` of a Trotter decomposition in turn, returning the
+largest truncation error.
+
+`truncalg` selects environment-based truncation and needs `envalg`, a [`BondEnvironment`](@ref) or
+the boundary bond dimension. One CTMRG boundary is solved for per axis sweep.
+"""
+function timestep!(
+        state::InfinitePEPO, weights::SUWeight, decomposition::AbstractVector;
+        trunc = nothing, truncalg = nothing, envalg = nothing
+    )
+    isnothing(truncalg) == isnothing(envalg) ||
+        throw(ArgumentError("environment-based truncation needs both `truncalg` and `envalg`"))
+
+    ϵ = 0.0
+    env = nothing
+    for (propagator, axis) in decomposition
+        isnothing(truncalg) || ((env, _) = bondenvironment(state, envalg; env₀ = env))
+        ϵ = max(ϵ, axissweep!(state, weights, propagator, axis; trunc, truncalg, env))
     end
-
-    U, V = mapadjacent(func, weights, bond)
-
-    axis = bondaxis(bond)
-
-    if axis == 1
-        unew, vnew = hori_weights(uten, vten, U, V; axial=axial)
-    elseif axis == 2
-        unew, vnew = vert_weights(uten, vten, U, V; axial=axial)
-    end
-
-    return unew => vnew
-end
-
-function absorb_axial_weights!(
-    site::AbsTen{2,4},
-    weights::UnitCellBonds{G},
-    ind::CartesianIndex{2};
-    inverse=false,
-    axis=1,
-) where {G}
-    if inverse
-        func = w -> try
-            inv(sqrt(w))
-        catch
-            # @warn "inv failed"
-            pinv(sqrt(w))
-        end
-    else
-        func = w -> sqrt(w)
-    end
-
-    e, s, w, n = func.(bondswith(G, ind))
-
-    if axis == 1
-        @tensoropt begin
-            site[k b; e ss w nn] = copy(site)[k b; e s w n] * s[s; ss] * n[nn; n]
-        end
-
-    elseif axis == 2
-        @tensoropt begin
-            site[k b; ee s ww n] = copy(site)[k b; e s w n] * e[e; ee] * w[ww; w]
-        end
-    end
-
-    return site
-end
-
-function weightenvironment(pair, weights, bond)
-    U, V = adjacent(weights, bond)
-
-    QL, QR = pair
-    # s/e Q <-u<-
-    # n/w   <-v<- Q
-
-    if bondaxis(bond) == 2
-        weights = permutedims(weights)
-
-        QL = permutedom(QL, (2, 1, 4, 3))
-        QR = permutedom(QR, (2, 1, 4, 3))
-    end
-
-    s1, w1, n1 = U
-    e2, s2, n2 = V
-
-    @tensoropt M[D7 E1; D1 E7] :=
-        QL[k1 b1; D1 D2 D3 D4] *
-        (QL')[E1 E2 E3 E4; k1 b1] *
-        QR[k2 b2; D5 D6 D7 D8] *
-        (QR')[E5 E6 E7 E8; k2 b2] *
-        s1[D2; E2] *
-        w1[E3; D3] *
-        n1[E4; D4] *
-        e2[D5; E5] *
-        s2[D6; E6] *
-        n2[E8; D8]
-
-    return M
+    return ϵ
 end

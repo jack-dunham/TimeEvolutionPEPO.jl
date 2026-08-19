@@ -48,6 +48,25 @@ bondweights(sim::Simulation) = sim.weights
 
 timestep(sim::Simulation) = sim.timestep
 
+function Base.show(io::IO, m::MIME"text/plain", sim::Simulation)
+    println(io, "SIMULATION")
+    println(io, "≡≡≡≡≡≡≡≡≡≡")
+    println(io, "size: $(size(quantumstate(sim)))")
+    println(io, "timestep: $(timestep(sim))")
+    println(io, "Trotter layers: $(length(sim.decomposition))")
+    println(io, "MODEL")
+    println(io, "≡≡≡≡≡")
+    show(io, m, sim.model)
+    println(io, "")
+    println(io, "INFO")
+    print(io, "≡≡≡≡")
+    for name in fieldnames(SimulationInfo)
+        println(io, "")
+        print(io, name, ": ", getfield(sim.info, name))
+    end
+    return nothing
+end
+
 """
     $(TYPEDSIGNATURES)
 
