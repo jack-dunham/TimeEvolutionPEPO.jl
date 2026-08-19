@@ -1,8 +1,7 @@
 module TimeEvolutionPEPO
 
 # Mid-refactor onto PEPSKit. Several files below hold their PEPSKit-based replacement under the name of
-# the code they superseded, so a path is no indication of its contents; the includes commented out at
-# the bottom are the unloaded remainder and do not work against TensorKit 0.17.
+# the code they superseded, so a path is no indication of its contents. Everything under src/ is loaded.
 
 using Accessors
 using DocStringExtensions
@@ -88,42 +87,7 @@ include("convergenceinfo.jl")
 include("simulation.jl")
 include("gauge/abstractgauge.jl")
 
-# Awaiting replacement, in the order the plan takes them:
-#
-# include("utils.jl")
-# include("tensorkitutils.jl")
-# include("abstractlattice.jl")
-# include("edgelattice.jl")
-# include("updatestyle.jl")
-#
-# include("pepo/weights.jl")
-# include("pepo/abstractpepo.jl")
-# include("pepo/axialpepo.jl")
-# include("pepo/hilbertschmidt.jl")
-#
-# include("model/abstractaxis.jl")
-#
-# include("contract/vumps.jl")
-# include("contract/ctmrg.jl")
-#
-# include("gauge/wtg.jl")
-# include("dev/mcf.jl")
-#
-# include("truncation/clu/clu.jl")
-# include("truncation/truncation.jl")
-# include("truncation/iterative.jl")
-#
-# include("evolution/abstractevolution.jl")
-# include("evolution/timeevolution.jl")
-#
-#
-# include("model/mpo.jl")
-# include("model/pepso.jl")
-# include("model/heisenberg.jl")
-# include("model/axialheisenberg.jl")
-#
-#
-#
-# include("dev/vidalgauge.jl")
+# Unfinished work that does not run against the refactor lives in src/dev/ and is not included: the
+# NTU cluster metric, IterativeSU, WTG, the long-range PEPO builders, and the model recipes.
 
 end # module
