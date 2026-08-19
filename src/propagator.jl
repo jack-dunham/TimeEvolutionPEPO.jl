@@ -58,6 +58,9 @@ _vectorisation(t) = throw(ArgumentError("no generator defined for a model of typ
 
 generator(model::AbstractTerm, P::IndexSpace) = generator(model, model, P)
 
+generator(t::Ising, P::IndexSpace) = generator(_equation(t), P)
+generator(a::Ising, b::Ising, P::IndexSpace) = generator(_equation(a), _equation(b), P)
+
 """
     $(TYPEDSIGNATURES)
 
