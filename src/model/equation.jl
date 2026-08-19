@@ -67,15 +67,7 @@ generator(a::Ising, b::Ising, P::IndexSpace) = generator(_equation(a), _equation
 Two-site propagator `exp(dt * generator(model, P))` as an `AbsTen{4,4}` on the physical legs of a bond,
 ordered `(ket₁, bra₁, ket₂, bra₂)` in both the codomain and the domain.
 """
-function bondpropagator(model::AbstractTerm, P::IndexSpace, dt::Number)
-    matrix = exp(dt * generator(model, P))
-
-    # Declared in the order the generator's composite index runs, then regrouped per site.
-    spaces = P ⊗ P ⊗ P' ⊗ P'
-    t = vectorised_tensormap(matrix, spaces, spaces)
-
-    return permute(t, ((1, 3, 2, 4), (5, 7, 6, 8)))
-end
+bondpropagator(model::AbstractTerm, P::IndexSpace, dt::Number) = bondpropagator(model, model, P, dt)
 
 """
     $(TYPEDSIGNATURES)

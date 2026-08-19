@@ -11,7 +11,8 @@ decomposition of the propagator. The fields are internal.
 
     Simulation(state::InfinitePEPO, model; timestep, weights = SUWeight(state))
 
-`model` is a term or a vector of terms, one per Trotter layer, as [`trotterise`](@ref) accepts.
+`model` is a [`Model`](@ref), or a term or a vector of terms as shorthand for a single-layer or
+uniform model, as [`trotterise`](@ref) accepts.
 
 See also: [`simulate!`](@ref)
 """

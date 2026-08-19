@@ -82,6 +82,19 @@ end
         @test length(model) == 1
         @test dissipator(model[1][1, 1]) === nothing
     end
+
+    @testset "distribute! leaves the model untouched when a later layer rejects the axial merge" begin
+        # `free` has no pinned axis, so merging the dissipative share succeeds; `pinned` is pinned to
+        # axis 1, so the same merge makes it non-axial and throws.
+        free = TrotterLayer(convert(Liouvillian, zero(Hamiltonian) + LocalOp(Y, Y)))
+        pinned = TrotterLayer(convert(Liouvillian, zero(Hamiltonian) + LocalOp(X, X)), 1)
+        model = Model([free, pinned])
+        originalfree, originalpinned = model[1], model[2]
+
+        @test_throws ArgumentError distribute!(model, Dissipator(Z))
+        @test model[1] === originalfree
+        @test model[2] === originalpinned
+    end
 end
 
 @testitem "Trotter decomposition of a model" setup = [ModelSetup] begin
