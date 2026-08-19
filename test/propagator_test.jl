@@ -120,4 +120,16 @@ end # PropagatorSetup
         # `size` is not defined for `AbstractTensorMap` in this TensorKit version; compare spaces instead.
         @test space(bondpropagator(ising, P, 0.05)) == space(bondpropagator(equivalent, P, 0.05))
     end
+
+    @testset "bare terms are promoted to layers" begin
+        X, Y, Z = PAULI
+        P = ComplexSpace(2)
+
+        @test length(trotterise(LocalOp(Z, Z), P, 0.1)) == 2          # one layer, both axes
+        @test length(trotterise([LocalOp(X, X), LocalOp(Y, Y)], P, 0.1)) == 4
+        @test length(trotterise([LocalOp(X, X) => 1, LocalOp(Y, Y) => 2], P, 0.1)) == 2
+
+        # A bare Dissipator is one-local, so it must promote to a Liouvillian, not a Hamiltonian.
+        @test first(first(trotterise(Dissipator(0.5 * (Y - im * Z)), P, 0.1))) isa AbstractTensorMap
+    end
 end

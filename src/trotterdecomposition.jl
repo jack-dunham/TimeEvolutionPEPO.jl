@@ -5,6 +5,35 @@
 """
     $(TYPEDSIGNATURES)
 
+A term as the sum type a Trotter layer holds. A bare single term becomes a `Hamiltonian`, or a
+`Liouvillian` when it is dissipative; `Hamiltonian`, `Liouvillian` and `Ising` pass through.
+"""
+layerterm(t::Union{Hamiltonian, Liouvillian, Ising}) = t
+layerterm(t::Dissipator) = convert(Liouvillian, t)
+layerterm(t::AbstractTerm) = convert(Hamiltonian, t)
+
+"""
+    $(TYPEDSIGNATURES)
+
+Throw unless every term of `t` can be exponentiated into a two-site propagator.
+"""
+function _checkroute(t::AbstractTerm)
+    unroutable = filter(x -> !(x isa LocalOp), collect(terms(t)))
+    isempty(unroutable) || throw(
+        ArgumentError(
+            "no propagator route for $(typeof(first(unroutable))): only nearest-neighbour " *
+                "terms can be exponentiated into a two-site propagator"
+        ),
+    )
+    return nothing
+end
+
+# An Ising coupling is nearest-neighbour by construction, and `terms` is not defined for it.
+_checkroute(::Ising) = nothing
+
+"""
+    $(TYPEDSIGNATURES)
+
 Suzuki-Trotter decomposition of `layers` on physical space `P` with time step `dt`, as a vector of
 `(propagator, axis)` pairs to be swept in order.
 
@@ -16,7 +45,9 @@ function trotterise(layers::AbstractVector, P::IndexSpace, dt::Number)
     decomposition = Tuple{AbstractTensorMap, Int}[]
 
     for layer in layers
-        term, axis = layer isa Pair ? (first(layer), last(layer)) : (layer, 0)
+        raw, axis = layer isa Pair ? (first(layer), last(layer)) : (layer, 0)
+        term = layerterm(raw)
+        _checkroute(term)
         if axis == 0
             halved = scalelocal(term, 0.5)
             push!(decomposition, (bondpropagator(halved, P, dt), 1))
