@@ -83,3 +83,42 @@ end
         @test dissipator(model[1][1, 1]) === nothing
     end
 end
+
+@testitem "Trotter decomposition of a model" setup = [ModelSetup] begin
+    X, Y, Z = PAULI
+    P = ComplexSpace(2)
+
+    @testset "a uniform layer yields a 1x1 propagator matrix" begin
+        decomposition = trotterise(LocalOp(Z, Z), P, 0.1)
+        @test length(decomposition) == 2                   # one layer over both axes
+        propagators, axis = first(decomposition)
+        @test size(propagators) == (1, 1)
+        @test axis == 1
+    end
+
+    @testset "a site-dependent layer yields one propagator per site" begin
+        data = [LocalOp(Z, Z) 0.5 * LocalOp(Z, Z); 0.5 * LocalOp(Z, Z) LocalOp(Z, Z)]
+        decomposition = trotterise(Model([TrotterLayer(data)]), P, 0.1)
+        propagators, = first(decomposition)
+        @test size(propagators) == (2, 2)
+        @test !(propagators[1, 1] ≈ propagators[1, 2])
+    end
+
+    @testset "distribute! gives each layer a 1/n share" begin
+        # Moved here from Task 6: the check needs trotterise to accept a Model.
+        distributed = Model(LocalOp(X, X), LocalOp(Y, Y))
+        distribute!(distributed, LocalOp(Z))
+        byhand = Model(LocalOp(X, X) + 0.5 * LocalOp(Z), LocalOp(Y, Y) + 0.5 * LocalOp(Z))
+        got = trotterise(distributed, P, 0.1)
+        want = trotterise(byhand, P, 0.1)
+        @test length(got) == length(want)
+        @test all(first(g)[1, 1] ≈ first(w)[1, 1] for (g, w) in zip(got, want))
+    end
+
+    @testset "the one-local part is halved across the two axes" begin
+        # A layer applied on both axes must halve its one-local part; pinned to one axis it must not.
+        both = first(first(trotterise(zero(Hamiltonian) + LocalOp(X), P, 0.1)))[1, 1]
+        pinned = first(first(trotterise([(zero(Hamiltonian) + LocalOp(X)) => 1], P, 0.1)))[1, 1]
+        @test !(both ≈ pinned)
+    end
+end

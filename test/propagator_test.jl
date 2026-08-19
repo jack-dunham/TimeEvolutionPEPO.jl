@@ -129,6 +129,7 @@ end # PropagatorSetup
         @test length(trotterise([LocalOp(X, X) => 1, LocalOp(Y, Y) => 2], P, 0.1)) == 2
 
         # A bare Dissipator is one-local, so it must promote to a Liouvillian, not a Hamiltonian.
-        @test first(first(trotterise(Dissipator(0.5 * (Y - im * Z)), P, 0.1))) isa AbstractTensorMap
+        @test first(first(trotterise(Dissipator(0.5 * (Y - im * Z)), P, 0.1)))[1, 1] isa
+            AbstractTensorMap
     end
 end
