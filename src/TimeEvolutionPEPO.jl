@@ -38,6 +38,7 @@ export Hamiltonian, Liouvillian, Dissipator, Ising
 export AbstractTerm, AbstractSingleTerm, AbstractSumOfTerms
 export LocalOp, ExpOp, GaussOp, GaussOp2d, PowOp, PowOp2d
 export dissipator, oneterms, isaxial, isexpandable
+export TrotterLayer, scalelayer
 
 export generator, bondpropagator
 export reducedbond_first, reducedbond_last, undo_reducedbond_first, undo_reducedbond_last
@@ -68,6 +69,7 @@ include("model/terms/nnnop.jl")
 include("model/hamiltonian.jl")
 include("model/liouvillian.jl")
 include("model/ising.jl")
+include("model/trotterlayer.jl")
 
 # `PowOp` and `GaussOp` fit a power law as a sum of exponentials with routines defined here; only the
 # `fsm*` builders in this file need porting, and they are not called at load time.
@@ -117,7 +119,6 @@ include("gauge.jl")
 #
 # include("truncation/simpleupdate.jl")
 #
-# include("model/trotterlayer.jl")
 # include("model/model.jl")
 # include("model/equation.jl")
 # include("model/mpo.jl")
