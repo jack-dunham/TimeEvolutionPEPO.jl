@@ -95,6 +95,3 @@ _equation(t::Ising{Hamiltonian}) = Hamiltonian((t.a * LocalOp(t.CB, t.CB),), t.o
 function _equation(t::Ising{Liouvillian})
     return Liouvillian(Hamiltonian((t.a * LocalOp(t.CB, t.CB),), t.oneterms), t.dissipator)
 end
-
-generator(t::Ising, P::IndexSpace) = generator(_equation(t), P)
-generator(a::Ising, b::Ising, P::IndexSpace) = generator(_equation(a), _equation(b), P)
