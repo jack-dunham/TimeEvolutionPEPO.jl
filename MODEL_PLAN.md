@@ -435,8 +435,7 @@ one local state; a matrix of matrices, tuples or ThermalStates is a unit cell."
 ### Task 5: `TrotterLayer`
 
 **Files:**
-- Move: `src/model/trotterlayer.jl` → `src/dev/trotterlayer.jl` (parked; uses TRGroups and the removed `broadcastmodel`)
-- Create: `src/model/trotterlayer.jl`
+- Rewrite in place: `src/model/trotterlayer.jl` — its current contents are the parked TRGroups-based version, which uses the removed `broadcastmodel` and does not load. Replace them; **do not `git mv` the file anywhere.** Git history is the record of the old version.
 - Modify: `src/TimeEvolutionPEPO.jl` (add `include("model/trotterlayer.jl")` after `include("model/ising.jl")`; export `TrotterLayer`; remove the commented parked include for it)
 - Test: `test/model_test.jl` (new file)
 
@@ -498,15 +497,11 @@ using ReTestItems; runtests("test/model_test.jl")
 
 Expected: `UndefVarError: TrotterLayer not defined`.
 
-- [ ] **Step 3: Park the old file**
+- [ ] **Step 3: Implement**
 
-```bash
-git mv src/model/trotterlayer.jl src/dev/trotterlayer.jl
-```
-
-- [ ] **Step 4: Implement**
-
-Create `src/model/trotterlayer.jl`:
+Replace the entire contents of `src/model/trotterlayer.jl` with the following. Do not move the file and
+do not keep the old definitions — they reference `TRGroups` and `broadcastmodel`, neither of which
+exists in the live tree.
 
 ```julia
 # One layer of a Suzuki-Trotter decomposition: a term per unit-cell site, and the axis it acts on.
@@ -579,13 +574,13 @@ Expected: PASS.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add -A
+git add src/model/trotterlayer.jl src/model/liouvillian.jl src/TimeEvolutionPEPO.jl test/model_test.jl
 git commit -m "feat: TrotterLayer carries a term per unit-cell site
 
 data[r, c] is anchored at site (r, c): its two-local part is the coupling to the
 neighbour in the +axis direction, its one-local part belongs to that site alone.
-Indexing wraps periodically so a 1x1 layer is uniform. The parked TRGroups-based
-version moves to src/dev/."
+Indexing wraps periodically so a 1x1 layer is uniform. Replaces the parked
+TRGroups-based version in place; git history holds the old one."
 ```
 
 ---
@@ -593,8 +588,7 @@ version moves to src/dev/."
 ### Task 6: `Model`
 
 **Files:**
-- Move: `src/model/model.jl` → `src/dev/model.jl`
-- Create: `src/model/model.jl`
+- Rewrite in place: `src/model/model.jl` — its current contents are the parked version, which does not load. Replace them; **do not `git mv` the file anywhere.**
 - Modify: `src/TimeEvolutionPEPO.jl` (include after `trotterlayer.jl`; export `Model`, `distribute!`)
 - Test: `test/model_test.jl`
 
@@ -655,15 +649,9 @@ using ReTestItems; runtests("test/model_test.jl")
 
 Expected: `UndefVarError: Model not defined`.
 
-- [ ] **Step 3: Park the old file**
+- [ ] **Step 3: Implement**
 
-```bash
-git mv src/model/model.jl src/dev/model.jl
-```
-
-- [ ] **Step 4: Implement**
-
-Create `src/model/model.jl`:
+Replace the entire contents of `src/model/model.jl` with the following. Do not move the file.
 
 ```julia
 # A model is an ordered list of Suzuki-Trotter layers, swept in order once per time step.
@@ -751,19 +739,18 @@ In `src/TimeEvolutionPEPO.jl`, add `include("model/model.jl")` after `include("m
 using ReTestItems; runtests("test/model_test.jl")
 ```
 
-Expected: the `distribute!` equality testset still fails on `trotterise(::Model, …)`; the other three pass.
+Expected: PASS, every testset.
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add -A
+git add src/model/model.jl src/TimeEvolutionPEPO.jl test/model_test.jl
 git commit -m "feat: Model holds an ordered list of Trotter layers
 
 push! always appends a layer; distribute! spreads a term over the existing
 layers with a 1/nlayers prefactor and throws on an empty model. The parked
 version triggered distribution by argument type, which made the behaviour
-depend on whether the term was wrapped. One testset stays red until trotterise
-accepts a Model."
+depend on whether the term was wrapped. Replaces the parked version in place."
 ```
 
 ---
@@ -772,10 +759,11 @@ accepts a Model."
 
 **Files:**
 - Modify: `src/trotterdecomposition.jl`
+- Modify: `src/propagator.jl` (add one `bondpropagator` method beside the existing one — move nothing out)
 - Test: `test/model_test.jl`
 
 **Interfaces:**
-- Consumes: `Model`, `TrotterLayer`, `layerterm`.
+- Consumes: `Model`, `TrotterLayer`, `layerterm`, `_checkroute`.
 - Produces: `trotterise(model, P, dt) -> Vector{Tuple{Matrix{<:AbstractTensorMap}, Int}}`. Every element's first entry is a `Matrix` of propagators indexed as the layer's `data` is; a uniform layer yields a `1×1` matrix.
 
 - [ ] **Step 1: Write the failing test**
@@ -859,15 +847,28 @@ function _layerpropagators(layer::TrotterLayer, P::IndexSpace, dt::Number, axis:
             anchor = layer[r, c]
             neighbour = axis == 1 ? layer[r, c + 1] : layer[r + 1, c]
             _checkroute(anchor)
-            exponentiate(generator(anchor, neighbour, P), P, dt)
+            bondpropagator(anchor, neighbour, P, dt)
         end for r in 1:Nr, c in 1:Nc
     ]
 end
 ```
 
-Move the body of the existing `bondpropagator` that turns a matrix into a `TensorMap` into a helper `exponentiate(matrix, P, dt)` so both `bondpropagator` and `_layerpropagators` use it, and keep `bondpropagator(model, P, dt)` as the single-term entry point.
+`bondpropagator(anchor, neighbour, P, dt)` is a **new method added beside the existing one in
+`src/propagator.jl`** — do not move any code out of that file. It is the existing body with
+`generator(model, P)` replaced by `generator(anchor, neighbour, P)`:
 
-Move the nearest-neighbour check added in Task 3 into `_checkroute(term)`.
+```julia
+function bondpropagator(
+        anchor::AbstractTerm, neighbour::AbstractTerm, P::IndexSpace, dt::Number
+    )
+    matrix = exp(dt * generator(anchor, neighbour, P))
+    spaces = P ⊗ P ⊗ P' ⊗ P'
+    t = vectorised_tensormap(matrix, spaces, spaces)
+    return permute(t, ((1, 3, 2, 4), (5, 7, 6, 8)))
+end
+```
+
+`_checkroute` already exists as a named helper from Task 3 — call it, do not redefine it.
 
 Keep the vector and single-term methods as thin wrappers:
 
@@ -1158,6 +1159,8 @@ git commit -m "docs: Model, TrotterLayer and site-dependent terms"
 
 **Beyond the spec**, added after probing found them broken: `Ising` had no `generator` (Task 2), `trotterise` rejected bare terms (Task 3), `productpepo` misread a bare density matrix (Task 4). All three were pre-existing and confirmed by direct probe.
 
-**Type consistency.** `layerterm` (Task 3) is used by `TrotterLayer` (Task 5). `scalelayer` (Task 5) is used by `trotterise` (Task 7). `_layerpropagators` and `exponentiate` (Task 7) are consumed by nothing else. `_swapsites` already exists in `src/simpleupdate.jl`. `_checkroute` is introduced in Task 3 and moved to a named helper in Task 7 — Task 7 must not leave a duplicate check in `trotterise`'s loop.
+**Type consistency.** `layerterm` (Task 3) is used by `TrotterLayer` (Task 5). `scalelayer` (Task 5) is used by `trotterise` (Task 7). `_layerpropagators` (Task 7) is consumed by nothing else. `_swapsites` already exists in `src/simpleupdate.jl`. `_checkroute` is a named helper from Task 3 that Task 7 calls, never redefines.
+
+**No code moves between files.** Tasks 5 and 6 rewrite `src/model/{trotterlayer,model}.jl` in place rather than relocating the parked versions to `src/dev/`; Task 7 adds a `bondpropagator` method beside its sibling in `src/propagator.jl` rather than extracting a helper elsewhere. A relocation makes the diff unreadable, and rearranging files is a separate change.
 
 **Known risk.** Task 5's `promote_type` over `Hamiltonian{T}` parametric types is the least certain step: `mapreduce(typeof, promote_type, promoted)` on a matrix of `Hamiltonian{Tuple{LocalOp{2}}}` and `Hamiltonian{Tuple{}}` promotes to `Hamiltonian` only if a rule exists. If it falls back to `Any`, add `Base.promote_rule(::Type{<:Hamiltonian}, ::Type{<:Hamiltonian}) = Hamiltonian` alongside the `Liouvillian` rule in the same step.
