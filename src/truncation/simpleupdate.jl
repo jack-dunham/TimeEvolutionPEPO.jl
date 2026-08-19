@@ -94,21 +94,17 @@ Update every bond of the unit cell along `axis` (1 for the column direction, 2 f
 returning the largest truncation error.
 
 Each site sits on two bonds of a given axis and each bond carries half of the one-local part of
-`propagator` (see `twolocal`), so one sweep applies that part once per site. Sweeping both axes
+`propagators` (see `twolocal`), so one sweep applies that part once per site. Sweeping both axes
 therefore applies it twice, which is why [`trotterise`](@ref) halves it.
 """
 function axissweep!(
-        state::InfinitePEPO, weights::SUWeight, propagator::AbstractTensorMap, axis::Int;
+        state::InfinitePEPO, weights::SUWeight, propagators::AbstractMatrix, axis::Int;
         trunc = nothing, truncalg = nothing, env = nothing
     )
     axis in (1, 2) || throw(ArgumentError("axis must be 1 or 2, got $axis"))
     Nr, Nc, = size(state)
     (Nr >= 2 && Nc >= 2) ||
         throw(ArgumentError("a two-site update needs a unit cell of at least 2x2, got ($Nr, $Nc)"))
-
-    # Vertical bonds run south to north: the other order sets `rev` in `_nn_bondrev`, and the update
-    # then writes each bond back with the opposite arrow.
-    prop = axis == 1 ? propagator : _swapsites(propagator)
 
     ϵ = 0.0
     for r in 1:Nr, c in 1:Nc
@@ -117,10 +113,26 @@ function axissweep!(
         else
             CartesianIndex(r + 1, c), CartesianIndex(r, c)
         end
+        p = propagators[mod1(r, size(propagators, 1)), mod1(c, size(propagators, 2))]
+        # Vertical bonds run south to north: the other order sets `rev` in `_nn_bondrev`, and the
+        # update then writes each bond back with the opposite arrow.
+        prop = axis == 1 ? p : _swapsites(p)
         ϵ = max(ϵ, bondstep!(state, weights, prop, [site1, site2]; trunc, truncalg, env))
     end
 
     return ϵ
+end
+
+"""
+    $(TYPEDSIGNATURES)
+
+Compatibility form of [`axissweep!`](@ref) for a single bare propagator, applied to every bond of the
+unit cell.
+"""
+function axissweep!(
+        state::InfinitePEPO, weights::SUWeight, propagator::AbstractTensorMap, axis::Int; kwargs...
+    )
+    return axissweep!(state, weights, fill(propagator, 1, 1), axis; kwargs...)
 end
 
 """
@@ -134,7 +146,7 @@ _swapsites(propagator::AbstractTensorMap) = permute(propagator, ((3, 4, 1, 2), (
 """
     $(TYPEDSIGNATURES)
 
-One time step: sweep each `(propagator, axis)` of a Trotter decomposition in turn, returning the
+One time step: sweep each `(propagators, axis)` of a Trotter decomposition in turn, returning the
 largest truncation error.
 
 `truncalg` selects environment-based truncation and needs `envalg`, a [`BondEnvironment`](@ref) or
@@ -149,9 +161,9 @@ function timestep!(
 
     ϵ = 0.0
     env = nothing
-    for (propagator, axis) in decomposition
+    for (propagators, axis) in decomposition
         isnothing(truncalg) || ((env, _) = bondenvironment(state, envalg; env₀ = env))
-        ϵ = max(ϵ, axissweep!(state, weights, propagator, axis; trunc, truncalg, env))
+        ϵ = max(ϵ, axissweep!(state, weights, propagators, axis; trunc, truncalg, env))
     end
     return ϵ
 end

@@ -12,11 +12,11 @@ CurrentModule = TimeEvolutionPEPO
 timestep!(state, weights, decomposition; trunc, truncalg, envalg)
 ```
 
-where `decomposition` is the vector of `(propagator, axis)` pairs [`trotterise`](@ref) produced. That
+where `decomposition` is the vector of `(propagators, axis)` pairs [`trotterise`](@ref) produced. That
 sweeps each pair in turn,
 
 ```julia
-axissweep!(state, weights, propagator, axis; trunc, truncalg, env)
+axissweep!(state, weights, propagators, axis; trunc, truncalg, env)
 ```
 
 which walks every bond of the unit cell along `axis` and updates it,
@@ -24,6 +24,11 @@ which walks every bond of the unit cell along `axis` and updates it,
 ```julia
 bondstep!(state, weights, propagator, sites; trunc, truncalg, env)
 ```
+
+`propagators` is a `Matrix` of two-site propagators, indexed as the originating layer's term matrix
+was: a `1×1` matrix for a uniform layer, or one matching the state's unit cell for a site-dependent
+one. `axissweep!` picks out the entry for each bond and passes that single `propagator` to
+`bondstep!`.
 
 A bond update absorbs the neighbouring weights, splits both site tensors into a reduced bond tensor
 and an orthogonal remainder ([`reducedbond_first`](@ref), [`reducedbond_last`](@ref)), applies the

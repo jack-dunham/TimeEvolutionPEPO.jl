@@ -38,7 +38,6 @@ Model{T}() where {T} = Model{T}(TrotterLayer[])
 
 Base.length(model::Model) = length(model.layers)
 Base.iterate(model::Model, state = 1) = iterate(model.layers, state)
-Base.eltype(::Model{T}) where {T} = T
 Base.getindex(model::Model, i) = model.layers[i]
 
 function Base.show(io::IO, ::MIME"text/plain", model::Model{T}) where {T}
@@ -67,15 +66,16 @@ end
     $(TYPEDSIGNATURES)
 
 Add `term` to every existing layer of `model`, scaled by `1 / length(model)`, so that a full time
-step applies it once in total. Use [`push!`](@ref) instead to give the term a layer of its own.
+step applies it once in total. Use `push!` instead to give the term a layer of its own.
 """
 function distribute!(model::Model, term)
     n = length(model)
     n > 0 || throw(ArgumentError("cannot distribute a term over a model with no layers"))
     _checkfamily(model, TrotterLayer(term))
     share = (1 / n) * term
-    for (i, layer) in enumerate(model.layers)
-        model.layers[i] = TrotterLayer(map(t -> t + share, layer.data), layer.axis)
-    end
+    # Build every replacement before assigning any, so a layer that rejects the axial merge
+    # leaves `model` untouched rather than partially replaced.
+    replaced = [TrotterLayer(map(t -> t + share, layer.data), layer.axis) for layer in model.layers]
+    model.layers .= replaced
     return model
 end

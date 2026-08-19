@@ -11,7 +11,8 @@ decomposition of the propagator. The fields are internal.
 
     Simulation(state::InfinitePEPO, model; timestep, weights = SUWeight(state))
 
-`model` is a term or a vector of terms, one per Trotter layer, as [`trotterise`](@ref) accepts.
+`model` is a [`Model`](@ref), or a term or a vector of terms as shorthand for a single-layer or
+uniform model, as [`trotterise`](@ref) accepts.
 
 See also: [`simulate!`](@ref)
 """
@@ -29,7 +30,19 @@ function Simulation(
         info::SimulationInfo = SimulationInfo()
     )
     P = only(unique(physicalspace(state)))
-    return Simulation(info, model, state, weights, trotterise(model, P, timestep), timestep)
+    decomposition = trotterise(model, P, timestep)
+
+    Nr, Nc, = size(state)
+    for (propagators, _) in decomposition
+        size(propagators) == (1, 1) || size(propagators) == (Nr, Nc) || throw(
+            DimensionMismatch(
+                "a model layer of size $(size(propagators)) cannot be applied to a " *
+                    "$Nr×$Nc unit cell: give a 1×1 layer or one matching the state"
+            ),
+        )
+    end
+
+    return Simulation(info, model, state, weights, decomposition, timestep)
 end
 
 """

@@ -37,3 +37,14 @@ oneterms
 isaxial
 isexpandable
 ```
+
+## Models and layers
+
+```@docs
+Model
+TrotterLayer
+distribute!
+scalelayer
+```
+
+`trotterise` is documented under [Propagators](@ref) in [Methods and algorithms](@ref).

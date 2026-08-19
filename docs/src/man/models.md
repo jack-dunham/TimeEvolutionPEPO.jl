@@ -49,19 +49,24 @@ L = H + Dissipator(Z, 0.5 * (X - im * Y))
 ```
 A `Dissipator` can be constructed with any number of Lindblad jump operators as positional arguments to the constructor.
 
-## Trotter layers
+## Trotter layers and models
 
-Passing a vector of terms rather than a single term puts each element on its own Suzuki-Trotter
-layer, which are then swept in order.
-As an example, consider the spin-``1/2`` Heisenberg Hamiltonian, written one coupling per layer:
+A [`Model`](@ref) is an ordered list of [`TrotterLayer`](@ref)s, swept in order once per time step.
+Terms placed on the same layer are exponentiated together rather than Trotterised apart. Build one
+with `push!`, which always appends a new layer:
 ```@repl
 XX = LocalOp(X,X)
 YY = LocalOp(Y,Y)
-model_A = [XX, YY, ZZ] # ZZ defined in the previous section
+model_A = Model{Hamiltonian}()
+push!(model_A, XX)
+push!(model_A, YY)
+push!(model_A, ZZ) # ZZ defined in the previous section
 ```
-and the same model summed into a single layer:
+or sum several terms into a single layer, which puts them on one exponential rather than one
+Trotter step apiece:
 ```@repl
-model_B = XX + YY + ZZ
+model_B = Model{Hamiltonian}()
+push!(model_B, XX + YY + ZZ)
 ```
 The difference shows up in the Trotter decomposition. `model_A` gives the time evolution operator
 ```math
@@ -79,12 +84,47 @@ P = ComplexSpace(2)
 length(trotterise(model_A, P, 0.1))
 length(trotterise(model_B, P, 0.1))
 ```
-Each entry is a `(propagator, axis)` pair. A layer given as a bare term is applied on both axes, with
-its one-local part halved so that a full time step applies it once per site rather than twice; a layer
-written as `term => axis` is restricted to that axis alone.
+Each entry is a `(propagators, axis)` pair, where `propagators` is a matrix of two-site propagators
+(a `1×1` matrix for a uniform layer). A layer with no axis is applied on both, with its one-local
+part halved so that a full time step applies it once per site rather than twice; passing an axis to
+[`TrotterLayer`](@ref) restricts it to that axis alone:
 ```@repl
-last.(trotterise([XX => 1, YY => 2], P, 0.1))
+last.(trotterise([TrotterLayer(XX, 1), TrotterLayer(YY, 2)], P, 0.1))
 ```
+To add a term to every existing layer instead of giving it a layer of its own, use
+[`distribute!`](@ref). It scales the term by `1 / length(model)` so that a full time step applies it
+once in total — useful for a local field that should act alongside every coupling:
+```@repl
+model_C = Model{Hamiltonian}()
+push!(model_C, XX)
+push!(model_C, YY)
+distribute!(model_C, X0)
+```
+`Model`'s type parameter tracks whether dissipation is present: a `Model{Hamiltonian}` refuses a
+dissipative term, so a purely unitary model cannot pick one up by accident.
+```@repl
+try
+    push!(model_C, Dissipator(Z))
+catch e
+    println(e)
+end
+```
+
+## Site-dependent terms
+
+A [`TrotterLayer`](@ref) can hold a different term at every site of the unit cell instead of one
+term shared by all of them. Build it from a matrix: `data[r, c]` is anchored at site `(r, c)`, its
+two-local part coupling `(r, c)` to its neighbour in the `+axis` direction (east for axis 1, south
+for axis 2), and its one-local part belonging to `(r, c)` alone.
+```@repl
+staggered = TrotterLayer([XX 0.5*YY; YY XX], 1)
+model_D = Model{Hamiltonian}()
+push!(model_D, staggered)
+size(first(only(trotterise(model_D, P, 0.1))))
+```
+A `1×1` layer is uniform and serves any unit cell, since indexing into a `TrotterLayer` wraps with
+`mod1`. Passing a matrix that matches neither `(1, 1)` nor the state's own unit cell size is an
+error raised by [`Simulation`](@ref) when the decomposition is built, not by `TrotterLayer` itself.
 
 ## Specific model components
 
@@ -92,7 +132,7 @@ In some cases, terms can have analytical expressions when exponentiated, benefit
 The model interface allows for this. 
 For example, an Ising term coupled with optional local operators and a optional dissipation is specified with the `Ising` type, which defines a specific, optimised exponentiation which can be used instead of the more general `LocalOp` constructor.
 ```@repl
-model = Ising(X, Dissipator(Z))
+model = Ising(LocalOp(X, X), Dissipator(Z))
 state = productpepo((0, 0, -1), 2);
 Simulation(state, model; timestep = 0.1);
 ```
