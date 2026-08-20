@@ -69,7 +69,7 @@ function fsmadd!(rules, term::LocalOp{1}; thermal=true)
     return rules
 end
 
-function fsmset!(rules, term::GaussOp2d; thermal=false)
+function fsmset!(rules, term::GaussOp2d; thermal=false, symmetric=false)
     mxs = map(t -> t.a, terms(term.gx))
     λxs = map(t -> t.λ, terms(term.gx))
 
@@ -94,8 +94,9 @@ function fsmset!(rules, term::GaussOp2d; thermal=false)
 
     @debug "Adding terms with a = $a"
 
-    fsm_add_gaussian!(rules, a, C1, B1, mxs, λxs, mys, λys)
-    fsm_add_gaussian!(rules, a, C2, B2, mxs, λxs, mys, λys)
+    add! = symmetric ? fsm_add_gaussian_symmetric! : fsm_add_gaussian!
+    add!(rules, a, C1, B1, mxs, λxs, mys, λys)
+    add!(rules, a, C2, B2, mxs, λxs, mys, λys)
 
     return rules
 end
@@ -261,6 +262,71 @@ function fsm_add_gaussian!(
 
     rules.h += 2 * nx
     rules.v += ny
+
+    return rules
+end
+
+# Permutation-symmetric variant: two levels on each axis rather than two east-west and one
+# north-south, so an isotropic term gets the same bond dimension along both. East and north are
+# started by `C` and terminated by `B`; west only terminates and south only starts, which is what
+# keeps the on-axis pairs counted once while giving each off-axis class both a north-first and a
+# south-first path. Each of those two paths carries half the turn weight, so the operator is the
+# same one `fsm_add_gaussian!` builds.
+function fsm_add_gaussian_symmetric!(
+    rules::FSM, a::Number, C::AbstractMatrix, B::AbstractMatrix, mxs, lxs, mys, lys
+)
+    Id = one(C)
+
+    @debug "Adding permutation-symmetric Gaussian PEPSO" weight = a mxs mys
+
+    nx = length(mxs)
+    ny = length(mys)
+
+    for nh in 1:nx
+        mk, lk = mxs[nh], lxs[nh]
+
+        e = rules.h + 2 * nh - 1
+        w = rules.h + 2 * nh
+
+        # Going east: started, continued and finished
+        rules.C[e, 1, 1, 1] = a * mk * lk * C
+        rules.A[e, 1, e, 1] = lk * Id
+        rules.B[1, 1, e, 1] = B
+
+        # Going west: only ever entered by a turn, so it is continued and finished but not started
+        rules.A[w, 1, w, 1] = lk * Id
+        rules.B[w, 1, 1, 1] = B
+
+        for nv in 1:ny
+            n = rules.v + 2 * nv - 1
+            s = rules.v + 2 * nv
+
+            # The turn supplies the horizontal start weight, halved because each off-axis
+            # displacement is reached both north-first and south-first.
+            rules.A[e, n, 1, 1] = mk * lk / 2 * Id
+            rules.A[1, n, w, 1] = mk * lk / 2 * Id
+            rules.A[e, 1, 1, s] = mk * lk / 2 * Id
+            rules.A[1, 1, w, s] = mk * lk / 2 * Id
+        end
+    end
+    for nv in 1:ny
+        ml, ll = mys[nv], lys[nv]
+
+        n = rules.v + 2 * nv - 1
+        s = rules.v + 2 * nv
+
+        # Going north: started, continued and finished
+        rules.C[1, 1, 1, n] = a * ml * ll * C
+        rules.A[1, n, 1, n] = ll * Id
+        rules.B[1, n, 1, 1] = B
+
+        # Going south: started and continued, but never finished -- it must turn
+        rules.C[1, s, 1, 1] = a * ml * ll * C
+        rules.A[1, s, 1, s] = ll * Id
+    end
+
+    rules.h += 2 * nx
+    rules.v += 2 * ny
 
     return rules
 end

@@ -309,4 +309,45 @@ end
         @test real(aniso(2, 0)) ≈ exp(-0.4 * 4) rtol = 1e-4
         @test real(aniso(0, 2)) ≈ exp(-1.6 * 4) rtol = 1e-4
     end
+
+    @testset "the permutation-symmetric build has equal bonds on both axes" begin
+        # `symmetric = true` gives each axis two finite-state-machine levels instead of two
+        # east-west and one north-south, so an isotropic term gets the same bond dimension both ways.
+        iso = quiet(() -> GaussOp2d(Z, Z, 0.4))
+        nx = length(iso.gx.terms)
+
+        asym = fsmpepso(iso, P, 0.02)
+        sym = fsmpepso(iso, P, 0.02; symmetric = true)
+        eastof(S) = dim(PEPSKit.virtualspace(S[1, 1, 1], PEPSKit.EAST))
+        northof(S) = dim(PEPSKit.virtualspace(S[1, 1, 1], PEPSKit.NORTH))
+
+        @test eastof(asym) == 2 * northof(asym) - 1        # one level saved on north-south
+        @test eastof(sym) == northof(sym) == 1 + 4 * nx    # two levels on each
+
+        # Both must build the same operator. Each off-axis displacement is reached north-first and
+        # south-first rather than only north-first, so the turn count doubles while the summed turn
+        # weight is unchanged -- that sum is what the halved turn weight has to preserve, and getting
+        # it wrong doubles the off-axis couplings while leaving the on-axis profile untouched.
+        isturn(k) = ((k[1] > 1) + (k[3] > 1) == 1) && ((k[2] > 1) + (k[4] > 1) == 1)
+        function turns(symmetric)
+            rules = TimeEvolutionPEPO.FSM(P)
+            TimeEvolutionPEPO.fsmset!(rules, iso; symmetric)
+            ks = [k for k in keys(rules.A) if isturn(k)]
+            return length(ks), sum(abs(rules.A[k][1, 1]) for k in ks)
+        end
+        na, wa = turns(false)
+        ns, ws = turns(true)
+        @test ns == 2 * na
+        @test ws ≈ wa rtol = 1e-10
+
+        # The role split is what keeps the on-axis pairs counted once: west is only ever entered by
+        # a turn, and south only ever leaves one.
+        rules = TimeEvolutionPEPO.FSM(P)
+        TimeEvolutionPEPO.fsmset!(rules, iso; symmetric = true)
+        single(d, p) = any(k -> k[p] > 1 && count(>(1), k) == 1, keys(d))
+        @test !single(rules.C, 3)      # no chain starts going west
+        @test single(rules.B, 1)       # but one finishes going west
+        @test single(rules.C, 2)       # a chain starts going south
+        @test !single(rules.B, 4)      # but none finishes going south
+    end
 end
