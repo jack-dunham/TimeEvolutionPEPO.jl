@@ -193,3 +193,73 @@ end
     # The two sublattices must actually differ, or the test proves nothing.
     @test norm(want_active - want_idle) > 0.1
 end
+
+@testitem "long-range propagator as an InfinitePEPSO" setup = [ModelSetup] begin
+    X, Y, Z = PAULI
+    P = ComplexSpace(2)
+    jump = 0.5 * (Y - im * Z)
+    v0 = (0.0, 0.0, -1.0)
+
+    # Dense Lindblad generator on vec(rho), built independently of the package.
+    function dense(H, jumps)
+        n = size(H, 1)
+        Id = Matrix{ComplexF64}(I, n, n)
+        G = -im * (kron(Id, H) - kron(transpose(H), Id))
+        for L in jumps
+            LdL = L' * L
+            G += kron(conj(L), L) - (kron(Id, LdL) + kron(transpose(LdL), Id)) / 2
+        end
+        return G
+    end
+
+    @testset "a one-local generator reproduces exp(t L)" begin
+        # At bond dimension one the PEPSO carries no coupling, so every site evolves under its own
+        # generator and the result is exactly comparable to dense linear algebra. This pins the
+        # physical leg convention: the rules are vectorised ket-slowest, so a (bra, ket) ordering
+        # would return the transpose of the correct density matrix.
+        model = zero(Hamiltonian) + LocalOp(X) + Dissipator(jump)
+        G = dense(Matrix(X), [jump])
+
+        residual = map((0.04, 0.02, 0.01)) do dt
+            S = fsmpepso(model, P, dt; unitcell = (2, 2))
+            evolved, = compress(
+                (productpepo(fill(v0, 2, 2), 1), S), LocalTruncation(truncspace(ComplexSpace(1)))
+            )
+            got = reshape(
+                convert(Array, quiet(() -> partialtrace(DensityMatrix(evolved, 4), (1, 1)))), 2, 2
+            )
+            return norm(got - reshape(exp(dt * G) * vec(bloch(v0)), 2, 2))
+        end
+
+        # The finite-state machine builds a symmetric splitting, so the local error is O(dt^3):
+        # halving dt must divide the residual by roughly eight. A wrong physical leg ordering gives
+        # an O(1) residual instead, and a wrong prefactor an O(dt) one.
+        @test all(residual .< 1e-4)
+        @test all(@. 6 < residual[1:(end - 1)] / residual[2:end] < 11)
+    end
+
+    @testset "a nearest-neighbour coupling reproduces the exact derivative" begin
+        # Bond dimension three, so this exercises the virtual legs the one-local case cannot.
+        J = 1.5
+        model = J / 4 * LocalOp(Z, Z) + Dissipator(jump)
+        Zm = Matrix(Z)
+
+        rho = bloch(v0)
+        onelocal = real(tr(Zm * reshape(dense(zeros(ComplexF64, 2, 2), [jump]) * vec(rho), 2, 2)))
+        pair = reshape(dense((J / 4) * kron(Zm, Zm), Matrix{ComplexF64}[]) * vec(kron(rho, rho)), 4, 4)
+        want = onelocal + 4 * real(tr(kron(Zm, Matrix{ComplexF64}(I, 2, 2)) * pair))
+
+        got = map((0.004, 0.002)) do dt
+            S = fsmpepso(model, P, dt; unitcell = (2, 2))
+            state = productpepo(fill(v0, 2, 2), 1)
+            before = real(expval(quiet(() -> partialtrace(DensityMatrix(state, 12), (1, 1))), Zm))
+            evolved, = compress((state, S), LocalTruncation(truncspace(ComplexSpace(8))))
+            after = real(expval(quiet(() -> partialtrace(DensityMatrix(evolved, 12), (1, 1))), Zm))
+            return (after - before) / dt
+        end
+
+        @test abs(got[2] - want) < 1e-3
+        # Halving dt must halve the finite-difference error, or the agreement is a coincidence.
+        @test abs(got[2] - want) < 0.6 * abs(got[1] - want)
+    end
+end

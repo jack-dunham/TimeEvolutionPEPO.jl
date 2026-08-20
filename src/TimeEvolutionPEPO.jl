@@ -40,7 +40,8 @@ export dissipator, oneterms, isaxial, isexpandable
 export TrotterLayer, scalelayer
 export Model, distribute!
 
-export generator, bondpropagator
+export generator, bondpropagator, fsmpepso
+export InfinitePEPSO, LocalTruncation, compress
 export reducedbond_first, reducedbond_last, undo_reducedbond_first, undo_reducedbond_last
 export applypropagator, truncatebond, fusephysical
 export FullEnvTruncation, ALSTruncation, BondEnvironment, bondenvironment

@@ -351,13 +351,35 @@ function fsmpepo(rules::FSM, space::IndexSpace, timestep::Real; kwargs...)
     return pepo
 end
 
+"""
+    $(TYPEDSIGNATURES)
+
+Propagator of `model` over one time step `dt` as an `InfinitePEPSO` on a `unitcell` of sites, built
+by the finite-state machine rather than by exponentiating a two-site bond. Unlike
+[`bondpropagator`](@ref) this carries the whole lattice's terms at once, so it can represent a
+coupling of any range: the virtual bond dimension is the number of finite-state-machine states.
+
+Apply it with PEPSKit's `compress((state, S), LocalTruncation(trunc))`, which contracts it onto a
+one-layer `InfinitePEPO` and truncates the virtual bonds back down.
+
+A `Hamiltonian` takes a `thermal` keyword; a `Liouvillian` is always the Lindblad generator.
+"""
+function fsmpepso(
+        model::AbstractTerm, P::IndexSpace, dt::Number; unitcell = (1, 1), extend = true, kwargs...
+    )
+    rules = FSM(P)
+    fsmadd!(rules, model; kwargs...)
+    return InfinitePEPSO(fill(fsmpepo(rules, P, dt; extend), unitcell..., 1))
+end
+
 function fsmpepo!(tensor::AbstractArray{<:Number,8}, rules, t::Real; extend=true)
     physdim = map(ind -> size(tensor, ind), (1, 2, 3, 4))
 
     incr! = (ind, rhs) -> begin
         bondind = CartesianIndex(ind)
 
-        rhsdata = reshape(rhs, physdim)
+        # As in `fsmpepo2!`: the rule is vectorised ket-slowest, `reshape` fastest-first.
+        rhsdata = permutedims(reshape(rhs, physdim), (2, 1, 4, 3))
 
         for physind in CartesianIndices(rhsdata)
             tensor[physind, bondind] += rhsdata[physind]
@@ -420,7 +442,9 @@ function fsmpepo2!(tensor::AbstractArray{<:Number,8}, rules, timestep::Real; ext
     incr! = (ind, rhs) -> begin
         bondind = CartesianIndex(ind)
 
-        rhsdata = reshape(rhs, physdim)
+        # A rule is vectorised ket-slowest while `reshape` fills the fastest axis first, so each
+        # physical pair arrives as (bra, ket) and is swapped back (see `vectorised_tensormap`).
+        rhsdata = permutedims(reshape(rhs, physdim), (2, 1, 4, 3))
 
         for physind in CartesianIndices(rhsdata)
             tensor[physind, bondind] += rhsdata[physind]
