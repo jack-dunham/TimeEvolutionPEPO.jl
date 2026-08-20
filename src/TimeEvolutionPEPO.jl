@@ -35,12 +35,13 @@ export correlationlength, correlator, negativity
 
 export Hamiltonian, Liouvillian, Dissipator, Ising
 export AbstractTerm, AbstractSingleTerm, AbstractSumOfTerms
-export LocalOp, ExpOp, GaussOp, GaussOp2d, PowOp, PowOp2d
+export LocalOp, ExpOp, GaussOp, GaussOp2d, PowOp, PowOp2d, J1J2SymmetricOp
 export dissipator, oneterms, isaxial, isexpandable
 export TrotterLayer, scalelayer
 export Model, distribute!
 
 export generator, bondpropagator, fsmpepso
+export j1j2model, fsmheisenberg
 export InfinitePEPSO, LocalTruncation, compress
 export reducedbond_first, reducedbond_last, undo_reducedbond_first, undo_reducedbond_last
 export applypropagator, truncatebond, fusephysical

@@ -349,3 +349,43 @@ function mfj1j2(Jz,K)
 
     return X,Y
 end
+
+"""
+    $(TYPEDSIGNATURES)
+
+J1-J2 Heisenberg model: nearest-neighbour couplings `Jx`, `Jy`, `Jz`, diagonal next-nearest
+couplings `Kx`, `Ky`, `Kz`, on-site fields `hx`, `hy`, `hz`, and on-site Lindblad `jumps`. Returns a
+`Hamiltonian` when `jumps` is empty and a `Liouvillian` otherwise.
+
+Each component is one [`J1J2SymmetricOp`](@ref), which carries both ranges on a single pair of
+finite-state-machine levels per axis.
+"""
+function j1j2model(
+        jumps = Matrix{ComplexF64}[];
+        Jx = 0, Jy = 0, Jz = 0, Kx = 0, Ky = 0, Kz = 0, hx = 0, hy = 0, hz = 0
+    )
+    model = zero(Hamiltonian)
+
+    for (J, K, A) in zip((Jx, Jy, Jz), (Kx, Ky, Kz), PAULI)
+        (iszero(J) && iszero(K)) && continue
+        model += J1J2SymmetricOp(float(J), float(K), Matrix{ComplexF64}(A))
+    end
+    for (h, A) in zip((hx, hy, hz), PAULI)
+        iszero(h) && continue
+        model += h * LocalOp(Matrix{ComplexF64}(A))
+    end
+
+    return isempty(jumps) ? model : model + Dissipator(jumps)
+end
+
+"""
+    $(TYPEDSIGNATURES)
+
+Propagator of a [`j1j2model`](@ref) over one time step, as an `InfinitePEPSO`. The keywords are
+those of `j1j2model`.
+"""
+function fsmheisenberg(
+        jumps, P::IndexSpace, dt::Number; unitcell = (1, 1), extend = true, kwargs...
+    )
+    return fsmpepso(j1j2model(jumps; kwargs...), P, dt; unitcell, extend)
+end

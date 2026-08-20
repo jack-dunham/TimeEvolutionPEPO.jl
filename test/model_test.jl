@@ -379,3 +379,63 @@ end
             dim(PEPSKit.virtualspace(plain[1, 1, 1], PEPSKit.EAST)) + 2
     end
 end
+
+@testitem "J1-J2 Heisenberg propagator" setup = [ModelSetup] begin
+    X, Y, Z = PAULI
+    P = ComplexSpace(2)
+    Zm, Xm = Matrix{ComplexF64}(Z), Matrix{ComplexF64}(X)
+    jump = 0.5 * (Y - im * Z)
+    v0 = (0.36, 0.48, -0.8)          # unit length, so the state is pure and exact at D = 1
+
+    function dense(H, jumps)
+        n = size(H, 1)
+        Id = Matrix{ComplexF64}(I, n, n)
+        G = -im * (kron(Id, H) - kron(transpose(H), Id))
+        for L in jumps
+            LdL = L' * L
+            G += kron(conj(L), L) - (kron(Id, LdL) + kron(transpose(LdL), Id)) / 2
+        end
+        return G
+    end
+
+    # Exact d<O>/dt on a uniform product state: the local generator, then the four nearest-neighbour
+    # bonds and the four diagonal ones, which share the same two-site generator.
+    function exact(O, rho, J, K)
+        Id = Matrix{ComplexF64}(I, 2, 2)
+        local1 = real(tr(O * reshape(dense(zeros(ComplexF64, 2, 2), [jump]) * vec(rho), 2, 2)))
+        pair(c) = reshape(dense(c * kron(Zm, Zm), Matrix{ComplexF64}[]) * vec(kron(rho, rho)), 4, 4)
+        return local1 + 4 * real(tr(kron(O, Id) * pair(J))) + 4 * real(tr(kron(O, Id) * pair(K)))
+    end
+
+    function derivative(J, K, dt; D = 8, Denv = 12)
+        S = quiet(() -> fsmheisenberg([jump], P, dt; unitcell = (2, 2), Jz = J, Kz = K))
+        state = productpepo(fill(v0, 2, 2), 1)
+        before = real(expval(quiet(() -> partialtrace(DensityMatrix(state, Denv), (1, 1))), Xm))
+        evolved, = compress((state, S), LocalTruncation(truncspace(ComplexSpace(D))))
+        after = real(expval(quiet(() -> partialtrace(DensityMatrix(evolved, Denv), (1, 1))), Xm))
+        return (after - before) / dt
+    end
+
+    @testset "the model reaches a propagator" begin
+        @test j1j2model(; Jz = 1.0) isa Hamiltonian
+        @test j1j2model([jump]; Jz = 1.0, Kz = 0.5) isa Liouvillian
+        S = quiet(() -> fsmheisenberg([jump], P, 0.02; Jz = 1.0, Kz = 0.5))
+        @test S isa InfinitePEPSO
+        # One J1J2SymmetricOp carries both ranges on two levels per axis, so the bonds stay equal.
+        t = S[1, 1, 1]
+        @test dim(PEPSKit.virtualspace(t, PEPSKit.EAST)) ==
+            dim(PEPSKit.virtualspace(t, PEPSKit.NORTH))
+    end
+
+    @testset "the diagonal coupling matches dense linear algebra" begin
+        # J = 0 isolates the next-nearest term, which no other test reaches. Halving dt must halve
+        # the finite-difference error, or the agreement is a coincidence of the step size.
+        for (J, K) in ((0.0, 0.5), (1.0, 0.5))
+            want = exact(Xm, bloch(v0), J, K)
+            coarse = derivative(J, K, 0.004)
+            fine = derivative(J, K, 0.002)
+            @test abs(fine - want) < 0.05
+            @test abs(fine - want) < 0.6 * abs(coarse - want)
+        end
+    end
+end
