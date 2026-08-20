@@ -285,15 +285,28 @@ end
         @test isdual(east) && isdual(north)      # `compress` rejects the propagator otherwise
     end
 
-    @testset "anisotropic decay is not represented" begin
-        # `fsmset!(::GaussOp2d)` reads only `term.gx`, so `term.gy` is dropped and an anisotropic
-        # Gaussian is built as though it were isotropic with mu_x on both axes -- the TODO above
-        # `fsm_add_gaussian!`. Recorded here so that implementing it breaks this test rather than
-        # silently changing results.
-        iso = quiet(() -> GaussOp2d(Z, Z, 0.4))
+    @testset "each axis takes its own decay" begin
+        # `fsmset!(::GaussOp2d)` reads gx for the east-west chain and gy for north-south, so the two
+        # lattice directions may decay differently and need not use the same number of exponentials.
         aniso = quiet(() -> GaussOp2d(Z, Z, 0.4, 1.6))
+        nx = length(aniso.gx.terms)
+        ny = length(aniso.gy.terms)
+        @test nx != ny                                   # the two fits differ, or this proves nothing
 
-        @test real(aniso(0, 1)) < real(iso(0, 1)) / 2        # the terms really do differ
-        @test fsmpepso(iso, P, 0.02)[1, 1, 1] ≈ fsmpepso(aniso, P, 0.02)[1, 1, 1]
+        S = fsmpepso(aniso, P, 0.02)
+        east = PEPSKit.virtualspace(S[1, 1, 1], PEPSKit.EAST)
+        north = PEPSKit.virtualspace(S[1, 1, 1], PEPSKit.NORTH)
+
+        # `fsmset!` calls `fsm_add_gaussian!` once per half of the vectorised commutator, and the
+        # east-west chain carries a state per exponential per direction. Reading gx for both axes
+        # would give north 1 + 2nx instead.
+        @test dim(east) == 1 + 4 * nx
+        @test dim(north) == 1 + 2 * ny
+
+        # Both axes reproduce their own exp(-mu r^2), so the anisotropy is real and not a relabelling.
+        @test real(aniso(1, 0)) ≈ exp(-0.4) rtol = 1e-4
+        @test real(aniso(0, 1)) ≈ exp(-1.6) rtol = 1e-4
+        @test real(aniso(2, 0)) ≈ exp(-0.4 * 4) rtol = 1e-4
+        @test real(aniso(0, 2)) ≈ exp(-1.6 * 4) rtol = 1e-4
     end
 end

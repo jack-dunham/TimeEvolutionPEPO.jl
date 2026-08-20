@@ -70,8 +70,11 @@ function fsmadd!(rules, term::LocalOp{1}; thermal=true)
 end
 
 function fsmset!(rules, term::GaussOp2d; thermal=false)
-    ms = map(t -> t.a, terms(term.gx))
-    λs = map(t -> t.λ, terms(term.gx))
+    mxs = map(t -> t.a, terms(term.gx))
+    λxs = map(t -> t.λ, terms(term.gx))
+
+    mys = map(t -> t.a, terms(term.gy))
+    λys = map(t -> t.λ, terms(term.gy))
 
     a = term.a
 
@@ -91,8 +94,8 @@ function fsmset!(rules, term::GaussOp2d; thermal=false)
 
     @debug "Adding terms with a = $a"
 
-    fsm_add_gaussian!(rules, a, C1, B1, ms, λs)
-    fsm_add_gaussian!(rules, a, C2, B2, ms, λs)
+    fsm_add_gaussian!(rules, a, C1, B1, mxs, λxs, mys, λys)
+    fsm_add_gaussian!(rules, a, C2, B2, mxs, λxs, mys, λys)
 
     return rules
 end
@@ -199,20 +202,21 @@ function fsm_add_j1j2_symmetric!(rules::FSM, a::Number, k::Number, CB::AbstractM
     return rules
 end
 
-#TODO: This is currently not general in the sense of different approximations along different
-# lattice directions
+# The east-west and north-south chains each take their own sum-of-exponentials approximation, so the
+# two lattice directions may decay differently and need not use the same number of terms.
 function fsm_add_gaussian!(
-    rules::FSM, a::Number, C::AbstractMatrix, B::AbstractMatrix, mks, lks
+    rules::FSM, a::Number, C::AbstractMatrix, B::AbstractMatrix, mxs, lxs, mys, lys
 )
     # Convenience
     Id = one(C)
 
-    @debug "Adding Gaussian PEPSO" weight = a mks
+    @debug "Adding Gaussian PEPSO" weight = a mxs mys
 
-    gapprox = zip(mks, lks)
+    nx = length(mxs)
+    ny = length(mys)
 
-    for (nh, (mk, lk)) in enumerate(gapprox)
-        # mklk = mk * lk 
+    for nh in 1:nx
+        mk, lk = mxs[nh], lxs[nh]
 
         c = rules.h + 2 * nh - 1
         u = rules.h + 2 * nh
@@ -225,13 +229,14 @@ function fsm_add_gaussian!(
         # Finish going west (unconventional)
         rules.B[u, 1, 1, 1] = B
 
-        # Continue going east
+        # Continue going east
         rules.A[c, 1, c, 1] = lk * Id
-        # Continue going west (unconventional)
+        # Continue going west (unconventional)
         rules.A[u, 1, u, 1] = lk * Id
 
-        # Direction change rules
-        for nv in 1:length(gapprox)
+        # Direction change rules. A turning path takes its horizontal start weight here, since the
+        # horizontal `C` rule is only reached by a path that set out going east.
+        for nv in 1:ny
             v = rules.v + nv
 
             # Change from going north to going east
@@ -240,20 +245,22 @@ function fsm_add_gaussian!(
             rules.A[1, v, u, 1] = mk * lk * Id
         end
     end
-    for (nv, (mk, lk)) in enumerate(gapprox)
+    for nv in 1:ny
+        ml, ll = mys[nv], lys[nv]
+
         v = rules.v + nv
         # Start going north
-        rules.C[1, 1, 1, v] = a * mk * lk * C
+        rules.C[1, 1, 1, v] = a * ml * ll * C
 
         # Finish going north
         rules.B[1, v, 1, 1] = B
 
         # Continue going north
-        rules.A[1, v, 1, v] = lk * Id
+        rules.A[1, v, 1, v] = ll * Id
     end
 
-    rules.h += 2 * length(gapprox)
-    rules.v += length(gapprox)
+    rules.h += 2 * nx
+    rules.v += ny
 
     return rules
 end
