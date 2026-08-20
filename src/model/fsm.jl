@@ -44,14 +44,15 @@ function fsmadd!(rules, dissipator::Dissipator)
     return rules
 end
 
-function fsmadd!(rules, liouvillian::Liouvillian)
+function fsmadd!(rules, liouvillian::Liouvillian; kwargs...)
     fsmadd!(rules, dissipator(liouvillian))
-    fsmadd!(rules, hamiltonian(liouvillian); thermal=false)
+    fsmadd!(rules, hamiltonian(liouvillian); thermal=false, kwargs...)
 
     return rules
 end
 
-function fsmadd!(rules, term::LocalOp{1}; thermal=true)
+# `symmetric` has no effect here: a one-local rule occupies no virtual leg.
+function fsmadd!(rules, term::LocalOp{1}; thermal=true, symmetric=false)
     h = Matrix(term)
     Id = one(h)
 
@@ -101,7 +102,8 @@ function fsmset!(rules, term::GaussOp2d; thermal=false, symmetric=false)
     return rules
 end
 
-function fsmset!(rules, term::LocalOp{2}; thermal=false)
+# `symmetric` has no effect here: `fsm_add_ising!` already adds one level per axis, identically.
+function fsmset!(rules, term::LocalOp{2}; thermal=false, symmetric=false)
     a = term.a
 
     C = term.C
@@ -142,7 +144,8 @@ function fsm_add_ising!(rules::FSM, a::Number, C::AbstractMatrix, B::AbstractMat
     return rules
 end
 
-function fsmset!(rules, term::J1J2SymmetricOp; thermal=true)
+# `symmetric` has no effect here: `fsm_add_j1j2_symmetric!` already adds two levels per axis.
+function fsmset!(rules, term::J1J2SymmetricOp; thermal=true, symmetric=false)
     a = term.a
     k = term.k
     CB = term.CB
@@ -436,6 +439,11 @@ Apply it with PEPSKit's `compress((state, S), LocalTruncation(trunc))`, which co
 one-layer `InfinitePEPO` and truncates the virtual bonds back down.
 
 A `Hamiltonian` takes a `thermal` keyword; a `Liouvillian` is always the Lindblad generator.
+
+`symmetric = true` builds the Gaussian terms with two finite-state-machine levels on each axis
+rather than two east-west and one north-south, so an isotropic term gets the same bond dimension
+along both. It represents the same operator, at a larger vertical bond. Every other term type is
+already symmetric in the two axes, so the keyword only changes a `GaussOp2d`.
 """
 function fsmpepso(
         model::AbstractTerm, P::IndexSpace, dt::Number; unitcell = (1, 1), extend = true, kwargs...

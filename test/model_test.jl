@@ -350,4 +350,32 @@ end
         @test single(rules.C, 2)       # a chain starts going south
         @test !single(rules.B, 4)      # but none finishes going south
     end
+
+    @testset "the symmetric option reaches every term type" begin
+        # `symmetric` travels through `fsmadd!`'s dispatch on the sum types. Only the Gaussian
+        # construction reads it -- the others already treat the two axes alike -- but it must not
+        # throw on the way past them, and a Liouvillian must forward it rather than drop it.
+        g = quiet(() -> GaussOp2d(Z, Z, 0.4))
+        jump = 0.5 * (Y - im * Z)
+        mixed = [
+            zero(Hamiltonian) + g + LocalOp(X),
+            zero(Hamiltonian) + g + LocalOp(Z, Z),
+            zero(Hamiltonian) + g + Dissipator(jump),          # a Liouvillian
+            zero(Hamiltonian) + g + LocalOp(X) + Dissipator(jump),
+        ]
+        for m in mixed
+            t = quiet(() -> fsmpepso(m, P, 0.02; symmetric = true))[1, 1, 1]
+            @test dim(PEPSKit.virtualspace(t, PEPSKit.EAST)) ==
+                dim(PEPSKit.virtualspace(t, PEPSKit.NORTH))
+        end
+
+        # `fsm_add_ising!` adds one level per axis per call, so a nearest-neighbour term lifts both
+        # bonds by two and leaves them equal.
+        plain = quiet(() -> fsmpepso(zero(Hamiltonian) + g, P, 0.02; symmetric = true))
+        withnn = quiet(
+            () -> fsmpepso(zero(Hamiltonian) + g + LocalOp(Z, Z), P, 0.02; symmetric = true)
+        )
+        @test dim(PEPSKit.virtualspace(withnn[1, 1, 1], PEPSKit.EAST)) ==
+            dim(PEPSKit.virtualspace(plain[1, 1, 1], PEPSKit.EAST)) + 2
+    end
 end
