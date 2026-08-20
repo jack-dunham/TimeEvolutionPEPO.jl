@@ -368,8 +368,14 @@ function fsmpepso(
         model::AbstractTerm, P::IndexSpace, dt::Number; unitcell = (1, 1), extend = true, kwargs...
     )
     rules = FSM(P)
-    fsmadd!(rules, model; kwargs...)
-    return InfinitePEPSO(fill(fsmpepo(rules, P, dt; extend), unitcell..., 1))
+    # `fsmadd!` dispatches on the sum types, so a bare term is promoted the way a layer would be.
+    fsmadd!(rules, layerterm(model); kwargs...)
+
+    # `fsmpepo` orders its virtual legs east-south-west-north, so its horizontal chain lands on the
+    # north-south pair of a `PEPSOTensor`; swapping the two pairs puts it back on east-west.
+    t = permute(fsmpepo(rules, P, dt; extend), ((1, 2, 3, 4), (6, 5, 8, 7)))
+
+    return InfinitePEPSO(fill(t, unitcell..., 1))
 end
 
 function fsmpepo!(tensor::AbstractArray{<:Number,8}, rules, t::Real; extend=true)

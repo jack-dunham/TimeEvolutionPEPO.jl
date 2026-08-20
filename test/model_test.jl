@@ -1,6 +1,7 @@
 @testsetup module ModelSetup
 using Reexport
 @reexport using TimeEvolutionPEPO
+@reexport using PEPSKit
 @reexport using TensorKit
 @reexport using LinearAlgebra
 @reexport using Logging
@@ -261,5 +262,38 @@ end
         @test abs(got[2] - want) < 1e-3
         # Halving dt must halve the finite-difference error, or the agreement is a coincidence.
         @test abs(got[2] - want) < 0.6 * abs(got[1] - want)
+    end
+
+    @testset "a long-range term lands on the axes it was given" begin
+        # An isotropic Gaussian: the term's own profile is the reference, and it reproduces
+        # exp(-mu r^2) exactly, so the sum-of-exponentials fit is not the weak link here.
+        term = quiet(() -> GaussOp2d(Z, Z, 0.4))
+        @test real(term(1, 0)) ≈ exp(-0.4) rtol = 1e-4
+        @test real(term(2, 0)) ≈ exp(-0.4 * 4) rtol = 1e-4
+        @test real(term(1, 0)) ≈ real(term(0, 1)) rtol = 1e-4
+
+        S = fsmpepso(term, P, 0.02)
+        east = PEPSKit.virtualspace(S[1, 1, 1], PEPSKit.EAST)
+        north = PEPSKit.virtualspace(S[1, 1, 1], PEPSKit.NORTH)
+
+        # `fsm_add_gaussian!` gives the east-west chain a state per exponential in each direction
+        # and the north-south chain one per exponential, so east carries 2k+1 states against north's
+        # k+1. That asymmetry is what pins which virtual leg carries which chain: `fsmpepo` orders
+        # its legs east-south-west-north, so dropping the swap in `fsmpepso` puts the doubled chain
+        # on north instead and fails this.
+        @test dim(east) == 2 * dim(north) - 1
+        @test isdual(east) && isdual(north)      # `compress` rejects the propagator otherwise
+    end
+
+    @testset "anisotropic decay is not represented" begin
+        # `fsmset!(::GaussOp2d)` reads only `term.gx`, so `term.gy` is dropped and an anisotropic
+        # Gaussian is built as though it were isotropic with mu_x on both axes -- the TODO above
+        # `fsm_add_gaussian!`. Recorded here so that implementing it breaks this test rather than
+        # silently changing results.
+        iso = quiet(() -> GaussOp2d(Z, Z, 0.4))
+        aniso = quiet(() -> GaussOp2d(Z, Z, 0.4, 1.6))
+
+        @test real(aniso(0, 1)) < real(iso(0, 1)) / 2        # the terms really do differ
+        @test fsmpepso(iso, P, 0.02)[1, 1, 1] ≈ fsmpepso(aniso, P, 0.02)[1, 1, 1]
     end
 end
