@@ -22,6 +22,9 @@ TensorOperations = "6aa20fa7-93e2-5fca-9bc0-fbd0db3c71a2"
 TupleTools = "9d95972d-f1c8-5527-a6e0-b4b365fa01f6"
 VectorInterface = "409d34a3-91d5-4945-b6ec-7529ddf182d8"
 
+[sources]
+PEPSKit = {url = "https://github.com/jack-dunham/PEPSKit.jl", rev = "dev"}
+
 [compat]
 Accessors = "0.1.42"
 Combinatorics = "1.0.2"
