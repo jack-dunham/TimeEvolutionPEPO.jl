@@ -134,8 +134,8 @@ end
 isexpandable(term::Union{GaussOp2d}) = term.expand
 
 function (g::GaussOp2d)(x::Int, y::Int)
-    expsx = g.gx.terms.terms
-    expsy = g.gy.terms.terms
+    expsx = terms(g.gx)
+    expsy = terms(g.gy)
 
     cumsum = 0
 
@@ -145,7 +145,6 @@ function (g::GaussOp2d)(x::Int, y::Int)
     elseif iszero(x)
         cumsum += mapreduce(op -> g.a * op.a * op.λ^(y), +, expsy)
     elseif iszero(y)
-        println(cumsum)
         cumsum += mapreduce(op -> g.a * op.a * op.λ^(x), +, expsx)
     else
         itr = Iterators.product(expsx, expsy)
