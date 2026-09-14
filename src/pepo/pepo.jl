@@ -63,7 +63,13 @@ end
 """
     $(TYPEDSIGNATURES)
 
-Entropy of each bond weight, normalised by `log` of its dimension when `normalized = true`.
+Entanglement entropy across each bond, normalised by `log` of the bond dimension when
+`normalized = true`.
+
+A bond weight holds singular values `λ`, so the Schmidt probabilities are `λ² / Σλ²` and the entropy
+is `-Σ p log p` over those. For a PEPO this is the operator-space entanglement entropy — the quantity
+whose growth sets the bond dimension a state needs — not a mixed-state entanglement measure of the
+density matrix it represents.
 
 Trivial weights for a state come from PEPSKit's `SUWeight(pepo)`. A product state has Schmidt spectrum
 `(1, 0, …)` on every bond, so those weights are a gauge choice rather than the true spectrum; they are
@@ -71,9 +77,9 @@ invertible, which the spectrum is not, and the first update replaces them.
 """
 function bondentropy(weights::SUWeight; normalized = false)
     return map(collect(weights)) do w
-        λ = diag(convert(Array, w))
-        λ = λ / sum(λ)
-        entropy = sum(x -> x ≈ 0 ? zero(x) : -x * log(x), λ)
-        return entropy / log(length(λ))^normalized
+        p = abs2.(diag(convert(Array, w)))
+        p ./= sum(p)
+        entropy = sum(x -> iszero(x) ? zero(x) : -x * log(x), p)
+        return entropy / log(length(p))^normalized
     end
 end

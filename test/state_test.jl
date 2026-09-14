@@ -70,6 +70,27 @@ end # StateSetup
         @test all(≈(1.0), bondentropy(w; normalized = true))
     end
 
+    @testset "bond entropy uses the Schmidt probabilities" begin
+        # A flat spectrum cannot distinguish normalising λ from normalising λ², so these use a
+        # non-flat one. Normalising λ instead would give 0.63651, not 0.50040.
+        pepo = productpepo(fill((0, 0, -1), 2, 2), 2)
+        w = SUWeight(pepo)
+        setall!(vals) = for d in 1:2, r in 1:2, c in 1:2
+            w[d, r, c] = DiagonalTensorMap(vals, w[d, r, c].domain)
+        end
+
+        setall!([1.0, 0.5])
+        p = [1.0, 0.25] ./ 1.25
+        @test all(≈(-sum(x -> x * log(x), p)), bondentropy(w))
+        @test all(≈(0.5004024235381879), bondentropy(w))
+
+        # Limiting cases: one Schmidt value carries everything, or the spectrum is flat.
+        setall!([1.0, 0.0])
+        @test all(≈(0.0), bondentropy(w))
+        setall!([1.0, 1.0])
+        @test all(≈(log(2)), bondentropy(w))
+    end
+
     @testset "a bare density matrix is one site, not a unit cell" begin
         rho = bloch((0.0, 0.0, -1.0))
         @test size(productpepo(rho, 4)) == (1, 1, 1)
