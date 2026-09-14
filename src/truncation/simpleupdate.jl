@@ -3,6 +3,48 @@
 # bond rotation are PEPSKit's.
 
 """
+$(TYPEDEF)
+
+How a sweep updates each bond and maintains the state between steps. PEPSKit exports its own
+`SimpleUpdate`, so this carries a different name; it configures the open-system sweep in
+[`bondstep!`](@ref) rather than PEPSKit's.
+
+# Constructors
+
+    DampedUpdate(; trunc, truncalg, envalg, zeta, gaugeevery)
+
+- `trunc`: a TensorKit `TruncationStrategy`; `nothing` keeps each bond at the space it already has
+- `truncalg`: a `FullEnvTruncation` or `ALSTruncation`, optimising against a bond environment
+- `envalg`: a [`BondEnvironment`](@ref) for the CTMRG boundary `truncalg` needs
+- `zeta`: the damping parameter of [`dampweight`](@ref); `Inf` leaves the spectrum alone
+- `gaugeevery`: re-fix the gauge every this many steps, and once more at the end; `0` never
+
+`truncalg` and `envalg` are given together or not at all.
+"""
+struct DampedUpdate{T, A, E}
+    trunc::T
+    truncalg::A
+    envalg::E
+    zeta::Float64
+    gaugeevery::Int
+
+    function DampedUpdate(trunc::T, truncalg::A, envalg::E, zeta, gaugeevery) where {T, A, E}
+        isnothing(truncalg) == isnothing(envalg) ||
+            throw(ArgumentError("environment-based truncation needs both `truncalg` and `envalg`"))
+        zeta >= 0 || throw(ArgumentError("the damping parameter must be non-negative, got $zeta"))
+        gaugeevery >= 0 ||
+            throw(ArgumentError("`gaugeevery` counts steps and cannot be negative, got $gaugeevery"))
+        return new{T, A, E}(trunc, truncalg, envalg, zeta, gaugeevery)
+    end
+end
+
+function DampedUpdate(;
+        trunc = nothing, truncalg = nothing, envalg = nothing, zeta = Inf, gaugeevery = 0
+    )
+    return DampedUpdate(trunc, truncalg, envalg, zeta, gaugeevery)
+end
+
+"""
     $(TYPEDSIGNATURES)
 
 Position of a bond's first site after `_bond_rotation` has turned the bond horizontal. Julia's
@@ -31,10 +73,10 @@ PEPO sandwiched with its adjoint, truncates against that environment instead of 
 """
 function bondstep!(
         state::InfinitePEPO, weights::SUWeight, propagator::AbstractTensorMap,
-        sites::Vector{CartesianIndex{2}}; trunc = nothing, truncalg = nothing, env = nothing,
-        zeta = Inf
+        sites::Vector{CartesianIndex{2}}, alg::DampedUpdate; env = nothing
     )
     length(sites) == 2 || throw(ArgumentError("a bond joins two sites, got $(length(sites))"))
+    trunc, truncalg, zeta = alg.trunc, alg.truncalg, alg.zeta
 
     bond, rev = PEPSKit._nn_bondrev(sites...)
     truncation = if isnothing(trunc)
@@ -99,8 +141,8 @@ Each site sits on two bonds of a given axis and each bond carries half of the on
 therefore applies it twice, which is why [`trotterise`](@ref) halves it.
 """
 function axissweep!(
-        state::InfinitePEPO, weights::SUWeight, propagators::AbstractMatrix, axis::Int;
-        trunc = nothing, truncalg = nothing, env = nothing, zeta = Inf
+        state::InfinitePEPO, weights::SUWeight, propagators::AbstractMatrix, axis::Int,
+        alg::DampedUpdate; env = nothing
     )
     axis in (1, 2) || throw(ArgumentError("axis must be 1 or 2, got $axis"))
     Nr, Nc, = size(state)
@@ -118,10 +160,42 @@ function axissweep!(
         # Vertical bonds run south to north: the other order sets `rev` in `_nn_bondrev`, and the
         # update then writes each bond back with the opposite arrow.
         prop = axis == 1 ? p : _swapsites(p)
-        ϵ = max(ϵ, bondstep!(state, weights, prop, [site1, site2]; trunc, truncalg, env, zeta))
+        ϵ = max(ϵ, bondstep!(state, weights, prop, [site1, site2], alg; env))
     end
 
     return ϵ
+end
+
+# Keyword forms. `alg` is the primary interface; these build one for a call site that names fields.
+# Keywords do not take part in dispatch, so each entry point needs its own method rather than a
+# default argument.
+const _ALGKW = (:trunc, :truncalg, :envalg, :zeta, :gaugeevery)
+
+function bondstep!(
+        state::InfinitePEPO, weights::SUWeight, propagator::AbstractTensorMap,
+        sites::Vector{CartesianIndex{2}}; env = nothing, kwargs...
+    )
+    return bondstep!(state, weights, propagator, sites, DampedUpdate(; kwargs...); env)
+end
+
+function axissweep!(
+        state::InfinitePEPO, weights::SUWeight, propagators::AbstractMatrix, axis::Int;
+        env = nothing, kwargs...
+    )
+    return axissweep!(state, weights, propagators, axis, DampedUpdate(; kwargs...); env)
+end
+
+function axissweep!(
+        state::InfinitePEPO, weights::SUWeight, propagator::AbstractTensorMap, axis::Int;
+        env = nothing, kwargs...
+    )
+    return axissweep!(state, weights, propagator, axis, DampedUpdate(; kwargs...); env)
+end
+
+function timestep!(
+        state::InfinitePEPO, weights::SUWeight, decomposition::AbstractVector; kwargs...
+    )
+    return timestep!(state, weights, decomposition, DampedUpdate(; kwargs...))
 end
 
 """
@@ -131,9 +205,10 @@ Compatibility form of [`axissweep!`](@ref) for a single bare propagator, applied
 unit cell.
 """
 function axissweep!(
-        state::InfinitePEPO, weights::SUWeight, propagator::AbstractTensorMap, axis::Int; kwargs...
+        state::InfinitePEPO, weights::SUWeight, propagator::AbstractTensorMap, axis::Int,
+        alg::DampedUpdate; kwargs...
     )
-    return axissweep!(state, weights, fill(propagator, 1, 1), axis; kwargs...)
+    return axissweep!(state, weights, fill(propagator, 1, 1), axis, alg; kwargs...)
 end
 
 """
@@ -158,17 +233,13 @@ the boundary bond dimension. One CTMRG boundary is solved for per axis sweep.
 evolved state. `Inf` leaves the update unchanged.
 """
 function timestep!(
-        state::InfinitePEPO, weights::SUWeight, decomposition::AbstractVector;
-        trunc = nothing, truncalg = nothing, envalg = nothing, zeta = Inf
+        state::InfinitePEPO, weights::SUWeight, decomposition::AbstractVector, alg::DampedUpdate
     )
-    isnothing(truncalg) == isnothing(envalg) ||
-        throw(ArgumentError("environment-based truncation needs both `truncalg` and `envalg`"))
-
     ϵ = 0.0
     env = nothing
     for (propagators, axis) in decomposition
-        isnothing(truncalg) || ((env, _) = bondenvironment(state, envalg; env₀ = env))
-        ϵ = max(ϵ, axissweep!(state, weights, propagators, axis; trunc, truncalg, env, zeta))
+        isnothing(alg.truncalg) || ((env, _) = bondenvironment(state, alg.envalg; env₀ = env))
+        ϵ = max(ϵ, axissweep!(state, weights, propagators, axis, alg; env))
     end
     return ϵ
 end

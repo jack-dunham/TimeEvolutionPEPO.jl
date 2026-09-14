@@ -46,11 +46,11 @@ export InfinitePEPSO, LocalTruncation, compress
 export reducedbond_first, reducedbond_last, undo_reducedbond_first, undo_reducedbond_last
 export applypropagator, truncatebond, fusephysical, dampweight
 export FullEnvTruncation, ALSTruncation, BondEnvironment, bondenvironment
-export bondstep!, axissweep!, timestep!
+export bondstep!, axissweep!, timestep!, DampedUpdate
 export trotterise
 
 export Simulation, SimulationInfo, simulate!
-export quantumstate, bondweights, timestep, simulationinfo, weightdistance
+export quantumstate, bondweights, timestep, simulationinfo, weightdistance, algorithm
 export isconverged, convergence, numiter, isfinished, simtime, walltime
 
 export gaugefix!, bpenvironment

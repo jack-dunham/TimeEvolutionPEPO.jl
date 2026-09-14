@@ -132,16 +132,11 @@ end
     J, dβ = 1.0, 0.002
     H = J * LocalOp(PAULI[3], PAULI[3])
 
-    function ratio(β, D; gaugeevery = 0)
+    function ratio(β, D; alg = DampedUpdate(; trunc = truncrank(D)), kw...)
         sim = quiet(
-            () -> Simulation(productpepo(fill(ThermalState(), 2, 2), D), H; timestep = dβ)
+            () -> Simulation(productpepo(fill(ThermalState(), 2, 2), D), H; timestep = dβ, alg)
         )
-        quiet(
-            () -> simulate!(
-                sim; numsteps = round(Int, β / dβ), verbose = false,
-                trunc = truncrank(D), gaugeevery
-            ),
-        )
+        quiet(() -> simulate!(sim; numsteps = round(Int, β / dβ), verbose = false, kw...))
         w = sort(abs.(bondweights(sim)[1, 1, 1].data); rev = true)
         return w[2] / w[1]
     end
@@ -162,6 +157,32 @@ end
             @test ratio(β, 2; gaugeevery = 25) ≈ tanh(β * J) rtol = 1.0e-5
         end
         @test ratio(0.35, 2) < 0.5 * tanh(0.35 * J)            # collapsed without it
+    end
+
+    @testset "the algorithm lives on the Simulation and a call may override it" begin
+        base = DampedUpdate(; trunc = truncrank(2), gaugeevery = 25)
+        @test algorithm(
+            Simulation(
+                productpepo(fill(ThermalState(), 2, 2), 2), H; timestep = dβ, alg = base
+            ),
+        ) === base
+
+        onobject = ratio(0.44, 2; alg = base)
+        askeywords = ratio(0.44, 2; gaugeevery = 25)
+        @test onobject == askeywords
+        @test onobject ≈ tanh(0.44 * J) rtol = 1.0e-5
+
+        # One field overridden, the rest still taken from the simulation's own algorithm.
+        @test ratio(0.44, 2; alg = base, gaugeevery = 0) < 0.5 * tanh(0.44 * J)
+    end
+
+    @testset "DampedUpdate rejects inconsistent settings" begin
+        @test_throws ArgumentError DampedUpdate(; zeta = -1.0)
+        @test_throws ArgumentError DampedUpdate(; gaugeevery = -5)
+        @test_throws ArgumentError DampedUpdate(;
+            truncalg = FullEnvTruncation(; trunc = truncrank(4))
+        )
+        @test_throws ArgumentError DampedUpdate(; envalg = BondEnvironment(8))
     end
 
     @testset "re-gauging recovers a state that has already collapsed" begin

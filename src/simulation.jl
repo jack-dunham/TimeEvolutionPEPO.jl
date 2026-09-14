@@ -4,30 +4,33 @@
 """
 $(TYPEDEF)
 
-Mutable state of a simulation: the density-matrix PEPO, its bond weights, and the Trotter
-decomposition of the propagator. The fields are internal.
+Mutable state of a simulation: the density-matrix PEPO, its bond weights, the Trotter decomposition
+of the propagator, and the [`DampedUpdate`](@ref) that says how a step is taken. The fields are
+internal.
 
 # Constructors
 
-    Simulation(state::InfinitePEPO, model; timestep, weights = SUWeight(state))
+    Simulation(state::InfinitePEPO, model; timestep, alg = DampedUpdate(), weights = SUWeight(state))
 
 `model` is a [`Model`](@ref), or a term or a vector of terms as shorthand for a single-layer or
-uniform model, as [`trotterise`](@ref) accepts.
+uniform model, as [`trotterise`](@ref) accepts. `alg` is the default for every [`simulate!`](@ref)
+call on this simulation; a call may override it or any of its fields.
 
 See also: [`simulate!`](@ref)
 """
-struct Simulation{M, D}
+struct Simulation{M, D, A}
     info::SimulationInfo
     model::M
     state::InfinitePEPO
     weights::SUWeight
     decomposition::D
     timestep::Float64
+    alg::A
 end
 
 function Simulation(
-        state::InfinitePEPO, model; timestep, weights::SUWeight = SUWeight(state),
-        info::SimulationInfo = SimulationInfo()
+        state::InfinitePEPO, model; timestep, alg::DampedUpdate = DampedUpdate(),
+        weights::SUWeight = SUWeight(state), info::SimulationInfo = SimulationInfo()
     )
     P = only(unique(physicalspace(state)))
     decomposition = trotterise(model, P, timestep)
@@ -42,7 +45,7 @@ function Simulation(
         )
     end
 
-    return Simulation(info, model, state, weights, decomposition, timestep)
+    return Simulation(info, model, state, weights, decomposition, timestep, alg)
 end
 
 """
@@ -58,6 +61,13 @@ quantumstate(sim::Simulation) = sim.state
 The bond weights of a simulation's state, one per bond of the unit cell.
 """
 bondweights(sim::Simulation) = sim.weights
+
+"""
+    $(TYPEDSIGNATURES)
+
+The [`DampedUpdate`](@ref) a simulation steps with by default.
+"""
+algorithm(sim::Simulation) = sim.alg
 
 timestep(sim::Simulation) = sim.timestep
 
@@ -104,9 +114,10 @@ function weightdistance(previous::SUWeight, current::SUWeight, dt::Real)
 end
 
 """
-    simulate!([callback = identity], sim::Simulation; numsteps, kwargs...)
+    simulate!([callback = identity], sim::Simulation, [alg::DampedUpdate]; numsteps, kwargs...)
 
-Run `numsteps` time steps. `callback` is passed `sim` itself.
+Run `numsteps` time steps. `callback` is passed `sim` itself, and `alg` says how each bond is updated
+and how often the gauge is re-fixed. Omitting `alg` builds one from the keywords below.
 
 ## Optional keywords
 
@@ -114,24 +125,28 @@ Run `numsteps` time steps. `callback` is passed `sim` itself.
 - `maxtime::Float64 = Inf`: stop once this much wall-clock time has elapsed
 - `breaktol::Float64 = 0.0`: stop once the change in bond weights per unit time falls below this
 - `verbose::Bool = true`: log progress at `@info`
-- `trunc`, `truncalg`, `envalg`, `zeta`: passed to [`timestep!`](@ref); without them each bond is
-  truncated by a bare SVD to the space it already has
-- `gaugeevery::Integer = 0`: re-fix the gauge with [`gaugefix!`](@ref) every this many steps, and
-  once more on the final state; never when zero
+- `trunc`, `truncalg`, `envalg`, `zeta`, `gaugeevery`: fields of [`DampedUpdate`](@ref), each
+  defaulting to the simulation's own `alg`, so a call may override one field without restating the rest
 
-A sweep leaves the Vidal gauge only approximately, and imaginary-time evolution amplifies the drift:
-for the classical Ising the bond spectrum tracks `tanh(βJ)` to six digits and then collapses, around
-β ≈ 0.28 at δβ = 2e-3 and earlier for smaller steps. `gaugeevery = 25` removes it entirely at no
-measurable cost, and recovers a state that has already collapsed, since the drift is a gauge artefact
-rather than lost information. Thermal evolution needs it; Lindblad evolution has not been observed to.
+A sweep leaves the Vidal gauge only approximately, and imaginary-time evolution amplifies the drift
+until the bond spectrum collapses. Setting `gaugeevery` prevents that, and restores a state in which
+it has already happened, since the drift misrepresents the state rather than destroying it. Thermal
+evolution needs it; Lindblad evolution has not been observed to.
 """
-simulate!(sim::Simulation; kwargs...) = simulate!(identity, sim; kwargs...)
+simulate!(sim::Simulation, args...; kwargs...) = simulate!(identity, sim, args...; kwargs...)
 
 function simulate!(
-        callback, sim::Simulation; numsteps::Integer, maxshots::Integer = numsteps,
-        maxtime::Float64 = Inf, breaktol::Float64 = 0.0, verbose::Bool = true,
-        trunc = nothing, truncalg = nothing, envalg = nothing, zeta = Inf,
-        gaugeevery::Integer = 0
+        callback, sim::Simulation; trunc = sim.alg.trunc, truncalg = sim.alg.truncalg,
+        envalg = sim.alg.envalg, zeta = sim.alg.zeta, gaugeevery = sim.alg.gaugeevery, kwargs...
+    )
+    alg = DampedUpdate(; trunc, truncalg, envalg, zeta, gaugeevery)
+    return simulate!(callback, sim, alg; kwargs...)
+end
+
+function simulate!(
+        callback, sim::Simulation, alg::DampedUpdate; numsteps::Integer,
+        maxshots::Integer = numsteps, maxtime::Float64 = Inf, breaktol::Float64 = 0.0,
+        verbose::Bool = true
     )
     info = sim.info
     info.finished = false
@@ -145,9 +160,9 @@ function simulate!(
 
     step = 0
     while step < numsteps
-        timestep!(sim.state, sim.weights, sim.decomposition; trunc, truncalg, envalg, zeta)
+        timestep!(sim.state, sim.weights, sim.decomposition, alg)
         step += 1
-        gaugeevery > 0 && step % gaugeevery == 0 && gaugefix!(sim.state, sim.weights)
+        alg.gaugeevery > 0 && step % alg.gaugeevery == 0 && gaugefix!(sim.state, sim.weights)
 
         info.convergence = weightdistance(previous, sim.weights, sim.timestep)
         previous = deepcopy(sim.weights)
@@ -169,7 +184,7 @@ function simulate!(
     end
 
     # The gauge drifts between fixes, so a run that stops mid-interval would hand back a drifted state.
-    gaugeevery > 0 && step % gaugeevery != 0 && gaugefix!(sim.state, sim.weights)
+    alg.gaugeevery > 0 && step % alg.gaugeevery != 0 && gaugefix!(sim.state, sim.weights)
 
     info.finished = true
     return sim
