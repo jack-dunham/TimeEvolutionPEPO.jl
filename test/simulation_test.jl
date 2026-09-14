@@ -123,3 +123,40 @@ end # SimulationSetup
         @test simulationinfo(sim).iterations < 20
     end
 end
+
+@testitem "Thermal evolution" setup = [SimulationSetup] begin
+    using MatrixAlgebraKit: truncrank
+
+    # rho = exp(-beta H) for the classical Ising model factorises over bonds, so each bond carries
+    # singular values proportional to (cosh(beta J), sinh(beta J)) and D = 2 is exact at every beta.
+    J, dβ = 1.0, 0.002
+    H = J * LocalOp(PAULI[3], PAULI[3])
+
+    function ratio(β, D)
+        sim = quiet(
+            () -> Simulation(productpepo(fill(ThermalState(), 2, 2), D), H; timestep = dβ)
+        )
+        quiet(
+            () -> simulate!(
+                sim; numsteps = round(Int, β / dβ), verbose = false, trunc = truncrank(D)
+            ),
+        )
+        w = sort(abs.(bondweights(sim)[1, 1, 1].data); rev = true)
+        return w[2] / w[1]
+    end
+
+    @testset "a bare Hamiltonian evolves in imaginary time" begin
+        for β in (0.05, 0.15, 0.25)
+            @test ratio(β, 2) ≈ tanh(β * J) rtol = 1.0e-5
+        end
+    end
+
+    @testset "the sweep loses the state above beta of about 0.28" begin
+        # Round-off is amplified exponentially by the bond update: the truncation error stays at
+        # 1e-16 throughout, yet the bond ratio departs from tanh(beta J) and then collapses. The
+        # onset moves with dbeta, so this pins the regime the thermal path is usable in rather than
+        # a physical scale. Raise these once the amplification is fixed.
+        @test ratio(0.28, 2) ≈ tanh(0.28 * J) rtol = 1.0e-2
+        @test ratio(0.35, 2) < 0.5 * tanh(0.35 * J)            # collapsed, not merely inaccurate
+    end
+end
