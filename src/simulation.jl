@@ -122,7 +122,7 @@ simulate!(sim::Simulation; kwargs...) = simulate!(identity, sim; kwargs...)
 function simulate!(
         callback, sim::Simulation; numsteps::Integer, maxshots::Integer = numsteps,
         maxtime::Float64 = Inf, breaktol::Float64 = 0.0, verbose::Bool = true,
-        trunc = nothing, truncalg = nothing, envalg = nothing
+        trunc = nothing, truncalg = nothing, envalg = nothing, zeta = Inf
     )
     info = sim.info
     info.finished = false
@@ -136,7 +136,7 @@ function simulate!(
 
     step = 0
     while step < numsteps
-        timestep!(sim.state, sim.weights, sim.decomposition; trunc, truncalg, envalg)
+        timestep!(sim.state, sim.weights, sim.decomposition; trunc, truncalg, envalg, zeta)
         step += 1
 
         info.convergence = weightdistance(previous, sim.weights, sim.timestep)

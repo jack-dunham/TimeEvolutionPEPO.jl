@@ -75,3 +75,4 @@ end # GaugeSetup
         @test observables(state; bonddim = 4) ≈ before atol = 1e-8
     end
 end
+

@@ -56,9 +56,10 @@ that acts on the ket and bra of both sites at once.
 """
 function applypropagator(
         a::GenericMPSTensor{S, 3}, b::GenericMPSTensor{S, 3},
-        propagator::AbstractTensorMap, trunc::TruncationStrategy
+        propagator::AbstractTensorMap, trunc::TruncationStrategy; zeta = Inf
     ) where {S}
     u, s, v, ϵ = svd_trunc!(applypropagator(a, b, propagator); trunc)
+    s = dampweight(s, zeta)
     u, v = PEPSKit.absorb_s(u, s, v)
 
     # `v` arrives as `χ ← (bond, ket, bra)`; the second tensor of a bond is `(bond, ket, bra) ← χ`.
@@ -82,6 +83,31 @@ end
 """
     $(TYPEDSIGNATURES)
 
+Multiply a bond spectrum by the damping matrix `Ξ(ζ)ᵢⱼ = δᵢⱼ exp(-(i-1)/ζ)` and renormalise it to
+unit trace, throttling the growth of bond entropy. `ζ = Inf` returns the spectrum unchanged and
+`ζ = 0` keeps only the leading value.
+
+Damping is by rank rather than by stored position. The trace normalisation follows the definition of
+the transformation; it has no effect on the state here, because [`bondstep!`](@ref) rescales the two
+site tensors and the weight to unit maximum afterwards.
+"""
+function dampweight(s::DiagonalTensorMap, ζ::Real)
+    ζ >= 0 || throw(ArgumentError("the damping parameter must be non-negative, got ζ = $ζ"))
+    isinf(ζ) && return s
+    vals = copy(s.data)
+    rank = invperm(sortperm(vals; by = abs, rev = true))
+    for i in eachindex(vals)
+        k = rank[i] - 1
+        vals[i] *= iszero(ζ) ? (iszero(k) ? one(k) : zero(k)) : exp(-k / ζ)
+    end
+    total = sum(abs, vals)
+    iszero(total) || (vals ./= total)
+    return DiagonalTensorMap(vals, s.domain)
+end
+
+"""
+    $(TYPEDSIGNATURES)
+
 Isometry fusing a site's physical pair into one leg. Used only to hand a reduced bond tensor to
 PEPSKit's `bond_truncate`, which takes one physical index; the state itself keeps ket and bra apart.
 """
@@ -94,10 +120,11 @@ Truncate an evolved pair against the bond environment `benv`, using `FullEnvTrun
 `ALSTruncation`. The physical pair of each reduced tensor is fused for the call and unfused after.
 """
 function truncatebond(
-        ab::AbstractTensorMap, benv::AbstractTensorMap, alg, P::IndexSpace
+        ab::AbstractTensorMap, benv::AbstractTensorMap, alg, P::IndexSpace; zeta = Inf
     )
     # Split without truncating, so the pair enters the optimisation at its full bond dimension.
     u, s, v, = svd_trunc!(copy(ab); trunc = notrunc())
+    s = dampweight(s, zeta)
     u, v = PEPSKit.absorb_s(u, s, v)
     a = u
     b = permute(v, ((1, 3, 4), (2,)))

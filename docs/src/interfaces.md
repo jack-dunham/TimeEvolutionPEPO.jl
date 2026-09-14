@@ -43,7 +43,7 @@ bond rotation and the truncations — is PEPSKit's and is reused unchanged.
 
 ## Choosing how bonds are truncated
 
-Three keywords select the truncation, and they thread unchanged from `simulate!` down to
+Four keywords select the truncation, and they thread unchanged from `simulate!` down to
 `bondstep!`.
 
 | Keyword | Effect |
@@ -51,6 +51,7 @@ Three keywords select the truncation, and they thread unchanged from `simulate!`
 | `trunc` | A TensorKit `TruncationStrategy` for the SVD of the evolved pair. Defaults to the space the bond already has, so the bond dimension is preserved. |
 | `truncalg` | A `FullEnvTruncation` or `ALSTruncation`, which optimises the truncation against a bond environment instead of taking a bare SVD. |
 | `envalg` | A [`BondEnvironment`](@ref), giving the boundary bond dimension and tolerances for the CTMRG solve that builds that environment. Required with `truncalg`, and unused without it. |
+| `zeta` | The damping parameter. After each bond is truncated its spectrum is multiplied by `Ξ(ζ)ᵢⱼ = δᵢⱼ exp(-(i-1)/ζ)` and renormalised ([`dampweight`](@ref)), suppressing the correlation length of the evolved state. `Inf` leaves the update unchanged. |
 
 Without `truncalg` the bond weights play the role of the environment and no boundary contraction is
 needed — this is simple update. With it, one CTMRG boundary is solved for per axis sweep, warm-started
@@ -60,6 +61,13 @@ builds from it.
 ```julia
 alg = FullEnvTruncation(; trunc = truncspace(ComplexSpace(4)), maxiter = 30)
 simulate!(sim; numsteps = 20, truncalg = alg, envalg = BondEnvironment(16))
+```
+
+The damping is applied inside the bond update, between the SVD and `PEPSKit.absorb_s`, so it
+compounds over the sweep and feeds back through every later truncation.
+
+```julia
+simulate!(sim; numsteps = 20, trunc = truncrank(9), zeta = 100.0)
 ```
 
 ## Adding a truncation scheme

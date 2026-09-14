@@ -31,7 +31,8 @@ PEPO sandwiched with its adjoint, truncates against that environment instead of 
 """
 function bondstep!(
         state::InfinitePEPO, weights::SUWeight, propagator::AbstractTensorMap,
-        sites::Vector{CartesianIndex{2}}; trunc = nothing, truncalg = nothing, env = nothing
+        sites::Vector{CartesianIndex{2}}; trunc = nothing, truncalg = nothing, env = nothing,
+        zeta = Inf
     )
     length(sites) == 2 || throw(ArgumentError("a bond joins two sites, got $(length(sites))"))
 
@@ -55,7 +56,7 @@ function bondstep!(
     b, Y = reducedbond_last(B)
 
     a, s, b, ϵ = if isnothing(truncalg)
-        applypropagator(a, b, propagator, truncation)
+        applypropagator(a, b, propagator, truncation; zeta)
     else
         # `bondenv_ctm` reads a horizontal bond, so the environment is rotated exactly as
         # `_bond_rotation` rotated the tensors, and the bond's position is carried through that
@@ -64,7 +65,7 @@ function bondstep!(
             PEPSKit._bond_rotation(env, dir, rev))
         P = space(A, 1)
         aout, sout, bout, info = truncatebond(
-            applypropagator(a, b, propagator), benv, truncalg, P
+            applypropagator(a, b, propagator), benv, truncalg, P; zeta
         )
         (aout, sout, bout, info.fid)
     end
@@ -99,7 +100,7 @@ therefore applies it twice, which is why [`trotterise`](@ref) halves it.
 """
 function axissweep!(
         state::InfinitePEPO, weights::SUWeight, propagators::AbstractMatrix, axis::Int;
-        trunc = nothing, truncalg = nothing, env = nothing
+        trunc = nothing, truncalg = nothing, env = nothing, zeta = Inf
     )
     axis in (1, 2) || throw(ArgumentError("axis must be 1 or 2, got $axis"))
     Nr, Nc, = size(state)
@@ -117,7 +118,7 @@ function axissweep!(
         # Vertical bonds run south to north: the other order sets `rev` in `_nn_bondrev`, and the
         # update then writes each bond back with the opposite arrow.
         prop = axis == 1 ? p : _swapsites(p)
-        ϵ = max(ϵ, bondstep!(state, weights, prop, [site1, site2]; trunc, truncalg, env))
+        ϵ = max(ϵ, bondstep!(state, weights, prop, [site1, site2]; trunc, truncalg, env, zeta))
     end
 
     return ϵ
@@ -151,10 +152,14 @@ largest truncation error.
 
 `truncalg` selects environment-based truncation and needs `envalg`, a [`BondEnvironment`](@ref) or
 the boundary bond dimension. One CTMRG boundary is solved for per axis sweep.
+
+`zeta` is the damping parameter: after each bond is truncated its spectrum is multiplied by
+`Ξ(ζ)ᵢⱼ = δᵢⱼ exp(-(i-1)/ζ)` (see [`dampweight`](@ref)), suppressing the correlation length of the
+evolved state. `Inf` leaves the update unchanged.
 """
 function timestep!(
         state::InfinitePEPO, weights::SUWeight, decomposition::AbstractVector;
-        trunc = nothing, truncalg = nothing, envalg = nothing
+        trunc = nothing, truncalg = nothing, envalg = nothing, zeta = Inf
     )
     isnothing(truncalg) == isnothing(envalg) ||
         throw(ArgumentError("environment-based truncation needs both `truncalg` and `envalg`"))
@@ -163,7 +168,7 @@ function timestep!(
     env = nothing
     for (propagators, axis) in decomposition
         isnothing(truncalg) || ((env, _) = bondenvironment(state, envalg; env₀ = env))
-        ϵ = max(ϵ, axissweep!(state, weights, propagators, axis; trunc, truncalg, env))
+        ϵ = max(ϵ, axissweep!(state, weights, propagators, axis; trunc, truncalg, env, zeta))
     end
     return ϵ
 end

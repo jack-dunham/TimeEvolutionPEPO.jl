@@ -44,7 +44,7 @@ export generator, bondpropagator, fsmpepso
 export j1j2model, fsmheisenberg
 export InfinitePEPSO, LocalTruncation, compress
 export reducedbond_first, reducedbond_last, undo_reducedbond_first, undo_reducedbond_last
-export applypropagator, truncatebond, fusephysical
+export applypropagator, truncatebond, fusephysical, dampweight
 export FullEnvTruncation, ALSTruncation, BondEnvironment, bondenvironment
 export bondstep!, axissweep!, timestep!
 export trotterise
