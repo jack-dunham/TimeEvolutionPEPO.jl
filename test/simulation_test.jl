@@ -132,13 +132,14 @@ end
     J, dβ = 1.0, 0.002
     H = J * LocalOp(PAULI[3], PAULI[3])
 
-    function ratio(β, D)
+    function ratio(β, D; gaugeevery = 0)
         sim = quiet(
             () -> Simulation(productpepo(fill(ThermalState(), 2, 2), D), H; timestep = dβ)
         )
         quiet(
             () -> simulate!(
-                sim; numsteps = round(Int, β / dβ), verbose = false, trunc = truncrank(D)
+                sim; numsteps = round(Int, β / dβ), verbose = false,
+                trunc = truncrank(D), gaugeevery
             ),
         )
         w = sort(abs.(bondweights(sim)[1, 1, 1].data); rev = true)
@@ -151,12 +152,20 @@ end
         end
     end
 
-    @testset "the sweep loses the state above beta of about 0.28" begin
-        # Round-off is amplified exponentially by the bond update: the truncation error stays at
-        # 1e-16 throughout, yet the bond ratio departs from tanh(beta J) and then collapses. The
-        # onset moves with dbeta, so this pins the regime the thermal path is usable in rather than
-        # a physical scale. Raise these once the amplification is fixed.
-        @test ratio(0.28, 2) ≈ tanh(0.28 * J) rtol = 1.0e-2
-        @test ratio(0.35, 2) < 0.5 * tanh(0.35 * J)            # collapsed, not merely inaccurate
+    @testset "re-gauging carries it past the critical point" begin
+        # betac = log(1 + sqrt(2)) / 2 = 0.4407. Without re-gauging the sweep loses the state near
+        # beta = 0.28: the truncation error stays at 1e-16 and it happens at D = 2 where the state is
+        # exactly representable, so the drift is in the gauge, not the truncation.
+        # betac = 0.4407 is not a multiple of dbeta, so this uses the step grid: 0.44 is one step
+        # below it and 0.46 one above.
+        for β in (0.35, 0.44, 0.46, 0.6)
+            @test ratio(β, 2; gaugeevery = 25) ≈ tanh(β * J) rtol = 1.0e-5
+        end
+        @test ratio(0.35, 2) < 0.5 * tanh(0.35 * J)            # collapsed without it
+    end
+
+    @testset "re-gauging recovers a state that has already collapsed" begin
+        # The gauge drift destroys no information: fixing it after the collapse restores the spectrum.
+        @test ratio(0.6, 2; gaugeevery = 50) ≈ tanh(0.6 * J) rtol = 1.0e-5
     end
 end

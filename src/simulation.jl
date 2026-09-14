@@ -114,15 +114,24 @@ Run `numsteps` time steps. `callback` is passed `sim` itself.
 - `maxtime::Float64 = Inf`: stop once this much wall-clock time has elapsed
 - `breaktol::Float64 = 0.0`: stop once the change in bond weights per unit time falls below this
 - `verbose::Bool = true`: log progress at `@info`
-- `trunc`, `truncalg`, `envalg`: passed to [`timestep!`](@ref); without them each bond is truncated
-  by a bare SVD to the space it already has
+- `trunc`, `truncalg`, `envalg`, `zeta`: passed to [`timestep!`](@ref); without them each bond is
+  truncated by a bare SVD to the space it already has
+- `gaugeevery::Integer = 0`: re-fix the gauge with [`gaugefix!`](@ref) every this many steps, and
+  once more on the final state; never when zero
+
+A sweep leaves the Vidal gauge only approximately, and imaginary-time evolution amplifies the drift:
+for the classical Ising the bond spectrum tracks `tanh(βJ)` to six digits and then collapses, around
+β ≈ 0.28 at δβ = 2e-3 and earlier for smaller steps. `gaugeevery = 25` removes it entirely at no
+measurable cost, and recovers a state that has already collapsed, since the drift is a gauge artefact
+rather than lost information. Thermal evolution needs it; Lindblad evolution has not been observed to.
 """
 simulate!(sim::Simulation; kwargs...) = simulate!(identity, sim; kwargs...)
 
 function simulate!(
         callback, sim::Simulation; numsteps::Integer, maxshots::Integer = numsteps,
         maxtime::Float64 = Inf, breaktol::Float64 = 0.0, verbose::Bool = true,
-        trunc = nothing, truncalg = nothing, envalg = nothing, zeta = Inf
+        trunc = nothing, truncalg = nothing, envalg = nothing, zeta = Inf,
+        gaugeevery::Integer = 0
     )
     info = sim.info
     info.finished = false
@@ -138,6 +147,7 @@ function simulate!(
     while step < numsteps
         timestep!(sim.state, sim.weights, sim.decomposition; trunc, truncalg, envalg, zeta)
         step += 1
+        gaugeevery > 0 && step % gaugeevery == 0 && gaugefix!(sim.state, sim.weights)
 
         info.convergence = weightdistance(previous, sim.weights, sim.timestep)
         previous = deepcopy(sim.weights)
@@ -157,6 +167,9 @@ function simulate!(
             break
         end
     end
+
+    # The gauge drifts between fixes, so a run that stops mid-interval would hand back a drifted state.
+    gaugeevery > 0 && step % gaugeevery != 0 && gaugefix!(sim.state, sim.weights)
 
     info.finished = true
     return sim
