@@ -2,6 +2,10 @@
 CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
 Makie = "ee78f7c6-11fb-53f2-987a-cfe4a2b5a57a"
+PEPSKit = "52969e89-939e-4361-9b68-9bc7cde4bdeb"
 Preferences = "21216c6a-2e73-6563-6e65-726566657250"
 TensorKit = "07d1fe3e-3e46-537d-9eac-e9e13d0d4cec"
 TimeEvolutionPEPO = "ee9a5d50-cb2d-461d-9ed1-04ffb2590b38"
+
+[sources]
+PEPSKit = {url = "https://github.com/jack-dunham/PEPSKit.jl", rev = "dev"}

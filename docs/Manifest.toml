@@ -1,8 +1,8 @@
 # This file is machine-generated - editing it directly is not advised
 
-julia_version = "1.12.5"
+julia_version = "1.12.6"
 manifest_format = "2.0"
-project_hash = "07dd2376304c01ed27c944ea68e8638ba17bd725"
+project_hash = "c1248ad142951834b3e516a7805632d37b7732cd"
 
 [[deps.ANSIColoredPrinters]]
 git-tree-sha1 = "574baf8110975760d391c710b6341da1afa48d8c"
@@ -1285,8 +1285,10 @@ weakdeps = ["StatsBase"]
     StatsBaseExt = "StatsBase"
 
 [[deps.PEPSKit]]
-deps = ["Accessors", "ChainRulesCore", "Compat", "DocStringExtensions", "FiniteDifferences", "KrylovKit", "LinearAlgebra", "LoggingExtras", "MPSKit", "MPSKitModels", "MatrixAlgebraKit", "OhMyThreads", "OptimKit", "Printf", "Random", "Statistics", "TensorKit", "TensorOperations", "TupleTools", "VectorInterface", "Zygote"]
-git-tree-sha1 = "5e4d26bffedb1081882f49a57b2440d3a42bcf96"
+deps = ["Accessors", "ChainRulesCore", "Compat", "DocStringExtensions", "FiniteDifferences", "KrylovKit", "LinearAlgebra", "LoggingExtras", "MPSKit", "MPSKitModels", "MatrixAlgebraKit", "OhMyThreads", "OptimKit", "Printf", "Random", "Statistics", "TensorKit", "TensorKitTensors", "TensorOperations", "TupleTools", "VectorInterface", "Zygote"]
+git-tree-sha1 = "bed40a664e2e92cf98e8d4a0b76f614d7fa816ee"
+repo-rev = "dev"
+repo-url = "https://github.com/jack-dunham/PEPSKit.jl"
 uuid = "52969e89-939e-4361-9b68-9bc7cde4bdeb"
 version = "0.8.1"
 
@@ -1829,6 +1831,12 @@ deps = ["HalfIntegers", "LinearAlgebra", "TensorOperations", "WignerSymbols"]
 git-tree-sha1 = "9f536263310aae90df175337d586a1655104aae3"
 uuid = "13a9c161-d5da-41f0-bcbd-e1a08ae0647f"
 version = "0.3.9"
+
+[[deps.TensorKitTensors]]
+deps = ["LinearAlgebra", "Logging", "RationalRoots", "TensorKit"]
+git-tree-sha1 = "0b9f1f0c0158d3393acd838af36e3962768bd354"
+uuid = "41b62e7d-e9d1-4e23-942c-79a97adf954b"
+version = "0.3.1"
 
 [[deps.TensorOperations]]
 deps = ["LRUCache", "LinearAlgebra", "PackageExtensionCompat", "PrecompileTools", "Preferences", "PtrArrays", "Strided", "StridedViews", "TupleTools", "VectorInterface"]
