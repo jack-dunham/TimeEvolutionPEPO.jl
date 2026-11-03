@@ -1,17 +1,20 @@
 # Observables
 
-## Density matrix
+```@meta
+CurrentModule = TimeEvolutionPEPO
+```
+
+## Density matrices
 
 ```@docs
-AbstractDensityMatrix
 DensityMatrix
 PurifiedDensityMatrix
+tracenetwork
 ```
 
 ## Methods
 
 ```@docs
-trace
 partialtrace
 expval
 negativity

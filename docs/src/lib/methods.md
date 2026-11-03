@@ -3,26 +3,50 @@
 ```@meta
 CurrentModule = TimeEvolutionPEPO
 ```
-## Time evolution methods
+
+## Propagators
 
 ```@docs
-TEBD
-AxialTEBD
-GlobalTEBD
+trotterise
+fsmpepso
+bondpropagator
+generator
 ```
 
-## Bond truncation 
+## The sweep
 
 ```@docs
-SVDU
-SimpleUpdate
-NTU
-FET
+DampedUpdate
+timestep!
+axissweep!
+bondstep!
 ```
 
-## Isometry Optimization
+## Long-range layers
 
 ```@docs
-EVB
-DZM
+IterativeSU
+PEPSOLayer
+iterativestep!
+```
+
+## Bond truncation
+
+```@docs
+BondEnvironment
+bondenvironment
+truncatebond
+applypropagator
+reducedbond_first
+reducedbond_last
+undo_reducedbond_first
+undo_reducedbond_last
+fusephysical
+```
+
+## Gauge fixing
+
+```@docs
+gaugefix!
+bpenvironment
 ```

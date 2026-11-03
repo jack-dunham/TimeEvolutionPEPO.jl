@@ -1,3 +1,11 @@
+# Minimal canonical form, parked pending a rewrite on PEPSKit types, which has no equivalent gauge.
+# Handles 1x1 unit cells only, and `fixgauge!` here takes two arguments where callers pass three.
+
+@kwdef mutable struct MCF <: AbstractGauge
+    tol::Float64 = 1e-10
+    maxiter::Int = 1000
+end
+
 fixgauge!(x, gauge::MCF) = minimalcanonicalform!(x; gauge.tol, gauge.maxiter)
 
 function minimalcanonicalform!(lat::AbstractUnitCell; kwargs...)

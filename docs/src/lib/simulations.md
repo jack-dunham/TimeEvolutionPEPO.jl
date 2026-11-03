@@ -3,6 +3,7 @@
 ```@meta
 CurrentModule = TimeEvolutionPEPO
 ```
+
 ## Setup and running
 
 ```@docs
@@ -14,10 +15,8 @@ simulate!
 
 ```@docs
 quantumstate
-```
-
-## Updating parameters
-
-```@docs
-updatetimestep!
+bondweights
+simulationinfo
+SimulationInfo
+weightdistance
 ```

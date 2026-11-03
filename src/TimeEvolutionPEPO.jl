@@ -1,186 +1,99 @@
 module TimeEvolutionPEPO
 
-import TensorKit.AdjointTensorMap
-import TensorKit.IndexTuple
+# Mid-refactor onto PEPSKit. Several files below hold their PEPSKit-based replacement under the name of
+# the code they superseded, so a path is no indication of its contents. Everything under src/ is loaded.
+
 using Accessors
-using Combinatorics
 using DocStringExtensions
-using KrylovKit
 using LinearAlgebra
-using Logging
+using PEPSKit
 using Random
 using TensorKit
-using TensorRenormalizationGroups
+using TensorOperations: TensorOperations
 using TupleTools
-using VectorInterface
 
-const TRGroups = TensorRenormalizationGroups
+using PEPSKit: EAST, NORTH, SOUTH, WEST
+using PEPSKit: PEPOTensor, GenericMPSTensor, absorb_weight
+using MatrixAlgebraKit: TruncationStrategy
+
 const PEPOKit = TimeEvolutionPEPO
-
-import TensorRenormalizationGroups: AbsTen, SquareSymmetric, TenAbs
 
 export PEPOKit
 
-## Essential TRGroups reexports
-export UnitCell, Square, SquareSymmetric
-export VUMPS, CTMRG
-export tensortype
+## PEPSKit reexports
+export InfinitePEPO, InfinitePartitionFunction, SUWeight, CTMRGEnv
+export leading_boundary, initialize_ctmrg_environment, RandomInitialization
+export reduced_densitymatrix, correlation_length
 #
 
-export delta
-
+export PAULI, LADDER, SPIN1
 export cj, conjugate
 
-export PAULI, LADDER, SPIN1
+export ThermalState, bloch, productpepo, bondentropy
 
-# PEPO
-export UnitCellBonds
-export ThermalState
+export DensityMatrix, PurifiedDensityMatrix, partialtrace, expval, tracenetwork, isconverged
+export correlationlength, correlator, negativity
 
-export AbstractPEPO, PEPO
-export expandspace, subpepo, unsymmetrise, bondweights, bondentropy, physicalspace
-export Bond
-
-export TEBD, AxialTEBD, GlobalTEBD, ClusterMPO, GlobalTEBD, ClusterPEPO
-export LocalUpdate, GlobalUpdate
-export SimpleUpdate, SVDU, NTU, FET, IterativeSU
-
-export Simulation, SimulationInfo
-export simulate!, updatetimestep!
-export quantumstate, timestep, trotterorder, simulationinfo
-
-export EVB, DZM, WTG, MCF, NoGauge
-
-export clustermpo, MPO
-
-export Hamiltonian, Liouvillian, Dissipator, TrotterLayer, Model, Ising
-
-export isaxial, isexpandable, dissipator
-
+export Hamiltonian, Liouvillian, Dissipator, Ising
 export AbstractTerm, AbstractSingleTerm, AbstractSumOfTerms
-export AbstractAxialTerm, AbstractRadialTerm, AbstractManhattanTerm
-export LocalOp, ExpOp, GaussOp, GaussOp2d, PowOp, PowOp2d
+export LocalOp, ExpOp, GaussOp, GaussOp2d, PowOp, PowOp2d, J1J2SymmetricOp
+export dissipator, oneterms, isaxial, isexpandable
+export TrotterLayer, scalelayer
+export Model, distribute!
 
-export AbstractDensityMatrix, DensityMatrix, PurifiedDensityMatrix
-export trace, partialtrace
-export expval, negativity, correlator, correlationlength
+export generator, bondpropagator, fsmpepso
+export j1j2model, fsmheisenberg
+export InfinitePEPSO, LocalTruncation, compress
+export reducedbond_first, reducedbond_last, undo_reducedbond_first, undo_reducedbond_last
+export applypropagator, truncatebond, fusephysical, dampweight
+export FullEnvTruncation, ALSTruncation, BondEnvironment, bondenvironment
+export bondstep!, axissweep!, timestep!, DampedUpdate
+export IterativeSU, PEPSOLayer, iterativestep!
+export trotterise
 
-export permutebasis
+export Simulation, SimulationInfo, simulate!
+export quantumstate, bondweights, timestep, simulationinfo, weightdistance, algorithm
+export isconverged, convergence, numiter, isfinished, simtime, walltime
 
-include("utils.jl")
-include("tensorkitutils.jl")
+export gaugefix!, bpenvironment
+export SUGauge, BPGauge, BPEnv, BeliefPropagation, gauge_fix
+
 include("linalg.jl")
-include("convergenceinfo.jl")
-include("abstractlattice.jl")
-include("edgelattice.jl")
-include("updatestyle.jl")
-
-# include("sparsetensormap.jl")
-
-## PEPO OBJECTS
-include("pepo/weights.jl")
-include("pepo/abstractpepo.jl")
 include("pepo/pepo.jl")
-include("pepo/axialpepo.jl")
+include("densitymatrix.jl")
 
-### UPDATABLE PEPOS
-# include("pepo/abstractupdatablepepo.jl")
-# include("pepo/localpepo.jl")
-# include("pepo/globalpepo.jl")
-
-### OTHER
-include("pepo/hilbertschmidt.jl")
-
-include("model/abstractaxis.jl")
-
-include("contract/vumps.jl")
-include("contract/ctmrg.jl")
-
-include("gauge/abstractgauge.jl")
-include("gauge/wtg.jl")
-include("gauge/mcf.jl")
-
-include("truncation/clu/clu.jl")
-include("truncation/truncation.jl")
-include("truncation/isometries.jl")
-include("truncation/iterative.jl")
-
-include("evolution/abstractevolution.jl")
-include("evolution/timeevolution.jl")
-
-include("truncation/simpleupdate.jl")
-
-## MODEL AND EQUATION
+## Term algebra: matrix-level code, carried over unchanged
 include("model/abstractterm.jl")
-# Load these in this order
 include("model/terms/localop.jl")
 include("model/terms/linop.jl")
 include("model/terms/expop.jl")
 include("model/terms/gaussop.jl")
 include("model/terms/powop.jl")
 include("model/terms/nnnop.jl")
-# Load these in this order
 include("model/hamiltonian.jl")
 include("model/liouvillian.jl")
 include("model/ising.jl")
 include("model/trotterlayer.jl")
 include("model/model.jl")
 
-include("model/equation.jl")
-include("model/mpo.jl")
-include("model/pepso.jl")
+# `PowOp` and `GaussOp` fit a power law as a sum of exponentials with routines defined here; only the
+# `fsm*` builders in this file need porting, and they are not called at load time.
+include("model/longrangeheisenberg.jl")
+# The finite-state machine that turns a long-range term into a PEPO. Its bond dimension is the state
+# count; only `GaussOp2d` has a rule, so the axial `PowOp{ExpOp}` has no route through it.
 include("model/fsm.jl")
 
-include("model/heisenberg.jl")
-include("model/longrangeheisenberg.jl")
-include("model/axialheisenberg.jl")
-
+include("model/equation.jl")
+include("truncation/isometries.jl")
+include("truncation/simpleupdate.jl")
+# The one file under src/dev/ that is loaded: iterative simple update for long-range propagators.
+include("dev/iterative.jl")
 include("evolution/dynamicalmap.jl")
-
+include("convergenceinfo.jl")
 include("simulation.jl")
-include("densitymatrix.jl")
+include("gauge/abstractgauge.jl")
 
-# include("dev/tno_evolve.jl")
-# include("dev/longrange.jl")
-# include("dev/beliefpropagation.jl")
-include("dev/vidalgauge.jl")
-
-# using PrecompileTools: @setup_workload, @compile_workload
-#
-# @setup_workload begin
-#     X, Y, Z = PAULI
-#     @compile_workload begin
-#         warnlogger = ConsoleLogger(stderr, Logging.Warn)
-#         oldlogger = global_logger(warnlogger)
-#
-#         model = Model(1.5 / 4 * LocalOp(Z, Z) + Dissipator(0.5 * (Y - im * Z)))
-#
-#         sim = Simulation(
-#             PEPO{SquareSymmetric}((0, 0, -1), fill(ℂ^2, 2, 2), ℂ^1),
-#             model,
-#             TEBD();
-#             timestep=1e-1,
-#         )
-#
-#         simulate!(sim; numsteps=1)
-#
-#         dmc = DensityMatrix(quantumstate(sim), CTMRG(; bonddim=1))
-#         dmv = DensityMatrix(quantumstate(sim), VUMPS(; bonddim=1))
-#         dmp = PurifiedDensityMatrix(quantumstate(sim), VUMPS(; bonddim=1))
-#
-#         # `partialtrace` calls a generated function, so compile the common use cases
-#         partialtrace(dmc, (1, 1))
-#         partialtrace(dmc, (1, 1), (2, 1))
-#         partialtrace(dmc, (1, 1), (1, 2))
-#         partialtrace(dmc, (1, 1), (2, 2))
-#
-#         partialtrace(dmv, (1, 1))
-#         partialtrace(dmv, (2, 1))
-#
-#         partialtrace(dmp, (1, 1))
-#
-#         global_logger(oldlogger)
-#     end
-# end
+# Unfinished work that does not run against the refactor lives in src/dev/ and is not included: the
+# NTU cluster metric, WTG, the long-range PEPO builders, and the model recipes.
 
 end # module

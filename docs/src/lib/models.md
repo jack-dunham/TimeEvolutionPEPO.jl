@@ -3,6 +3,7 @@
 ```@meta
 CurrentModule = TimeEvolutionPEPO
 ```
+
 ## Single terms
 
 Terms are either one-dimensional (axial) with support on a single axis of a lattice only, or two-dimensional.
@@ -19,13 +20,31 @@ GaussOp2d
 PowOp2d
 ```
 
-## Models and sums of terms
+## Sums of terms
 
 ```@docs
-Model
 Hamiltonian
 Dissipator
 Liouvillian
-TrotterLayer
 Ising
 ```
+
+## Inspecting a model
+
+```@docs
+dissipator
+oneterms
+isaxial
+isexpandable
+```
+
+## Models and layers
+
+```@docs
+Model
+TrotterLayer
+distribute!
+scalelayer
+```
+
+`trotterise` is documented under [Propagators](@ref) in [Methods and algorithms](@ref).

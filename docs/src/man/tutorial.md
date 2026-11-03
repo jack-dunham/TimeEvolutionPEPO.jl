@@ -4,129 +4,116 @@
 CurrentModule = TimeEvolutionPEPO
 ShareDefaultModule = true
 ```
-To get started, load TimeEvolutionPEPO.jl and the TensorKit package.jl
+
+To get started, load TimeEvolutionPEPO.jl and TensorKit.jl.
+
 ```@repl
-using Logging # hide
 using TimeEvolutionPEPO
 using TensorKit
-TimeEvolutionPEPO.Random.seed!(1234) # hide
 ```
-## Computing Observables
 
-To calculate expectation values of observables, one must first construct a reduced density matrix from the tensor network.
-To do this, a boundary algorithm (and associated boundary bond dimension) must be chosen to compute the partial trace of the environment around those lattice sites to be left untraced.
-Such an object is represented by the `DensityMatrix` struct.
-A `DensityMatrix` can the be used to compute reduced density matrices.
-```@example
-function magnetisation(pepo::PEPO; alg = CTMRG(bonddim = 16, tol = 1e-8, verbose=false))
-    dm = DensityMatrix(pepo, alg)
-    rdm = partialtrace(dm, (1,1))
+## Setting up a simulation
 
-    M = expval(rdm, PAULI[1])
+A simulation needs an initial state, a model, and a time step.
 
-    return real(M)
-end
-```
-In practice it is useful to save the `DensityMatrix` object rather than running the boundary renormalization every time one wishes to compute a local observable.
-The correlation length of a state can be directly accessed directly from the `DensityMatrix` object without first needing to compute a partial trace:
+The state is an `InfinitePEPO` whose tensors are density matrices. `productpepo` builds one from a
+local density matrix per unit-cell site, given here as spin-1/2 Bloch vectors, together with the
+virtual bond dimension.
+
 ```@repl
-pepo = PEPO((0,0,-1), ℂ^2, ℂ^4);
-dm = DensityMatrix(pepo, VUMPS(bonddim = 16))
-correlationlength(dm)
+state = productpepo(fill((0, 0, -1), 2, 2), 4);
+size(state)
 ```
-It is also possible to compute arbitrary ``n``-point observables be computing reduced density matrices over multiple sites:
-```@example
-function cx13(dm::DensityMatrix)
-    X = PAULI[1]
-    id = one(X)
 
-    rdm13 = partialtrace(dm, (1,1), (3,1)) # specified sites do not have to be adjacent
-    cx13 = expval(rdm13, X, X) - expval(rdm13, kron(X, id)) * expval(rdm13, kron(id, X))
+The model is a term, or a vector of terms giving the Suzuki-Trotter layers. As an example, take the
+nearest-neighbour Ising model
 
-    return cx13
-end
-```
-## Running Simulation
-
-Simulations must first be initialised using three arguments.
-First, a tensor network representation of an initial state must be defined. 
-This can be one obtained from a different `Simulation` object by calling the function [`quantumstate`](@ref) on this object to return the `PEPO` associated with that simulation.
-
-```@example
-function newsim(model)
-    # Set initial state to a product state of spins pointing down along the z-axis on a two-by-two
-    # unit-cell
-    ρ = fill((0,0,-1), 2, 2)
-
-    # Set the bond dimension equal to 4
-    D = 4
-
-    # Initialise using the TEBD (with default options)
-    method = TEBD()
-
-    # Construct the tensor network. We enforce a checkerboard lattice using 
-    # the `SquareSymmetric` type parameter
-    state = PEPO{SquareSymmetric}(ρ, 4)
-
-    sim = Simulation(state, model, method; timestep=0.025)
-
-    return sim
-end
-```
-We can then run the simulation be calling `simulate!`.
-```@example
-function runsim!(sim)
-    magn = Float64[]
-    time = Float64[]
-
-    # This custom function is executed at regular intervals during the simulation
-    callback = sim -> begin
-        # Get some useful simulation information 
-        info = simulationinfo(sim)
-
-        # Get tge `PEPO` object contained in `sim`
-        state = quantumstate(sim)
-
-        with_logger(NullLogger()) do # hide
-        push!(magn, magnetisation(state))
-        end # hide
-        push!(time, info.simtime)
-    end
-
-    # Initially, dynamics are faster, so execute callback every time step
-    simulate!(callback, sim; numsteps = 50, maxshots = 50, verbose=false)
-
-    # Sample only every 3rd time step for another 150 steps
-    simulate!(callback, sim; numsteps = 150, maxshots = 50, verbose=false)
-
-    return magn, time
-end
-```
-As an example, consider the nearest-neighbour Ising model:
 ```math
 H = \frac{J}{4} \sum_{\langle i,j \rangle} \sigma^{z}_i \sigma^{z}_j
 ```
-with transverse dissipation ``L_j = \frac{\sqrt{\gamma}}{2}(\sigma^y_j - i\sigma^z_j)``. 
-This model can be constructed by using the following code (where we have chosen ``\gamma = 1``:
+
+with transverse dissipation ``L_j = \frac{\sqrt{\gamma}}{2}(\sigma^y_j - i\sigma^z_j)``, at
+``\gamma = 1``.
+
 ```@repl
 X, Y, Z = PAULI
-model = J -> Model(J / 4 * LocalOp(Z,Z) + Dissipator(0.5 * (Y - im * Z)))
+model = J -> J / 4 * LocalOp(Z, Z) + Dissipator(0.5 * (Y - im * Z))
 ```
-This can then be passed into the functions we have defined previously.
+
+`Simulation` holds the state, its bond weights and the Trotter decomposition of the propagator.
+
 ```@repl
-sim = newsim(model(3.0));
-magn, time = runsim!(sim);
+sim = Simulation(state, model(3.0); timestep = 0.05);
 ```
-Note the `Simulation` object `sim` mutates in the process. 
-Some information pertaining to a given `Simulation` object can be obtained by calling:
+
+## Running it
+
+`simulate!` advances the simulation in place and optionally calls a callback on a schedule. The
+callback is passed the `Simulation` itself.
+
 ```@repl
+magnetisation(sim; bonddim = 8) = real(expval(partialtrace(DensityMatrix(quantumstate(sim), bonddim), (1, 1)), PAULI[1]))
+magn, times = Float64[], Float64[];
+callback = sim -> begin
+    push!(magn, magnetisation(sim))
+    push!(times, simulationinfo(sim).simtime)
+end;
+simulate!(callback, sim; numsteps = 20, maxshots = 10, verbose = false);
+magn[end]
+```
+
+`simulate!` can be called again on the same object to continue from where it stopped, for instance to
+sample less often once the fast transient is over.
+
+```@repl
+simulate!(callback, sim; numsteps = 40, maxshots = 10, verbose = false);
 simulationinfo(sim)
 ```
-which can also be accessed in the callback function.
-Lets plot the results of the simulation using the Plots.jl package.
+
+Passing `breaktol` stops early once the change in bond weights per unit time drops below it, which is
+how a steady state or a converged thermal state is detected.
+
+## Computing observables
+
+Expectation values are taken in a reduced density matrix, which requires contracting the boundary
+around the sites left untraced. `DensityMatrix` runs that boundary contraction once, at the given
+boundary bond dimension, and is worth keeping rather than rebuilding for every observable.
+
 ```@repl
-using Makie, CairoMakie # Make sure this is `add`ed to you environment!
-scatterlines(time, magn)
+dm = DensityMatrix(quantumstate(sim), 8);
+isconverged(dm)
+rdm = partialtrace(dm, (1, 1));
+real(expval(rdm, Z))
+```
+
+`partialtrace` takes any number of sites, which need not be adjacent, and `expval` then takes one
+operator per site in the order the sites were given.
+
+```@repl
+pair = partialtrace(dm, (1, 1), (2, 2));
+real(expval(pair, X, X)) - real(expval(pair, X, one(X))) * real(expval(pair, one(X), X))
+```
+
+`correlator` is the same computation written as a two-point function, and `negativity` measures the
+entanglement of a two-site reduced density matrix.
+
+```@repl
+real(correlator(dm, X, (1, 1), X, (1, 2)))
+negativity(partialtrace(dm, (1, 1), (1, 2)))
+```
+
+The correlation length is read straight off the boundary environment and needs no partial trace.
+
+```@repl
+correlationlength(dm)
+```
+
+## Plotting the trajectory
+
+```@repl
+using Makie, CairoMakie # Make sure this is `add`ed to your environment!
+scatterlines(times, magn)
 save("quick-start-magn-plot.svg", current_figure()); nothing # hide
 ```
+
 ![Magnetisation plot](quick-start-magn-plot.svg)

@@ -1,66 +1,87 @@
+# User-facing driver: holds the state, its bond weights and the Trotter decomposition, and runs the
+# time steps with a callback schedule.
+
 """
 $(TYPEDEF)
 
-Concrete type representing mutable state of a simulation. Note, the fields of `Simulation`
-are internal and not part of the public API.
+Mutable state of a simulation: the density-matrix PEPO, its bond weights, the Trotter decomposition
+of the propagator, and the [`DampedUpdate`](@ref) that says how a step is taken. The fields are
+internal.
 
 # Constructors
 
-    $(FUNCTIONNAME)(pepo::PEPO, model, method::AbstractMethod; timestep::Float64, kwargs...)
+    Simulation(state::InfinitePEPO, model; timestep, alg = DampedUpdate(), weights = SUWeight(state))
 
-Initialise a `Simulation` of the model `model` using `method` with initial quantum state 
-defined by `pepo`. A `timestep` must be supplied as a keyword argument. An addition, the 
-following optional keywords can also be used:
-
-## Optional Keywords
-
-- `order::Int=1`: order of the trotter decomposition (if any).
-- `storeall::Bool=true`: this should be set to false if one does not wish to store objects
-    that can be reconstructed; useful if, for example, very large tensors are used for the
-    time evolution. Repeated calls to `simulate!` will be slower if this is set to `true`.
+`model` is a [`Model`](@ref), or a term or a vector of terms as shorthand for a single-layer or
+uniform model, as [`trotterise`](@ref) accepts. `alg` is the default for every [`simulate!`](@ref)
+call on this simulation; a call may override it or any of its fields.
 
 See also: [`simulate!`](@ref)
 """
-struct Simulation{E<:AbstractTimeEvolution,P<:AbstractPEPO,L<:AbstractTimeStepper,M,T}
+struct Simulation{M, D, A}
     info::SimulationInfo
-    method::E
     model::M
-    state::P
-    stepper::TrotterDecomposition{L}
-    truncators::Vector{T}
-    initialstate::P
-    function Simulation(
-        info::SimulationInfo,
-        method::E,
-        model::M,
-        state::P,
-        stepper::TrotterDecomposition{L},
-        truncators::Vector{T},
-        initialstate::P,
-    ) where {E,P,L,M,T}
-        return new{E,P,L,M,T}(info, method, model, state, stepper, truncators, initialstate)
-    end
-    function Simulation(
-        info::SimulationInfo,
-        method::E,
-        model::M,
-        state::P,
-        ::TrotterDecomposition{L},
-        ::Vector{T},
-        ::Nothing,
-    ) where {E,P,L,M,T}
-        return new{E,P,L,M,T}(info, method, model, state)
-    end
+    state::InfinitePEPO
+    weights::SUWeight
+    decomposition::D
+    timestep::Float64
+    alg::A
 end
+
+function Simulation(
+        state::InfinitePEPO, model; timestep, alg::DampedUpdate = DampedUpdate(),
+        weights::SUWeight = SUWeight(state), info::SimulationInfo = SimulationInfo()
+    )
+    P = only(unique(physicalspace(state)))
+    decomposition = trotterise(model, P, timestep)
+
+    Nr, Nc, = size(state)
+    for entry in decomposition
+        entry isa PEPSOLayer && continue
+        propagators = first(entry)
+        size(propagators) == (1, 1) || size(propagators) == (Nr, Nc) || throw(
+            DimensionMismatch(
+                "a model layer of size $(size(propagators)) cannot be applied to a " *
+                    "$Nr×$Nc unit cell: give a 1×1 layer or one matching the state"
+            ),
+        )
+    end
+
+    return Simulation(info, model, state, weights, decomposition, timestep, alg)
+end
+
+"""
+    $(TYPEDSIGNATURES)
+
+The density-matrix PEPO a simulation is evolving. Mutated in place by [`simulate!`](@ref).
+"""
+quantumstate(sim::Simulation) = sim.state
+
+"""
+    $(TYPEDSIGNATURES)
+
+The bond weights of a simulation's state, one per bond of the unit cell.
+"""
+bondweights(sim::Simulation) = sim.weights
+
+"""
+    $(TYPEDSIGNATURES)
+
+The [`DampedUpdate`](@ref) a simulation steps with by default.
+"""
+algorithm(sim::Simulation) = sim.alg
+
+timestep(sim::Simulation) = sim.timestep
 
 function Base.show(io::IO, m::MIME"text/plain", sim::Simulation)
     println(io, "SIMULATION")
     println(io, "≡≡≡≡≡≡≡≡≡≡")
     println(io, "size: $(size(quantumstate(sim)))")
     println(io, "timestep: $(timestep(sim))")
-    println(io, "METHOD")
-    println(io, "≡≡≡≡≡≡")
-    show(io, m, sim.method)
+    println(io, "Trotter layers: $(length(sim.decomposition))")
+    println(io, "MODEL")
+    println(io, "≡≡≡≡≡")
+    show(io, m, sim.model)
     println(io, "")
     println(io, "INFO")
     print(io, "≡≡≡≡")
@@ -71,445 +92,104 @@ function Base.show(io::IO, m::MIME"text/plain", sim::Simulation)
     return nothing
 end
 
-unitcellsize(x::AbstractMatrix) = size(x)
-unitcellsize(_) = (1, 1)
+"""
+    $(TYPEDSIGNATURES)
 
-similar_matrix(A::AbstractMatrix, outsize) = Matrix{eltype(A)}(undef, outsize)
-similar_matrix(A, outsize) = Matrix{typeof(A)}(undef, outsize)
-
-geometrytype(::Type{G}) where {G<:TRGroups.AbstractUnitCellGeometry} = G
-geometrytype(::Type{<:AbstractUnitCell{G}}) where {G} = G
-geometrytype(::Type{<:AbstractMatrix}) = Square
-geometrytype(T::DataType) = Square
-geometrytype(g) = geometrytype(typeof(g))
-
-function promote_geometry_type(
-    A::Type{G}, B::Type{G}
-) where {G<:TRGroups.AbstractUnitCellGeometry}
-    return G
-end
-promote_geometry_type(args...) = mapreduce(geometrytype, promote_geometry_type, args)
-function promote_geometry(A::Type, B::Type)
-    throw(ErrorException("TODO: incompatible lattice geometries"))
-end
-
-copyspaceto!(mat, arg::AbstractMatrix) = copyto!(mat, arg)
-copyspaceto!(mat, arg::TensorSpace) = copyto!(mat, [arg;;])
-
-@deprecate(
-    Simulation(model, rho0, physical, virtual; method, kwargs...),
-    Simulation(PEPO(rho0, physical, virtual), model, method; kwargs...)
-)
-
-function Simulation(
-    pepo::PEPO,
-    model,
-    method::AbstractTimeEvolution,
-    info=SimulationInfo();
-    timestep,
-    storeall=true,
-    order=1,
-)
-    stepper = newstepper(physicalspace(pepo), model, method; order=order, timestep=timestep)
-
-    state = newevolution(pepo, stepper, method)
-
-    truncators = _newtruncators(state, stepper, method.alg)
-
-    initialstate = storeall ? deepcopy(state) : nothing
-
-    sim = Simulation(info, method, model, state, stepper, truncators, initialstate)
-
-    return sim
-end
-
-function initenvironment(network, alg::AbstractBoundaryAlgorithm; kwargs...)
-    return Renormalization(network, alg; kwargs...)
+Named tuple of the simulation's progress: see [`SimulationInfo`](@ref).
+"""
+function simulationinfo(sim::Simulation)
+    names = fieldnames(SimulationInfo)
+    return NamedTuple{names}(map(name -> getfield(sim.info, name), names))
 end
 
 """
-    simulate([callback = identity], sim::Simulation; numsteps::Int, kwargs...)
+    $(TYPEDSIGNATURES)
 
-Run the simulation defined in `sim` for `numsteps` iterations. Note, `numsteps` is a keyword
-argument. The callable `callback` takes a single argument, the `sim` object itself and is
-executed during every shot (default behaviour results in a shot at the end of each step).
-
-# Optional Keywords
-- `breaktol::Integer=0.0`: break the simulation when convergence falls below this value.
-- `maxshots::Integer=numsteps`: `callback` will be executed at most `maxshots` number of times
-    at evenly spaced intervals throughout the time evolution
-- `maxtime::Float64=Inf`: maximum wall clock time allowed. If the wall clock time since the
-    start `simulate` was called exceeds this value, then no more iterations occur.
-- `numinit::Integer=0`: skip this many iterations. Useful if you are resuming a simulation but wish 
-    to maintain the same sot schedule
-- `verbose::Bool=true`: if `true`, log simulation progress at the `@info` log level
-
-See also: [`Simulation`](@ref).
+Largest relative change per unit time between two sets of bond weights, the measure of approach to a
+steady state. Bonds whose space changed count as `Inf`.
 """
-simulate!(sim::Simulation; kwargs...) = simulate!(identity, sim; kwargs...)
+function weightdistance(previous::SUWeight, current::SUWeight, dt::Real)
+    return maximum(zip(previous, current)) do (old, new)
+        space(old) == space(new) || return Inf
+        return norm(old - new) / (dt * norm(new) * dim(codomain(new)))
+    end
+end
+
+"""
+    simulate!([callback = identity], sim::Simulation, [alg::DampedUpdate]; numsteps, kwargs...)
+
+Run `numsteps` time steps. `callback` is passed `sim` itself, and `alg` says how each bond is updated
+and how often the gauge is re-fixed. Omitting `alg` builds one from the keywords below.
+
+## Optional keywords
+
+- `maxshots::Integer = numsteps`: call `callback` at most this many times, at evenly spaced steps
+- `maxtime::Float64 = Inf`: stop once this much wall-clock time has elapsed
+- `breaktol::Float64 = 0.0`: stop once the change in bond weights per unit time falls below this
+- `verbose::Bool = true`: log progress at `@info`
+- `trunc`, `truncalg`, `envalg`, `zeta`, `gaugeevery`, `iterative`: fields of [`DampedUpdate`](@ref),
+  each defaulting to the simulation's own `alg`, so a call may override one field without restating
+  the rest
+
+A sweep leaves the Vidal gauge only approximately, and imaginary-time evolution amplifies the drift
+until the bond spectrum collapses. Setting `gaugeevery` prevents that, and restores a state in which
+it has already happened, since the drift misrepresents the state rather than destroying it. Thermal
+evolution needs it; Lindblad evolution has not been observed to.
+"""
+simulate!(sim::Simulation, args...; kwargs...) = simulate!(identity, sim, args...; kwargs...)
+
 function simulate!(
-    callback,
-    sim::Simulation;
-    numsteps::Integer,
-    maxshots::Integer=numsteps,
-    maxtime::Float64=Inf,
-    breaktol::Float64=0.0,
-    verbose::Bool=true,
-    numinit::Integer=0,
-)
-    initial_wall_time = time()
+        callback, sim::Simulation; trunc = sim.alg.trunc, truncalg = sim.alg.truncalg,
+        envalg = sim.alg.envalg, zeta = sim.alg.zeta, gaugeevery = sim.alg.gaugeevery,
+        iterative = sim.alg.iterative, kwargs...
+    )
+    alg = DampedUpdate(; trunc, truncalg, envalg, zeta, gaugeevery, iterative)
+    return simulate!(callback, sim, alg; kwargs...)
+end
 
-    method = sim.method
-    pepo = sim.state
-    model = sim.model
-
-    # Get simulation infomation and set appropriate fields
-    info = getfield(sim, :info)
+function simulate!(
+        callback, sim::Simulation, alg::DampedUpdate; numsteps::Integer,
+        maxshots::Integer = numsteps, maxtime::Float64 = Inf, breaktol::Float64 = 0.0,
+        verbose::Bool = true
+    )
+    info = sim.info
     info.finished = false
-    info.converged = convergence(info) < breaktol
+    started = time()
+    walltime₀, simtime₀ = info.walltime, info.simtime
 
-    total_wall_duration = info.walltime
-    total_sim_duration = info.simtime
+    shotsat = collect(range(; start = 0, step = max(1, cld(numsteps, maxshots)), stop = numsteps))
+    previous = deepcopy(sim.weights)
 
-    truncalg = method.alg
-
-    # Shots are taken at these iterations
-    r = range(; start=0, step=round(Int, numsteps / maxshots, RoundUp), stop=numsteps)
-    shotsat = collect(r)
-
-    # Need to copy the weights otherwise they will mutate
-    prev_weights = deepcopy(bondweights(pepo))
-
-    # Only do the first callback if the simulation is just starting, otherwise it will
-    # duplicate
     info.iterations == 0 && callback(sim)
 
-    if isdefined(sim, :stepper)
-        stepper = sim.stepper
-    else
-        stepper = newstepper(physicalspace(pepo), model, method)
-    end
+    step = 0
+    while step < numsteps
+        timestep!(sim.state, sim.weights, sim.decomposition, alg)
+        step += 1
+        alg.gaugeevery > 0 && step % alg.gaugeevery == 0 && gaugefix!(sim.state, sim.weights)
 
-    if isdefined(sim, :truncators)
-        truncator = sim.truncators
-    else
-        truncator = _newtruncators(pepo, stepper, truncalg)
-    end
-
-    numinit > 0 && @info "Resuming simulation from $numinit iterations."
-    numiter = numinit
-
-    tol = Inf
-
-    while numiter < numsteps
-        timestep!(pepo, truncator, stepper, truncalg)
-        # Calculate the difference in pepo singular values between timesteps
-        tol = tolerance!(prev_weights, bondweights(pepo), timestep(sim))
-
-        numiter += 1
-        verbose && @info "Steady state convergence: $tol after $numiter iterations."
-
-        info.convergence = tol
+        info.convergence = weightdistance(previous, sim.weights, sim.timestep)
+        previous = deepcopy(sim.weights)
         info.iterations += 1
+        info.simtime = simtime₀ + step * sim.timestep
+        info.walltime = walltime₀ + (time() - started)
 
-        # We compute the delta's like this to avoid floating point rounding errors you would obtain if
-        # incrementing the total times. Less important for wall time, but for sim time you often expect 
-        # an exact final time.
-        sim_time_delta = (numiter - numinit) * timestep(sim)
-        info.simtime = sim_time_delta + total_sim_duration
+        verbose && @info "step $step of $numsteps, convergence $(info.convergence)"
+        step in shotsat && callback(sim)
 
-        wall_time_delta = time() - initial_wall_time
-        info.walltime = wall_time_delta + total_wall_duration
-
-        # User specified function for post-step processing
-        if numiter in shotsat
-            pepo isa AxialPEPO && setaxis!(pepo, 1)
-            callback(sim)
-        end
-
-        if wall_time_delta > maxtime
-            @info "Maximum simulation time $wall_time_delta > $maxtime exceeded after $numiter iterations."
-
-            pepo isa AxialPEPO && setaxis!(pepo, 1)
-            callback(sim)
-
-            # Return early
-            return sim
+        if time() - started > maxtime
+            verbose && @info "wall-clock budget exhausted after $step steps"
+            break
         elseif info.convergence < breaktol
             info.converged = true
-
-            @info "Converged."
-
-            pepo isa AxialPEPO && setaxis!(pepo, 1)
-            callback(sim)
-
+            verbose && @info "converged after $step steps"
             break
         end
     end
 
-    pepo isa AxialPEPO && setaxis!(pepo, 1)
+    # The gauge drifts between fixes, so a run that stops mid-interval would hand back a drifted state.
+    alg.gaugeevery > 0 && step % alg.gaugeevery != 0 && gaugefix!(sim.state, sim.weights)
 
     info.finished = true
-
-    @info "Finished."
-    @info "Steady state convergence: $tol after $numiter iterations."
-    @info "Total iterations for this Simulation: $(info.iterations))."
-
     return sim
-end
-
-"""
-    $(TYPEDSIGNATURES)
-
-Return `sim` with the time step mutated to `timestep`.
-"""
-function updatetimestep!(sim::Simulation, timestep::Float64)
-    space = physicalspace(quantumstate(sim))
-
-    new_decomposition = newstepper(
-        space, sim.model, sim.method; order=trotterorder(sim), timestep=timestep
-    )
-
-    sim.stepper.head = new_decomposition.head
-    sim.stepper.body = new_decomposition.body
-    sim.stepper.tail = new_decomposition.tail
-
-    sim.stepper.timestep = timestep
-
-    return sim
-end
-
-# function Base.getproperty(::Simulation, ::Symbol)
-#     throw(ArgumentError("field access is an unsupported interface for `Simulation` objects"))
-#     return nothing
-# end
-
-## INTERFACE
-"""
-    $(TYPEDSIGNATURES)
-
-Return the quantum state associated with object a simulation.
-"""
-quantumstate(s::Simulation) = quantumstate(getfield(s, :state))
-quantumstate(p::PEPO) = p
-quantumstate(p::AxialPEPO) = p.parent
-
-"""
-    $(TYPEDSIGNATURES)
-
-Return the order of the Trotter decomposition of a simulation.
-"""
-trotterorder(sim::Simulation) = sim.stepper.order
-
-"""
-    $(TYPEDSIGNATURES)
-
-Return the time step used by a simulation.
-"""
-timestep(sim::Simulation) = sim.stepper.timestep
-
-"""
-    $(TYPEDSIGNATURES)
-
-Return a named tuple containing simulation information. See [`SimulationInfo`](@ref)
-for details of the containted fields.
-"""
-function simulationinfo(s::Simulation)
-    info = getfield(s, :info)
-
-    names = fieldnames(SimulationInfo)
-
-    values = map(fname -> getfield(info, fname), names)
-
-    return NamedTuple{names}(values)
-end
-
-### REMOVE THESE BELOW
-
-function dampinghook!(sim::Simulation, xi, output)
-    alg = VUMPS(; tol=1e-10, maxiter=50, bonddim=16, verbose=true)
-
-    X, Y, Z = PAULI
-
-    if sim.info.convergence < 1e-6
-        pepo = TimeEvolutionPEPO.quantumstate(sim)
-        dm = DensityMatrix(pepo, alg)
-
-        rhos = map(ind -> ReducedDensityMatrix(dm, ind), uniqueindices(pepo))
-
-        expt = map(x -> expval(x, X), rhos)
-
-        push!(xi, sim.method.alg.zeta)
-        push!(output, expt)
-
-        sim.method.alg.zeta += 20.0
-    end
-
-    return nothing
-end
-
-function measurehook!(sim::Simulation, A=PAULI[1]; env=nothing)
-    pepo = TimeEvolutionPEPO.quantumstate(sim)
-
-    simple_update_gauge_parallel!(pepo; tol=1e-8, maxiter=200, reset=false)
-    # minimalcanonicalform!(pepo; tol=1e-8, maxiter=10000)
-
-    alg = VUMPS(; tol=1e-8, maxiter=200, bonddim=16, verbose=true)
-    # alg = CTMRG(; tol=1e-8, maxiter=200, bonddim=16, verbose=true, randinit=false)
-    #
-    # env = newcontraction(alg, contractphysical( TimeEvolutionPEPO.tensors(pepo)))
-    # renormalize!(env, contractphysical( TimeEvolutionPEPO.tensors(pepo)))
-
-    # dm = DensityMatrix(trivialise(pepo), alg)
-    dm = DensityMatrix(pepo, alg)
-    rhos = map(ind -> partialtrace(dm, ind), uniqueindices(pepo))
-    # dm = DensityMatrix(pepo, env)
-
-    expt = map(x -> expval(x, A), rhos)
-    return expt
-
-    # corr = [correlator(dm, A, (1, 1), A, (i, 1)) for i in 2:20]
-    # return corr
-end
-
-function measurehook!(output::Vector, sim, args...)
-
-    # init
-
-    # alg = CTMRG(; tol=1e-8, maxiter=200, bonddim=16, verbose=true)
-    # alg = VUMPS(; tol=1e-10, maxiter=200, bonddim=20, verbose=true)
-    alg = CTMRG(; tol=1e-10, maxiter=100, bonddim=16, verbose=true, randinit=false)
-
-    env = nothing #newcontraction(alg, contractphysical(tensors))
-    # runcontraction!(env)
-
-    f = sim -> begin
-        exp1 = measurehook!(sim, args...; env=env)
-        push!(output, exp1)
-        return nothing
-    end
-
-    return f
-end
-
-function vumpshook!(output, A)
-    return sim -> begin
-        pdm = PurifiedDensityMatrix(quantumstate(sim), VUMPS(; bonddim=16, tol=1e-8))
-
-        rdm = partialtrace(pdm, (1, 1))
-
-        m = abs(expval(rdm, A))
-        l = correlationlength(pdm)
-
-        push!(output, (m, l))
-
-        return nothing
-    end
-end
-function errorhook!(output)
-    f = sim -> begin
-        push!(output, sim.info.convergence)
-    end
-    return f
-end
-
-function correlatorhook!(output)
-    # alg = VUMPS(; tol=1e-10, maxiter=200, bonddim=16, verbose=true)
-    alg = CTMRG(; tol=1e-10, maxiter=200, bonddim=16, verbose=true, randinit=false)
-    f = sim -> begin
-        dm = DensityMatrix(quantumstate(sim), alg)
-        try
-            xi = PEPOKit.correlationlength(dm)
-            push!(output, xi)
-        catch e
-            push!(output, NaN)
-        end
-    end
-    return f
-end
-
-function fullcorrelatorhook!(output)
-    f =
-        sim -> begin
-            ds, es = PEPOKit.correlationlength(
-                D -> VUMPS(; bonddim=D), PEPOKit.quantumstate(sim), 10:1:20
-            )
-            push!(output, (ds, es))
-        end
-    return f
-end
-
-function negativityhook!(sim::Simulation)
-    # if sim.info.iterations < 1
-    #     return sim
-    # end
-
-    pepo = quantumstate(sim)
-
-    alg = VUMPS(; maxiter=100, bonddim=16, verbose=true)
-
-    dm = DensityMatrix(pepo, alg)
-    rdm1 = TimeEvolutionPEPO.ReducedDensityMatrix(dm, (1, 1), (2, 1))
-    rdm2 = TimeEvolutionPEPO.ReducedDensityMatrix(dm, (1, 1), (3, 1))
-
-    return (negativity(rdm1), negativity(rdm2))
-end
-
-function negativityhook!(output, sim::Simulation)
-    return sim -> push!(output, negativityhook!(sim))
-end
-
-function negativityhook!(output::AbstractVector)
-    return sim -> push!(output, negativityhook!(sim))
-end
-
-function test_p2s!(out, op, mpo, us, vw, vn)
-    @tensoropt (
-        k => 2,
-        b => 2,
-        kk => 2,
-        bb => 2,
-        e1 => 4,
-        w1 => 4,
-        s1 => 4,
-        n1 => 4,
-        w => 4,
-        s => 4,
-        n => 4,
-        e2 => D,
-        w2 => D,
-        s2 => D,
-        n2 => D,
-    ) out[k b; e1 e2 s w n] =
-        op[kk bb; e1 s1 w1 n1] *
-        mpo[k b kk bb; e2 s2 w2 n2] *
-        us[s1 s2; s] *
-        vw[w; w1 w2] *
-        vn[n; n1 n2]
-    return out
-end
-function test_p2s(op, mpo, us, vw, vn)
-    @tensoropt (
-        k => 2,
-        b => 2,
-        kk => 2,
-        bb => 2,
-        e1 => 4,
-        w1 => 4,
-        s1 => 4,
-        n1 => 4,
-        w => 4,
-        s => 4,
-        n => 4,
-        e2 => D,
-        w2 => D,
-        s2 => D,
-        n2 => D,
-    ) out[k, b, e1, e2, s, w, n] :=
-        op[kk, bb, e1, s1, w1, n1] *
-        mpo[k, b, kk, bb, e2, s2, w2, n2] *
-        us[s1, s2, s] *
-        vw[w, w1, w2] *
-        vn[n, n1, n2]
-    return out
 end

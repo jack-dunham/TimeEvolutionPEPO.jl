@@ -1,287 +1,84 @@
-# function tebdtensor(
-#     model::LindbladEquation, p1::IndexSpace, p2::IndexSpace, dt; compresstol=eps()
-# )
-#
-#     # ket1 * ket2 * bra1 * bra2
-#     spacecod = p1 * p2 * p1' * p2'
-#     spacedom = p1 * p2 * p1' * p2'
-#
-#     data = zeros(ComplexF64, dim(spacecod), dim(spacedom))
-#     symdata = Array{ComplexF64}(undef, dims(spacecod * spacedom))
-#
-#     if isempty(model.linops)
-#         vecf = thermalvectorise
-#         dt = dt / 2
-#     else
-#         vecf = vectorise
-#         data += 1 / 2 * sum(vecf, model.linops; init=zero(data))
-#     end
-#
-#     # We divide by half again for local terms as in 2D we effectively apply these twice,
-#     data += 1 / 2 * sum(vecf, model.onelocal; init=zero(data))
-#
-#     data += sum(vecf, model.twolocal; init=zero(data))
-#
-#     copyto!(symdata, exp(dt * data))
-#
-#     tensor = TensorMap(symdata, spacecod, spacedom)
-#
-#     # move site one to codomain and site two to domain
-#     tensor = permute(tensor, (1, 3, 5, 7), (2, 4, 6, 8))
-#
-#     u, s, v, _ = tsvd(tensor; trunc=truncbelow(compresstol))
-#
-#     return u * sqrt(s), _transpose(sqrt(s) * v)
-# end
+# Two-site propagators. A Liouvillian acts jointly on the ket and bra of a site, so the propagator
+# carries all four physical legs of a bond and the ket and bra stay separate throughout.
 
-function construct(model, space, method)
-    for t in terms(model)
-        if !(t isa LocalOp{2})
-            throw(ArgumentError("term of type $(typeof(t)) incompatible with TEBD"))
-        end
-    end
-    return dt -> exact_tebd_time_stepper(model, space ,dt)
+"""
+    $(TYPEDSIGNATURES)
+
+Wrap the matrix of a vectorised superoperator as a `TensorMap` on `cod ← dom`. The composite index of
+such a matrix runs ket-slowest (row major) whereas `reshape` fills the fastest axis first, so the legs
+of each group arrive reversed and are permuted back here.
+"""
+function vectorised_tensormap(mat::AbstractMatrix, cod::TensorSpace, dom::TensorSpace)
+    nc, nd = length(dims(cod)), length(dims(dom))
+    perm = (reverse(1:nc)..., reverse((nc + 1):(nc + nd))...)
+    d = dims(cod * dom)
+    arr = permutedims(reshape(mat, map(i -> d[i], perm)), perm)
+    return TensorMap(arr, cod, dom)
 end
 
-function construct(model, physical, method::AbstractTEBD; axis, kwargs...)
+"""
+    $(TYPEDSIGNATURES)
 
-    for t in terms(model)
-        if !(t isa LocalOp{2})
-            throw(ArgumentError("term of type $(typeof(t)) incompatible with TEBD"))
+Two-site generator of `anchor` and `neighbour` as a matrix, in the vectorisation the term algebra
+uses: composite index `(ket₁, ket₂, bra₁, bra₂)`, ket slowest. A `Hamiltonian` gives the thermal
+generator and a `Liouvillian` the Lindblad one.
+"""
+function generator(anchor::AbstractTerm, neighbour::AbstractTerm, P::IndexSpace)
+    d = dim(P)
+    data = zeros(ComplexF64, d^4, d^4)
+
+    vecf = _vectorisation(anchor)
+    vecf === _vectorisation(neighbour) || throw(
+        ArgumentError(
+            "a bond cannot mix a thermal and a Lindblad generator: " *
+                "got $(typeof(anchor)) and $(typeof(neighbour))"
+        ),
+    )
+
+    # Two-local terms belong to the bond and come from the anchor; one-local terms belong to a site.
+    length(terms(anchor)) > 0 && (data += sum(vecf, terms(anchor)))
+
+    for (slot, site) in ((1, anchor), (2, neighbour))
+        for h in oneterms(site)
+            data += onsite(vecf(LocalOp{2}), slot)(Matrix{ComplexF64}(h))
         end
-    end
-
-    model = unwrap(model)
-
-    rv =
-        timestep -> begin
-            if axis == 1
-                incr = (1, 0)
-            elseif axis == 2
-                incr = (0, 1)
-            end
-
-            p1p2 = broadcast(tuple, physical, circshift(physical, .-incr))
-
-            uvs = broadcast(p1p2, model) do (p1, p2), modeli
-                return tebdtensor(modeli, p1, p2, timestep; compresstol=method.compresstol)
-            end
-
-            lat = broadcast(tuple, first.(uvs), circshift(last.(uvs), incr))
-
-            if method isa AxialTEBD
-                lat = broadcast(lat) do (u, v)
-                    @tensoropt out[ok ob ik ib; e w] := u[ok ob x y; e] * v[x y ik ib; w]
-                    return out
-                end
-            end
-
-            return lat
-        end
-
-    return rv
-end
-function tebdtensor(
-    model::AbstractTerm, p1::IndexSpace, p2::IndexSpace, dt; compresstol=eps()
-)
-    # ket1 * ket2 * bra1 * bra2
-    spacecod = p1 * p2 * p1' * p2'
-    spacedom = p1 * p2 * p1' * p2'
-
-    data = zeros(ComplexF64, dim(spacecod), dim(spacedom))
-    symdata = Array{ComplexF64}(undef, dims(spacecod * spacedom))
-
-    if model isa Hamiltonian
-        vecf = thermalvectorise
-    elseif model isa Liouvillian
-        vecf = vectorise
-        # data += 1 / 2 * sum(vecf, dissipator(model); init=zero(data))
-        D = dissipator(model)
-        if length(D) > 0
-            data += vectorise(D, 2)
+        jumps = dissipator(site)
+        isnothing(jumps) && continue
+        for L in terms(jumps)
+            data += onsite(_dissipatorvec, slot)(L)
         end
     end
 
-    # We divide by half again for local terms as in 2D we effectively apply these twice,
-    if length(oneterms(model)) > 0 
-        data += sum(vecf, oneterms(model); init=zero(data))
-    end
-
-    if length(terms(model)) > 0 
-        data += sum(vecf, terms(model))
-    end
-
-    copyto!(symdata, exp(dt * data))
-
-    tensor = TensorMap(symdata, spacecod, spacedom)
-
-    # move site one to codomain and site two to domain
-    tensor = permute(tensor, (1, 3, 5, 7), (2, 4, 6, 8))
-
-    trunc = length(model) > 0  ? truncbelow(compresstol) : truncdim(1)
-    u, s, v, err = tsvd(tensor; trunc=trunc)
-
-    @info "Compressed to η=$(dim(codomain(s))) with error $err"
-
-    return u * sqrt(s), _transpose(sqrt(s) * v)
+    return data
 end
 
-function broadcastmodel(model::OnAxis)
-    axis = model.axis
-    return broadcast
+_vectorisation(::Hamiltonian) = thermalvectorise
+_vectorisation(::Liouvillian) = vectorise
+_vectorisation(t) = throw(ArgumentError("no generator defined for a model of type $(typeof(t))"))
+
+generator(model::AbstractTerm, P::IndexSpace) = generator(model, model, P)
+
+generator(t::Ising, P::IndexSpace) = generator(_equation(t), P)
+generator(a::Ising, b::Ising, P::IndexSpace) = generator(_equation(a), _equation(b), P)
+
+"""
+    $(TYPEDSIGNATURES)
+
+Two-site propagator `exp(dt * generator(model, P))` as an `AbsTen{4,4}` on the physical legs of a bond,
+ordered `(ket₁, bra₁, ket₂, bra₂)` in both the codomain and the domain.
+"""
+bondpropagator(model::AbstractTerm, P::IndexSpace, dt::Number) = bondpropagator(model, model, P, dt)
+
+"""
+    $(TYPEDSIGNATURES)
+
+Two-site propagator for a bond whose coupling and first-slot one-local part come from `anchor` and
+whose second-slot one-local part comes from `neighbour`, as an `AbsTen{4,4}` ordered
+`(ket₁, bra₁, ket₂, bra₂)` in both the codomain and the domain.
+"""
+function bondpropagator(anchor::AbstractTerm, neighbour::AbstractTerm, P::IndexSpace, dt::Number)
+    matrix = exp(dt * generator(anchor, neighbour, P))
+    spaces = P ⊗ P ⊗ P' ⊗ P'
+    t = vectorised_tensormap(matrix, spaces, spaces)
+    return permute(t, ((1, 3, 2, 4), (5, 7, 6, 8)))
 end
-
-# function (model::LindbladEquation)(physical, method::AbstractClusterMPO; kwargs...)
-#     rv =
-#         timestep -> begin
-#             mpo = MPO(model)
-#
-#             data = clustermpo(
-#                 mpo,
-#                 timestep,
-#                 method.order;
-#                 method.extend,
-#                 method.compress,
-#                 method.approx,
-#             )
-#
-#             tensor = clustermpotensor(data, physical)
-#
-#             return tensor
-#         end
-#
-#     return rv
-# end
-
-# function broadcastmodel(
-#     ::Type{<:LindbladEquation}, model, physical, method::AbstractTEBD; axis, kwargs...
-# )
-#     model = unwrap(model)
-#
-#     rv =
-#         timestep -> begin
-#             if axis == 1
-#                 incr = (1, 0)
-#             elseif axis == 2
-#                 incr = (0, 1)
-#             end
-#
-#             p1p2 = broadcast(tuple, physical, circshift(physical, .-incr))
-#
-#             uvs = broadcast(p1p2, model) do (p1, p2), modeli
-#                 return tebdtensor(modeli, p1, p2, timestep; compresstol=method.compresstol)
-#             end
-#
-#             lat = broadcast(tuple, first.(uvs), circshift(last.(uvs), incr))
-#
-#             if method isa AxialTEBD
-#                 lat = broadcast(lat) do (u, v)
-#                     @tensoropt out[ok ob ik ib; e w] := u[ok ob x y; e] * v[x y ik ib; w]
-#                     return out
-#                 end
-#             end
-#
-#             return lat
-#         end
-#
-#     return rv
-# end
-# LindbladEquation(p::Int) = LindbladEquation([], [], [], [], p::Int)
-
-function broadcastmodel(
-    ::Type{<:Union{Hamiltonian, Liouvillian, Ising}}, model, physical, method::AbstractTEBD; axis, inreverse, kwargs...
-)
-    model = unwrap(model)
-
-    rv =
-        timestep -> begin
-            if axis == 1
-                incr = (1, 0)
-            elseif axis == 2
-                incr = (0, 1)
-            end
-
-            p1p2 = broadcast(tuple, physical, circshift(physical, .-incr))
-
-            uvs = broadcast(p1p2, model) do (p1, p2), modeli
-                return tebdtensor(modeli, p1, p2, timestep; compresstol=method.compresstol)
-            end
-
-            lat = broadcast(tuple, first.(uvs), circshift(last.(uvs), incr))
-
-            if method isa Union{AxialTEBD,GlobalTEBD}
-                lat = broadcast(lat) do (u, v)
-                    if inreverse
-                        @tensoropt out[ok ob ik ib; e w] := v[ok ob x y; w] * u[x y ik ib; e]
-                    else
-                        @tensoropt out[ok ob ik ib; e w] := u[ok ob x y; e] * v[x y ik ib; w]
-                    end
-                    return out
-                end
-            end
-
-            return lat
-        end
-
-    return rv
-end
-
-function broadcastmodel(::Type{<:Union{Hamiltonian,Liouvillian}}, model, physical, method::ClusterPEPO; kwargs...)
-    # kw = paramkwargs(model)
-
-    #TODO, let TrotterLayer be hamiltonain or liouvvilian
-
-    rv =
-        timestep -> begin
-
-            tensors = broadcast(model, physical) do liouvillian, space
-                rules = FSM(space)
-
-                fsmadd!(rules, liouvillian)
-
-                return fsmpepo(rules, space, timestep; method.extend)
-            end
-
-            return tensors
-        end
-
-    return rv
-end
-
-function (model::Union{Hamiltonian, Liouvillian})(physical, method::ClusterMPO; kwargs...)
-    rv =
-        timestep -> begin
-            mpo = MPO(model)
-
-            data = clustermpo(
-                mpo,
-                timestep,
-                method.order;
-                method.extend,
-                method.compress,
-                method.approx,
-            )
-
-            tensor = clustermpotensor(data, physical)
-
-            return tensor
-        end
-    return rv
-end
-
-# function Base.show(io::IO, ::MIME"text/plain", eqn::LindbladEquation)
-#     d = physicaldim(eqn)
-#
-#     n1 = length(eqn.onelocal)
-#     n2 = length(eqn.twolocal)
-#
-#     nl = length(eqn.longrange)
-#
-#     nd = length(eqn.linops)
-#
-#     println(io, "LindbladEquation with d = $d containing:")
-#     println(io, "  $n1 local terms")
-#     println(io, "  $n2 nearest-neighbour terms")
-#     println(io, "  $nl long-range terms")
-#     return print(io, "  $nd lindblad operators")
-# end

@@ -23,7 +23,12 @@ Base.:+(D::Dissipator, h::AbstractTerm) = zero(Hamiltonian) + h + D
 
 terms(D::Dissipator) = D.terms
 
-isaxial(::Dissipator) = false
+# On-site dissipation has no axis, so pinning a dissipative layer to one is well defined and
+# applies the dissipation through that axis's bonds only.
+isaxial(D::Dissipator) = true
+
+_anticomm(L) = kron(L' * L, one(L)) + kron(one(L), transpose(L' * L))
+_dissipatorvec(L) = kron(L, transpose(L')) - 1 / 2 * _anticomm(L)
 
 function vectorise(dissipator::Dissipator, locality=2)
     if isempty(dissipator)
@@ -34,14 +39,10 @@ function vectorise(dissipator::Dissipator, locality=2)
         )
     end
 
-    anticomm = L -> kron(L' * L, one(L)) + kron(one(L), transpose(L' * L))
-
-    vec_local = L -> kron(L, transpose(L')) - 1 / 2 * anticomm(L)
-
     if locality == 1
-        f = vec_local
+        f = _dissipatorvec
     elseif locality == 2
-        f = twolocal(vec_local)
+        f = twolocal(_dissipatorvec)
     else
         throw(
             ArgumentError(
@@ -73,6 +74,10 @@ dissipator(L::Liouvillian) = L.dissipator
 hamiltonian(L::Liouvillian) = L.hamiltonian
 terms(L::Liouvillian) = terms(L.hamiltonian)
 oneterms(L::Liouvillian) = oneterms(L.hamiltonian)
+
+# `terms(L)` only sees the Hamiltonian part, so the `AbstractSumOfTerms` fallback never inspects
+# the dissipator; check it explicitly here.
+isaxial(L::Liouvillian) = isaxial(L.hamiltonian) && isaxial(L.dissipator)
 
 """
     $(FUNCTIONNAME)(H::Hamiltonian)
@@ -117,3 +122,5 @@ end
 Base.:+(L::Liouvillian, H::AbstractTerm) = Liouvillian(L.hamiltonian + H, L.dissipator)
 Base.:+(H::Hamiltonian, D::Dissipator) = Liouvillian(H, D)
 Base.:+(L::Liouvillian, D::Dissipator) = Liouvillian(L.hamiltonian, dissipator(L) + D)
+
+Base.promote_rule(::Type{<:Hamiltonian}, ::Type{<:Liouvillian}) = Liouvillian

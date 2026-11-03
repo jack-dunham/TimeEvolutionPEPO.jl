@@ -5,11 +5,8 @@ CurrentModule = TimeEvolutionPEPO
 ```
 
 ```@docs
-AbstractPEPO
-PEPO
+productpepo
+bloch
 ThermalState
-bondweights
 bondentropy
-expandspace
-subpepo
 ```

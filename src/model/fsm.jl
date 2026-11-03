@@ -44,14 +44,15 @@ function fsmadd!(rules, dissipator::Dissipator)
     return rules
 end
 
-function fsmadd!(rules, liouvillian::Liouvillian)
+function fsmadd!(rules, liouvillian::Liouvillian; kwargs...)
     fsmadd!(rules, dissipator(liouvillian))
-    fsmadd!(rules, hamiltonian(liouvillian); thermal=false)
+    fsmadd!(rules, hamiltonian(liouvillian); thermal=false, kwargs...)
 
     return rules
 end
 
-function fsmadd!(rules, term::LocalOp{1}; thermal=true)
+# `symmetric` has no effect here: a one-local rule occupies no virtual leg.
+function fsmadd!(rules, term::LocalOp{1}; thermal=true, symmetric=false)
     h = Matrix(term)
     Id = one(h)
 
@@ -69,9 +70,12 @@ function fsmadd!(rules, term::LocalOp{1}; thermal=true)
     return rules
 end
 
-function fsmset!(rules, term::GaussOp2d; thermal=false)
-    ms = map(t -> t.a, terms(term.gx))
-    λs = map(t -> t.λ, terms(term.gx))
+function fsmset!(rules, term::GaussOp2d; thermal=false, symmetric=false)
+    mxs = map(t -> t.a, terms(term.gx))
+    λxs = map(t -> t.λ, terms(term.gx))
+
+    mys = map(t -> t.a, terms(term.gy))
+    λys = map(t -> t.λ, terms(term.gy))
 
     a = term.a
 
@@ -91,13 +95,15 @@ function fsmset!(rules, term::GaussOp2d; thermal=false)
 
     @debug "Adding terms with a = $a"
 
-    fsm_add_gaussian!(rules, a, C1, B1, ms, λs)
-    fsm_add_gaussian!(rules, a, C2, B2, ms, λs)
+    add! = symmetric ? fsm_add_gaussian_symmetric! : fsm_add_gaussian!
+    add!(rules, a, C1, B1, mxs, λxs, mys, λys)
+    add!(rules, a, C2, B2, mxs, λxs, mys, λys)
 
     return rules
 end
 
-function fsmset!(rules, term::LocalOp{2}; thermal=false)
+# `symmetric` has no effect here: `fsm_add_ising!` already adds one level per axis, identically.
+function fsmset!(rules, term::LocalOp{2}; thermal=false, symmetric=false)
     a = term.a
 
     C = term.C
@@ -138,7 +144,8 @@ function fsm_add_ising!(rules::FSM, a::Number, C::AbstractMatrix, B::AbstractMat
     return rules
 end
 
-function fsmset!(rules, term::J1J2SymmetricOp; thermal=true)
+# `symmetric` has no effect here: `fsm_add_j1j2_symmetric!` already adds two levels per axis.
+function fsmset!(rules, term::J1J2SymmetricOp; thermal=true, symmetric=false)
     a = term.a
     k = term.k
     CB = term.CB
@@ -199,20 +206,21 @@ function fsm_add_j1j2_symmetric!(rules::FSM, a::Number, k::Number, CB::AbstractM
     return rules
 end
 
-#TODO: This is currently not general in the sense of different approximations along different
-# lattice directions
+# The east-west and north-south chains each take their own sum-of-exponentials approximation, so the
+# two lattice directions may decay differently and need not use the same number of terms.
 function fsm_add_gaussian!(
-    rules::FSM, a::Number, C::AbstractMatrix, B::AbstractMatrix, mks, lks
+    rules::FSM, a::Number, C::AbstractMatrix, B::AbstractMatrix, mxs, lxs, mys, lys
 )
     # Convenience
     Id = one(C)
 
-    @debug "Adding Gaussian PEPSO" weight = a mks
+    @debug "Adding Gaussian PEPSO" weight = a mxs mys
 
-    gapprox = zip(mks, lks)
+    nx = length(mxs)
+    ny = length(mys)
 
-    for (nh, (mk, lk)) in enumerate(gapprox)
-        # mklk = mk * lk 
+    for nh in 1:nx
+        mk, lk = mxs[nh], lxs[nh]
 
         c = rules.h + 2 * nh - 1
         u = rules.h + 2 * nh
@@ -225,13 +233,14 @@ function fsm_add_gaussian!(
         # Finish going west (unconventional)
         rules.B[u, 1, 1, 1] = B
 
-        # Continue going east
+        # Continue going east
         rules.A[c, 1, c, 1] = lk * Id
-        # Continue going west (unconventional)
+        # Continue going west (unconventional)
         rules.A[u, 1, u, 1] = lk * Id
 
-        # Direction change rules
-        for nv in 1:length(gapprox)
+        # Direction change rules. A turning path takes its horizontal start weight here, since the
+        # horizontal `C` rule is only reached by a path that set out going east.
+        for nv in 1:ny
             v = rules.v + nv
 
             # Change from going north to going east
@@ -240,20 +249,87 @@ function fsm_add_gaussian!(
             rules.A[1, v, u, 1] = mk * lk * Id
         end
     end
-    for (nv, (mk, lk)) in enumerate(gapprox)
+    for nv in 1:ny
+        ml, ll = mys[nv], lys[nv]
+
         v = rules.v + nv
         # Start going north
-        rules.C[1, 1, 1, v] = a * mk * lk * C
+        rules.C[1, 1, 1, v] = a * ml * ll * C
 
         # Finish going north
         rules.B[1, v, 1, 1] = B
 
         # Continue going north
-        rules.A[1, v, 1, v] = lk * Id
+        rules.A[1, v, 1, v] = ll * Id
     end
 
-    rules.h += 2 * length(gapprox)
-    rules.v += length(gapprox)
+    rules.h += 2 * nx
+    rules.v += ny
+
+    return rules
+end
+
+# Permutation-symmetric variant: two levels on each axis rather than two east-west and one
+# north-south, so an isotropic term gets the same bond dimension along both. East and north are
+# started by `C` and terminated by `B`; west only terminates and south only starts, which is what
+# keeps the on-axis pairs counted once while giving each off-axis class both a north-first and a
+# south-first path. Each of those two paths carries half the turn weight, so the operator is the
+# same one `fsm_add_gaussian!` builds.
+function fsm_add_gaussian_symmetric!(
+    rules::FSM, a::Number, C::AbstractMatrix, B::AbstractMatrix, mxs, lxs, mys, lys
+)
+    Id = one(C)
+
+    @debug "Adding permutation-symmetric Gaussian PEPSO" weight = a mxs mys
+
+    nx = length(mxs)
+    ny = length(mys)
+
+    for nh in 1:nx
+        mk, lk = mxs[nh], lxs[nh]
+
+        e = rules.h + 2 * nh - 1
+        w = rules.h + 2 * nh
+
+        # Going east: started, continued and finished
+        rules.C[e, 1, 1, 1] = a * mk * lk * C
+        rules.A[e, 1, e, 1] = lk * Id
+        rules.B[1, 1, e, 1] = B
+
+        # Going west: only ever entered by a turn, so it is continued and finished but not started
+        rules.A[w, 1, w, 1] = lk * Id
+        rules.B[w, 1, 1, 1] = B
+
+        for nv in 1:ny
+            n = rules.v + 2 * nv - 1
+            s = rules.v + 2 * nv
+
+            # The turn supplies the horizontal start weight, halved because each off-axis
+            # displacement is reached both north-first and south-first.
+            rules.A[e, n, 1, 1] = mk * lk / 2 * Id
+            rules.A[1, n, w, 1] = mk * lk / 2 * Id
+            rules.A[e, 1, 1, s] = mk * lk / 2 * Id
+            rules.A[1, 1, w, s] = mk * lk / 2 * Id
+        end
+    end
+    for nv in 1:ny
+        ml, ll = mys[nv], lys[nv]
+
+        n = rules.v + 2 * nv - 1
+        s = rules.v + 2 * nv
+
+        # Going north: started, continued and finished
+        rules.C[1, 1, 1, n] = a * ml * ll * C
+        rules.A[1, n, 1, n] = ll * Id
+        rules.B[1, n, 1, 1] = B
+
+        # Going south: started and continued, but never finished -- it must turn
+        rules.C[1, s, 1, 1] = a * ml * ll * C
+        rules.A[1, s, 1, s] = ll * Id
+    end
+
+    rules.h += 2 * nx
+    rules.v += 2 * ny
 
     return rules
 end
@@ -351,13 +427,46 @@ function fsmpepo(rules::FSM, space::IndexSpace, timestep::Real; kwargs...)
     return pepo
 end
 
+"""
+    $(TYPEDSIGNATURES)
+
+Propagator of `model` over one time step `dt` as an `InfinitePEPSO` on a `unitcell` of sites, built
+by the finite-state machine rather than by exponentiating a two-site bond. Unlike
+[`bondpropagator`](@ref) this carries the whole lattice's terms at once, so it can represent a
+coupling of any range: the virtual bond dimension is the number of finite-state-machine states.
+
+Apply it with PEPSKit's `compress((state, S), LocalTruncation(trunc))`, which contracts it onto a
+one-layer `InfinitePEPO` and truncates the virtual bonds back down.
+
+A `Hamiltonian` takes a `thermal` keyword; a `Liouvillian` is always the Lindblad generator.
+
+`symmetric = true` builds the Gaussian terms with two finite-state-machine levels on each axis
+rather than two east-west and one north-south, so an isotropic term gets the same bond dimension
+along both. It represents the same operator, at a larger vertical bond. Every other term type is
+already symmetric in the two axes, so the keyword only changes a `GaussOp2d`.
+"""
+function fsmpepso(
+        model::AbstractTerm, P::IndexSpace, dt::Number; unitcell = (1, 1), extend = true, kwargs...
+    )
+    rules = FSM(P)
+    # `fsmadd!` dispatches on the sum types, so a bare term is promoted the way a layer would be.
+    fsmadd!(rules, layerterm(model); kwargs...)
+
+    # `fsmpepo` orders its virtual legs east-south-west-north, so its horizontal chain lands on the
+    # north-south pair of a `PEPSOTensor`; swapping the two pairs puts it back on east-west.
+    t = permute(fsmpepo(rules, P, dt; extend), ((1, 2, 3, 4), (6, 5, 8, 7)))
+
+    return InfinitePEPSO(fill(t, unitcell..., 1))
+end
+
 function fsmpepo!(tensor::AbstractArray{<:Number,8}, rules, t::Real; extend=true)
     physdim = map(ind -> size(tensor, ind), (1, 2, 3, 4))
 
     incr! = (ind, rhs) -> begin
         bondind = CartesianIndex(ind)
 
-        rhsdata = reshape(rhs, physdim)
+        # As in `fsmpepo2!`: the rule is vectorised ket-slowest, `reshape` fastest-first.
+        rhsdata = permutedims(reshape(rhs, physdim), (2, 1, 4, 3))
 
         for physind in CartesianIndices(rhsdata)
             tensor[physind, bondind] += rhsdata[physind]
@@ -420,7 +529,9 @@ function fsmpepo2!(tensor::AbstractArray{<:Number,8}, rules, timestep::Real; ext
     incr! = (ind, rhs) -> begin
         bondind = CartesianIndex(ind)
 
-        rhsdata = reshape(rhs, physdim)
+        # A rule is vectorised ket-slowest while `reshape` fills the fastest axis first, so each
+        # physical pair arrives as (bra, ket) and is swapped back (see `vectorised_tensormap`).
+        rhsdata = permutedims(reshape(rhs, physdim), (2, 1, 4, 3))
 
         for physind in CartesianIndices(rhsdata)
             tensor[physind, bondind] += rhsdata[physind]

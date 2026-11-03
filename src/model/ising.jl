@@ -6,8 +6,8 @@ Represents an Ising-like term of the form
     \\hat{H}_{jk} = a \\hat{X}_j \\hat{X}_k + \\hat{D}_j
 ```
 together with an (optional) on-site dissipator ``\\hat{\\mathcal{D}}_j``.
-This type allows for certain exact low-rank truncations to take place when using 
-[`TEBD`](@ref). In that case, the two-local nearest-neighbor Suzuki-Trotter gate takes the form
+This type allows for certain exact low-rank truncations to take place when the term is exponentiated
+into a two-site propagator. In that case, the two-local nearest-neighbor Suzuki-Trotter gate takes the form
 ```math
 \\hat{g}_{jk}  = 
 e^{\\frac{\\tau}{4}(
@@ -89,3 +89,9 @@ function scalelocal(L::Ising, a)
 end
 
 isaxial(::Ising) = true
+
+# `Ising` stores its coupling as a single matrix with C == B; the equivalent term is a * C ⊗ C.
+_equation(t::Ising{Hamiltonian}) = Hamiltonian((t.a * LocalOp(t.CB, t.CB),), t.oneterms)
+function _equation(t::Ising{Liouvillian})
+    return Liouvillian(Hamiltonian((t.a * LocalOp(t.CB, t.CB),), t.oneterms), t.dissipator)
+end
