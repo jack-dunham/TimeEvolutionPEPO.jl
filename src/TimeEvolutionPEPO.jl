@@ -9,6 +9,7 @@ using LinearAlgebra
 using PEPSKit
 using Random
 using TensorKit
+using TensorOperations: TensorOperations
 using TupleTools
 
 using PEPSKit: EAST, NORTH, SOUTH, WEST
@@ -47,6 +48,7 @@ export reducedbond_first, reducedbond_last, undo_reducedbond_first, undo_reduced
 export applypropagator, truncatebond, fusephysical, dampweight
 export FullEnvTruncation, ALSTruncation, BondEnvironment, bondenvironment
 export bondstep!, axissweep!, timestep!, DampedUpdate
+export IterativeSU, PEPSOLayer, iterativestep!
 export trotterise
 
 export Simulation, SimulationInfo, simulate!
@@ -84,12 +86,14 @@ include("model/fsm.jl")
 include("model/equation.jl")
 include("truncation/isometries.jl")
 include("truncation/simpleupdate.jl")
+# The one file under src/dev/ that is loaded: iterative simple update for long-range propagators.
+include("dev/iterative.jl")
 include("evolution/dynamicalmap.jl")
 include("convergenceinfo.jl")
 include("simulation.jl")
 include("gauge/abstractgauge.jl")
 
 # Unfinished work that does not run against the refactor lives in src/dev/ and is not included: the
-# NTU cluster metric, IterativeSU, WTG, the long-range PEPO builders, and the model recipes.
+# NTU cluster metric, WTG, the long-range PEPO builders, and the model recipes.
 
 end # module

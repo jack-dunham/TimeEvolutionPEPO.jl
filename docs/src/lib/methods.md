@@ -8,6 +8,7 @@ CurrentModule = TimeEvolutionPEPO
 
 ```@docs
 trotterise
+fsmpepso
 bondpropagator
 generator
 ```
@@ -15,9 +16,18 @@ generator
 ## The sweep
 
 ```@docs
+DampedUpdate
 timestep!
 axissweep!
 bondstep!
+```
+
+## Long-range layers
+
+```@docs
+IterativeSU
+PEPSOLayer
+iterativestep!
 ```
 
 ## Bond truncation

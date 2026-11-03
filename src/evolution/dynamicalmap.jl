@@ -1,5 +1,6 @@
 # Suzuki-Trotter decomposition: a model becomes a sequence of (propagators, axis) pairs, one per layer
-# per axis, with a propagator matrix per layer indexed as its term matrix is.
+# per axis, with a propagator matrix per layer indexed as its term matrix is, and a `PEPSOLayer` for
+# each layer holding a long-range term.
 
 """
     $(TYPEDSIGNATURES)
@@ -30,6 +31,21 @@ end
 # An Ising coupling is nearest-neighbour by construction, and `terms` is not defined for it.
 _checkroute(::Ising) = nothing
 
+# A layer holding a term `_checkroute` rejects is built by the finite-state machine instead.
+_islongrange(t::AbstractTerm) = any(x -> !(x isa LocalOp), collect(terms(t)))
+_islongrange(::Ising) = false
+_islongrange(layer::TrotterLayer) = any(_islongrange, layer.data)
+
+function _layerpepso(layer::TrotterLayer, P::IndexSpace, dt::Number)
+    size(layer) == (1, 1) || throw(
+        ArgumentError("a long-range layer must be uniform (1×1), got $(size(layer))"),
+    )
+    layer.axis == 0 || throw(
+        ArgumentError("a long-range layer acts on both axes, got axis $(layer.axis)"),
+    )
+    return PEPSOLayer(fsmpepso(layer[1, 1], P, dt))
+end
+
 """
     $(TYPEDSIGNATURES)
 
@@ -40,12 +56,18 @@ term matrix is: the bond anchored at `(r, c)` takes its coupling and first-slot 
 
 A layer without an axis is split across both, with its one-local part halved so that a full time step
 applies it once per site: each of the two sweeps would otherwise apply it in full.
+
+A layer holding a long-range term becomes a single [`PEPSOLayer`](@ref) built by [`fsmpepso`](@ref),
+which applies the whole layer, its one-local part included, once per site. Such a layer must be
+uniform and have no axis.
 """
 function trotterise(model::Model, P::IndexSpace, dt::Number)
-    decomposition = Tuple{Matrix{AbstractTensorMap}, Int}[]
+    decomposition = Union{Tuple{Matrix{AbstractTensorMap}, Int}, PEPSOLayer}[]
 
     for layer in model
-        if layer.axis == 0
+        if _islongrange(layer)
+            push!(decomposition, _layerpepso(layer, P, dt))
+        elseif layer.axis == 0
             halved = scalelayer(layer, 0.5)
             push!(decomposition, (_layerpropagators(halved, P, dt, 1), 1))
             push!(decomposition, (_layerpropagators(halved, P, dt, 2), 2))

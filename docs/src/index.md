@@ -25,10 +25,11 @@ into Suzuki-Trotter layers, where several terms in one layer are exponentiated t
 Trotterised apart.
 
 !!! note
-    Only nearest-neighbour terms currently reach the evolution. `trotterise` turns each layer into a
-    two-site propagator on a bond, and the long-range terms — `ExpOp`, `GaussOp`, `PowOp` and their
-    two-dimensional forms — have no route to one yet. They can be constructed and manipulated, but
-    not evolved.
+    `trotterise` turns a nearest-neighbour layer into a two-site propagator on each bond, and a layer
+    holding a long-range term into one propagator for the whole lattice, built by the finite-state
+    machine and applied by iterative simple update ([`IterativeSU`](@ref)). Only `GaussOp2d` and
+    `J1J2SymmetricOp` have a finite-state-machine rule: a `PowOp2d` evolves once expanded into its
+    `GaussOp2d` terms, while `ExpOp`, `GaussOp` and `PowOp` can be built but not evolved.
 
 For Lindblad evolution, dissipation is on-site only.
 
