@@ -83,23 +83,23 @@ iterativestep!(state, weights, layer, alg)
 
 the iterative simple update of the FCLS manuscript (Appendix D). The propagator is contracted onto
 every site, and each bond is cut against the projectors chosen for the other legs of its two sites,
-those legs weighted by their bond weights; the cuts are repeated, all bonds at once, until no weight
-changes by more than `tol`. The layer keeps its final projectors, and the next application starts
-from them.
+those legs weighted by their bond weights; the cuts are repeated, all bonds at once, until the
+weights change by less than `tol`. The layer keeps its final projectors, and the next application
+starts from them. The contractions run in parallel under PEPSKit's scheduler, so
+`PEPSKit.Defaults.set_scheduler!(:serial)` runs them one at a time.
 
 The settings are an [`IterativeSU`](@ref), passed as the `iterative` keyword of `simulate!` or field of
 [`DampedUpdate`](@ref); `trunc` sets the bond dimension as for simple update.
 
 ```julia
 simulate!(sim; numsteps = 400, trunc = truncrank(9),
-    iterative = IterativeSU(; protect = :twosite, mu = 10.0))
+    iterative = IterativeSU(; mu = 10.0))
 ```
 
-`protect` chooses what each cut keeps besides its top singular directions. With `:twosite` the
-nearest-neighbour two-site density matrix across the bond, as belief propagation on the traced
-network sees it, is kept unchanged; with `:trace` only the trace is. `mu = Inf` imposes this exactly,
-which involves inverting an ill-conditioned block; a finite `mu` instead adds the relative change to
-the error the cut minimises, which stays well conditioned. `mu = 0` is the plain cut.
+With `mu = 0`, the default, each cut keeps the bond's top singular directions. A positive `mu` adds to
+the error the cut minimises the relative change of the nearest-neighbour two-site density matrix
+across the bond, as belief propagation on the traced network sees it, weighted by `mu`. This soft
+cut needs spaces without symmetry.
 
 A long-range layer takes no `truncalg` and no finite `zeta`; both raise an `ArgumentError`.
 
