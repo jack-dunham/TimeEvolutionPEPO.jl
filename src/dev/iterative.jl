@@ -9,33 +9,30 @@ How [`iterativestep!`](@ref) cuts the bonds when it applies a long-range propaga
 
 # Constructors
 
-    IterativeSU(; maxiter = 20, tol = 1e-6, protect = :none, mu = Inf)
+    IterativeSU(; maxiter = 20, tol = 1e-6, mu = 0.0)
 
-- `maxiter`, `tol`: repeat the cuts until no bond weight changes by more than `tol`, at most
-  `maxiter` times
-- `protect`: `:none` keeps each bond's top singular directions. `:trace` also keeps the trace of the
-  state, and `:twosite` the two-site density matrix across the bond, both as belief propagation on
-  the traced network sees them through that bond
-- `mu`: `Inf` keeps the `protect` quantities exactly; a finite value instead adds their relative
-  change, weighted by `mu`, to the error the cut minimises
+- `maxiter`, `tol`: repeat the cuts until the bond weights change by less than `tol`, as PEPSKit's
+  `compare_weights` measures it, at most `maxiter` times
+- `mu`: `0` keeps each bond's top singular directions. A positive value also penalises the relative
+  change, weighted by `mu`, of the two-site density matrix across the bond as belief propagation on
+  the traced network sees it; this needs spaces without symmetry
+
+The contractions run in parallel under PEPSKit's scheduler (`PEPSKit.Defaults.set_scheduler!`).
 """
 struct IterativeSU
     maxiter::Int
     tol::Float64
-    protect::Symbol
     mu::Float64
 
-    function IterativeSU(maxiter, tol, protect, mu)
+    function IterativeSU(maxiter, tol, mu)
         maxiter >= 1 || throw(ArgumentError("`maxiter` must be at least 1, got $maxiter"))
-        protect in (:none, :trace, :twosite) ||
-            throw(ArgumentError("`protect` must be :none, :trace or :twosite, got $protect"))
         mu >= 0 || throw(ArgumentError("the penalty weight `mu` must be non-negative, got $mu"))
-        return new(maxiter, tol, protect, mu)
+        return new(maxiter, tol, mu)
     end
 end
 
-function IterativeSU(; maxiter = 20, tol = 1e-6, protect = :none, mu = Inf)
-    return IterativeSU(maxiter, tol, protect, mu)
+function IterativeSU(; maxiter = 20, tol = 1e-6, mu = 0.0)
+    return IterativeSU(maxiter, tol, mu)
 end
 
 """
@@ -64,16 +61,16 @@ PEPSOLayer(propagator) = PEPSOLayer(propagator, nothing, nothing)
 
 Base.show(io::IO, layer::PEPSOLayer) = print(io, "PEPSOLayer(", size(layer.propagator), ")")
 
-# Maps between each leg pair of the two-layer network at a site and one fused leg: `Fn` and `Fe` fuse
-# the north and east pairs, `Fs` and `Fw` split the south and west legs back into pairs.
+# Maps between each leg pair of the two-layer network at a site and one fused leg, north to west: the
+# north and east maps fuse their pairs, the south and west ones split their legs back into pairs.
 function _fusers(ρ::AbstractTensorMap, S::AbstractTensorMap)
     Nr, Er, Sr, Wr = domain(ρ)
     Ns, Es, Ss, Ws = domain(S)
-    return (;
-        Fn = isomorphism(Nr ⊗ Ns, fuse(Nr ⊗ Ns)),
-        Fe = isomorphism(Er ⊗ Es, fuse(Er ⊗ Es)),
-        Fs = isomorphism(fuse(Sr' ⊗ Ss'), Sr' ⊗ Ss'),
-        Fw = isomorphism(fuse(Wr' ⊗ Ws'), Wr' ⊗ Ws'),
+    return (
+        isomorphism(Nr ⊗ Ns, fuse(Nr ⊗ Ns)),
+        isomorphism(Er ⊗ Es, fuse(Er ⊗ Es)),
+        isomorphism(fuse(Sr' ⊗ Ss'), Sr' ⊗ Ss'),
+        isomorphism(fuse(Wr' ⊗ Ws'), Wr' ⊗ Ws'),
     )
 end
 
@@ -81,180 +78,59 @@ end
     $(TYPEDSIGNATURES)
 
 The site tensor `ρ` with the propagator `S` applied and each pair of virtual legs mapped to one leg by
-`Pn`, `Pe`, `Ps`, `Pw` (laid out as PEPSKit's `compress` projectors), shaped as a `PEPOTensor`.
-`last` names the leg contracted at the end; passing the leg that carries a fuser rather than a
-projector, the largest of the four, keeps the intermediates small.
+`maps = (Pn, Pe, Ps, Pw)`, laid out as PEPSKit's `compress` projectors, shaped as a `PEPOTensor`. The
+legs are relabelled so that leg `big` (north, east, south, west) is contracted last; passing the leg
+that carries a fuser rather than a projector keeps the intermediates small.
 """
-function _composite(ρ, S, Pn, Pe, Ps, Pw; last::Symbol = :w)
-    alloc = TensorOperations.ManualAllocator()
-    if last === :w
-        @tensor allocator = alloc order = (e2, n2, s1, q1, q2, n1, e1, s2, w1, w2) A[p1 p2; n e sd w] :=
-            ρ[q1 q2; n1 e1 s1 w1] * S[p1 p2 q1 q2; n2 e2 s2 w2] *
-            Pn[n1 n2; n] * Pe[e1 e2; e] * Ps[sd; s1 s2] * Pw[w; w1 w2]
-    elseif last === :e
-        @tensor allocator = alloc order = (w2, n2, s1, q1, q2, n1, w1, s2, e1, e2) A[p1 p2; n e sd w] :=
-            ρ[q1 q2; n1 e1 s1 w1] * S[p1 p2 q1 q2; n2 e2 s2 w2] *
-            Pn[n1 n2; n] * Pe[e1 e2; e] * Ps[sd; s1 s2] * Pw[w; w1 w2]
-    elseif last === :n
-        @tensor allocator = alloc order = (w2, e2, s1, q1, q2, e1, w1, s2, n1, n2) A[p1 p2; n e sd w] :=
-            ρ[q1 q2; n1 e1 s1 w1] * S[p1 p2 q1 q2; n2 e2 s2 w2] *
-            Pn[n1 n2; n] * Pe[e1 e2; e] * Ps[sd; s1 s2] * Pw[w; w1 w2]
-    elseif last === :s
-        @tensor allocator = alloc order = (w2, e2, n1, q1, q2, e1, w1, n2, s1, s2) A[p1 p2; n e sd w] :=
-            ρ[q1 q2; n1 e1 s1 w1] * S[p1 p2 q1 q2; n2 e2 s2 w2] *
-            Pn[n1 n2; n] * Pe[e1 e2; e] * Ps[sd; s1 s2] * Pw[w; w1 w2]
-    else
-        throw(ArgumentError("`last` must be :n, :e, :s or :w, got $last"))
-    end
-    return A
+function _composite(ρ, S, maps; big::Int = WEST)
+    o = Tuple(circshift(1:4, 4 - big))
+    ρo = permute(ρ, ((1, 2), 2 .+ o))
+    So = permute(S, ((1, 2, 3, 4), 4 .+ o))
+    # every map with its leg pair in the codomain, as `Pn` and `Pe` already have it
+    Ma, Mb, Mc, Md = map(k -> k <= EAST ? maps[k] : permute(maps[k], ((2, 3), (1,))), o)
+    @tensor allocator = TensorOperations.ManualAllocator() order = (
+        b2, a2, c1, q1, q2, a1, b1, c2, d1, d2,
+    ) A[p1 p2; a b c d] :=
+        ρo[q1 q2; a1 b1 c1 d1] * So[p1 p2 q1 q2; a2 b2 c2 d2] *
+        Ma[a1 a2; a] * Mb[b1 b2; b] * Mc[c1 c2; c] * Md[d1 d2; d]
+    return permute(A, ((1, 2), 2 .+ invperm(o)))
 end
-
-# Multiply leg `i` of `t` (codomain legs first) elementwise by `v`, acting on the dense data.
-function _scaleleg(t::AbstractTensorMap, i::Int, v::AbstractVector)
-    t2 = copy(t)
-    a = reshape(t2.data, dims(codomain(t))..., dims(domain(t))...)
-    a .*= reshape(v, ntuple(j -> j == i ? length(v) : 1, ndims(a)))
-    return t2
-end
-
-_matrix(t::AbstractTensorMap) = reshape(convert(Array, t), dim(codomain(t)), dim(domain(t)))
-
-_orthcols(A; rtol = 1e-10) = (F = svd(A); F.U[:, F.S .> rtol * max(F.S[1], eps())])
-
-_normmax(v) = v / v[argmax(abs.(v))]
-
-_weightvalues(w::AbstractTensorMap) = real.(diag(convert(Array, w)))
 
 # R1, R2 with X = Q1 R1 and Y = R2 Q2 across the bond joining domain leg `kx` of `X` to `ky` of `Y`.
 function _bondfactors(X, kx, Y, ky)
-    nx, ny = numout(X), numout(Y)
-    Xp = permute(X, (Tuple(setdiff(1:(nx + 4), nx + kx)), (nx + kx,)))
-    Yp = permute(Y, ((ny + ky,), Tuple(setdiff(1:(ny + 4), ny + ky))))
-    D1, V1 = eigh_full(Xp' * Xp)
-    D1.data .= sqrt.(max.(real.(D1.data), 0))
-    D2, V2 = eigh_full(Yp * Yp')
-    D2.data .= sqrt.(max.(real.(D2.data), 0))
-    return D1 * V1', V2 * D2
+    _, R1 = left_orth!(permute(X, (Tuple(setdiff(1:6, kx + 2)), (kx + 2,))))
+    R2, _ = right_orth!(permute(Y, ((ky + 2,), Tuple(setdiff(1:6, ky + 2)))))
+    return R1, R2
 end
 
-# Top singular directions of M = R1 R2, as projectors P1 = R2 V S^-½ and P2 = S^-½ U' R1.
-function _svdcut(R1, R2; trunc)
+# Cut the bond M = R1 R2 into PEPSKit's `(Pa, s, Pb)`, keeping the top singular directions for
+# `mu = 0`, and return the relative truncation error with them.
+function _cutbond(R1, R2, wL, wR; trunc, mu)
+    iszero(mu) || return _softcut(R1, R2, wL, wR; trunc, mu)
+    Pa, s, Pb, ϵ = PEPSKit._proj_from_RL(R1, R2; trunc)
+    return Pa, s, Pb, ϵ / norm(R1 * R2)
+end
+
+# The cut minimising ‖L (M - M̃) R‖ for L² = 1 + μ Y'Y and R² = 1 + μ ZZ', where Y M = wL R2 and
+# M Z = R1 wR are scaled to the norm of M, so that μ weighs the relative change of wL M̃ and M̃ wR.
+function _softcut(R1, R2, wL, wR; trunc, mu)
     M = R1 * R2
-    u, s, vh = svd_trunc!(copy(M); trunc)
-    # The largest entry of each singular vector is made real and positive, so the bond basis changes
-    # smoothly between steps and the stored projectors remain a good start for the next one.
-    ua = convert(Array, u)
-    ph = [ua[argmax(abs.(ua[:, j])), j] for j in axes(ua, 2)]
-    Φ = TensorMap(Matrix(Diagonal(conj.(ph) ./ abs.(ph))), domain(u) ← domain(u))
-    u, vh = u * Φ, Φ' * vh
-    isq = PEPSKit.sdiag_pow(s, -0.5)
-    ϵ = sqrt(max(norm(M)^2 - norm(s)^2, 0)) / norm(M)
-    return R2 * vh' * isq, isq * u' * R1, s, ϵ
+    Y = wL * pinv(R1; rtol = 1e-12)
+    Z = pinv(R2; rtol = 1e-12) * wR
+    Y *= norm(M) / norm(Y * M)
+    Z *= norm(M) / norm(M * Z)
+    L = sqrt(id(domain(Y)) + mu * Y' * Y)
+    R = sqrt(id(codomain(Z)) + mu * Z * Z')
+    Pa, _, Pb, _ = PEPSKit._proj_from_RL(L * R1, R2 * R; trunc)
+    # R1 Pa is not an isometry times √s, so the cut is split again by its own singular values
+    _, ra = left_orth(R1 * Pa)
+    rb, _ = right_orth(Pb * R2)
+    qa, s, qb, _ = PEPSKit._proj_from_RL(ra, rb)
+    Pa, Pb = Pa * qa, qb * Pb
+    return Pa, s, Pb, norm(M - R1 * Pa * Pb * R2) / norm(M)
 end
 
-# Projectors with weights taken from the cut's own singular value decomposition; `A` and `B` hold the
-# left and right bases of the cut M̃ = A Σ B' on the two sides of the bond, neither of them isometric.
-function _cutprojectors(R1, R2, Wl, Wr, D)
-    K = ComplexSpace(D)
-    P1 = R2 * TensorMap(Wl, domain(R2) ← K)
-    P2 = TensorMap(Wr, K ← codomain(R1)) * R1
-    return P1, P2, K
-end
-
-# Diagonal phases making the largest entry of each column of `U` real and positive.
-_phasefix(U) = Diagonal([(p = U[argmax(abs.(U[:, j])), j]; conj(p) / abs(p)) for j in axes(U, 2)])
-
-# As `_svdcut` with D directions, but the cut Π = P1 P2 also satisfies wL Π = wL and Π wR = wR for the
-# rows of `wL` and columns of `wR`; the remaining directions are the top ones of what is left.
-function _protectedcut(R1, R2, wL, wR; D)
-    R1a, R2a = _matrix(R1), _matrix(R2)
-    M = R1a * R2a
-    Uk = _orthcols(pinv(R1a; rtol = 1e-12)' * wL')
-    Vk = _orthcols(pinv(R2a; rtol = 1e-12) * wR)
-    k = min(size(Uk, 2), size(Vk, 2), D)
-    k == 0 && return nothing
-    Uk, Vk = Uk[:, 1:k], Vk[:, 1:k]
-    C = Uk' * M * Vk
-    Fr = svd(M - M * Vk * (C \ (Uk' * M)))
-    Ut = Matrix(qr([Uk Fr.U[:, 1:(D - k)]]).Q)[:, 1:D]
-    Vt = Matrix(qr([Vk Fr.V[:, 1:(D - k)]]).Q)[:, 1:D]
-    # the bond weight is the SVD of the cut M̃ = (M Vt) Ct⁻¹ (Ut' M), not of Ct = Ut' M Vt
-    Ct = Ut' * M * Vt
-    Qa, Qb = qr(M * Vt), qr(M' * Ut)
-    Fc = svd(Qa.R * (Ct \ Qb.R'))
-    Φ = _phasefix(Matrix(Qa.Q)[:, 1:D] * Fc.U)
-    u, v, s = Fc.U * Φ, Fc.V * Φ, Fc.S
-    rs = Diagonal(sqrt.(s))
-    P1, P2, K = _cutprojectors(R1, R2, Vt * (Qa.R \ (u * rs)), (rs * v') * (Qb.R' \ Ut'), D)
-    ϵ = norm(M - M * Vt * (Ct \ (Ut' * M))) / norm(M)
-    return P1, P2, DiagonalTensorMap(s, K), ϵ
-end
-
-# Penalty form of `_protectedcut`: with wL = Y R1 and wR = R2 Z, the cut M̃ minimises ‖L (M - M̃) R‖ for
-# L² = 1 + μ Ŷ'Ŷ and R² = 1 + μ ẐẐ', where Ŷ, Ẑ are scaled so that μ weighs relative changes of wL M, M wR.
-function _softcut(R1, R2, wL, wR; D, mu)
-    R1a, R2a = _matrix(R1), _matrix(R2)
-    M = R1a * R2a
-    Yc = wL * pinv(R1a; rtol = 1e-12)
-    Zc = pinv(R2a; rtol = 1e-12) * wR
-    Yh, Zh = Yc * (norm(M) / norm(Yc * M)), Zc * (norm(M) / norm(M * Zc))
-    function weight(G)
-        F = eigen(Hermitian(G))
-        w = sqrt.(1 .+ mu .* max.(F.values, 0))
-        return F.vectors * Diagonal(w) * F.vectors', F.vectors * Diagonal(1 ./ w) * F.vectors'
-    end
-    (L, Li), (R, Ri) = weight(Yh' * Yh), weight(Zh * Zh')
-    F = svd(L * M * R)
-    U, S, V = F.U[:, 1:D], F.S[1:D], F.V[:, 1:D]
-    # M̃ = (L⁻¹U) S (R⁻¹V)' has non-isometric bases, so the bond weight comes from its own SVD, not S
-    Qa, Qb = qr(Li * U), qr(Ri * V)
-    Fk = svd(Qa.R * Diagonal(S) * Qb.R')
-    Φ = _phasefix(Matrix(Qa.Q)[:, 1:D] * Fk.U)
-    u, v, s = Fk.U * Φ, Fk.V * Φ, Fk.S
-    rs = Diagonal(sqrt.(s))
-    Wl = R * V * Diagonal(1 ./ S) * (Qa.R \ (u * rs))
-    Wr = (rs * v') * (Qb.R' \ (Diagonal(1 ./ S) * U' * L))
-    P1, P2, K = _cutprojectors(R1, R2, Wl, Wr, D)
-    ϵ = norm(M - Li * U * Diagonal(S) * V' * Ri) / norm(M)
-    return P1, P2, DiagonalTensorMap(s, K), ϵ
-end
-
-# Cut the bond between X (open domain leg `kx`) and Y (`ky`), both already weighted, keeping the
-# `protect` quantities of `alg` carried by the protected vectors `wL`, `wR`.
-function _cutbond(X, kx, Y, ky, wL, wR, trunc, alg::IterativeSU)
-    R1, R2 = _bondfactors(X, kx, Y, ky)
-    # dropping exactly vanishing directions keeps S^-½ finite when the bond has rank below D
-    cut = _svdcut(R1, R2; trunc = trunc & trunctol(; rtol = 1e-14))
-    alg.protect === :none && return cut
-    D = dim(space(cut[3], 1))
-    M = _matrix(R1) * _matrix(R2)
-    count(>(1e-14 * opnorm(M)), svdvals(M)) <= D && return cut
-    protected = if isinf(alg.mu)
-        _protectedcut(R1, R2, wL, wR; D)
-    else
-        _softcut(R1, R2, wL, wR; D, mu = alg.mu)
-    end
-    return something(protected, cut)
-end
-
-# Periodic access to a 2 × Nr × Nc array of per-bond values, laid out as `SUWeight`.
-_bondat(λ, d, r, c) = λ[d, mod1(r, size(λ, 2)), mod1(c, size(λ, 3))]
-
-# The weights on the north, east, south and west legs of site (r, c).
-function _siteweights(λ, r, c)
-    return (
-        _bondat(λ, 2, r, c), _bondat(λ, 1, r, c), _bondat(λ, 2, r + 1, c), _bondat(λ, 1, r, c - 1),
-    )
-end
-
-# Site projectors (Pn, Pe, Ps, Pw) with their new legs weighted by √λ of the site's four bonds.
-function _weighted(P, λs)
-    Pn, Pe, Ps, Pw = P
-    return (
-        _scaleleg(Pn, 3, sqrt.(λs[1])), _scaleleg(Pe, 3, sqrt.(λs[2])),
-        _scaleleg(Ps, 1, sqrt.(λs[3])), _scaleleg(Pw, 1, sqrt.(λs[4])),
-    )
-end
+_normmax(v) = v / v[argmax(abs.(v))]
 
 """
     $(TYPEDSIGNATURES)
@@ -295,18 +171,13 @@ function _tracemessages(t::AbstractMatrix; init = nothing, tol = 1e-10, maxiter 
     return m
 end
 
-# Protected bond vectors of the open leg of a composite `X`, from the messages `q` on its other three
-# legs: rows of ⟨q, X⟩ for each physical pair (`:twosite`) or their trace (`:trace`).
-function _protected(X, open::Int, q, protect::Symbol)
-    a = convert(Array, X)
-    d1, d2 = size(a, 1), size(a, 2)
+# `X` with the messages `m` (north, east, south, west) contracted onto every leg but `open`: a map
+# from the open leg to the site's physical pair, whose rows the soft cut protects.
+function _protected(X, open::Int, m)
     others = filter(!=(open), 1:4)
-    b = reshape(permutedims(a, ((2 .+ others)..., 1, 2, 2 + open)), :, d1 * d2 * size(a, 2 + open))
-    # `kron` runs its last factor fastest, matching the first of `others` in the column-major `b`
-    env = kron(reverse([q[k] for k in others])...)
-    v = reshape(transpose(env) * b, d1 * d2, :)
-    protect === :twosite && return v
-    return reshape(sum(v[(i - 1) * d1 + i, :] for i in 1:min(d1, d2)), 1, :)
+    Xp = permute(X, ((1, 2), (2 .+ others..., 2 + open)))
+    env = foldr(⊗, [Tensor(m[k], domain(X)[k]) for k in others]) ⊗ id(domain(X)[open])
+    return Xp * env
 end
 
 # Projectors onto the state's bond times the propagator's idle state: the exact cut of the composite
@@ -314,33 +185,17 @@ end
 # or not one was started, so a cut ranking them by norm alone would keep directions no path reaches.
 function _idleprojectors(ρ, S)
     Nr, Nc = size(ρ)
-    function idle(V, W)
-        a = zeros(ComplexF64, dim(V), dim(W), dim(V))
-        foreach(i -> a[i, 1, i] = 1, 1:dim(V))
-        return a
-    end
-    into(k, r, c) = (V = domain(ρ[r, c])[k]; W = domain(S[r, c])[k]; TensorMap(idle(V, W), V ⊗ W ← V))
-    function outof(k, r, c)
-        V, W = domain(ρ[r, c])[k]', domain(S[r, c])[k]'
-        return TensorMap(permutedims(idle(V, W), (3, 1, 2)), V ← V ⊗ W)
-    end
-    Pxs = Any[(into(2, r, c), outof(4, r, mod1(c + 1, Nc))) for r in 1:Nr, c in 1:Nc]
-    Pys = Any[(into(1, r, c), outof(3, mod1(r - 1, Nr), c)) for r in 1:Nr, c in 1:Nc]
+    idle(W) = Tensor([i == 1 ? one(ComplexF64) : zero(ComplexF64) for i in 1:dim(W)], W)
+    into((r, c), k) = id(domain(ρ[r, c])[k]) ⊗ idle(domain(S[r, c])[k])
+    outof((r, c), k) = id(domain(ρ[r, c])[k]') ⊗ idle(domain(S[r, c])[k]')'
+    Pxs = Any[(into((r, c), EAST), outof((r, mod1(c + 1, Nc)), WEST)) for r in 1:Nr, c in 1:Nc]
+    Pys = Any[(into((r, c), NORTH), outof((mod1(r - 1, Nr), c), SOUTH)) for r in 1:Nr, c in 1:Nc]
     return Pxs, Pys
 end
 
-function _projectorsfit(stored, F, λ)
-    isnothing(stored) && return false
-    Pxs, Pys = stored
-    size(Pxs) == size(F) || return false
-    Nr, Nc = size(F)
-    return all(Iterators.product(1:Nr, 1:Nc)) do (r, c)
-        Pe, Pw = Pxs[r, c]
-        Pn, Ps = Pys[r, c]
-        codomain(Pe) == codomain(F[r, c].Fe) && domain(Pw) == domain(F[r, mod1(c + 1, Nc)].Fw) &&
-            codomain(Pn) == codomain(F[r, c].Fn) && domain(Ps) == domain(F[mod1(r - 1, Nr), c].Fs) &&
-            dim(domain(Pe)) == length(λ[1, r, c]) && dim(domain(Pn)) == length(λ[2, r, c])
-    end
+# Whether the projectors a layer stored act between the same spaces as `start`, so can replace it.
+function _samespaces(stored, start)
+    return !isnothing(stored) && map.(p -> space.(p), stored) == map.(p -> space.(p), start)
 end
 
 """
@@ -351,8 +206,8 @@ Apply the long-range propagator of `layer` to `state` by iterative simple update
 truncation error of the last round of cuts.
 
 Every bond is cut against the projectors the previous round chose for the other legs of its two
-sites, those legs weighted by their bond weights as in simple update, and the rounds repeat until no
-weight changes by more than `alg.iterative.tol`. The bond dimension comes from `alg.trunc`, or is
+sites, those legs weighted by their bond weights as in simple update, and the rounds repeat until the
+weights change by less than `alg.iterative.tol`. The bond dimension comes from `alg.trunc`, or is
 kept when that is `nothing`. A round starts from the projectors of the layer's last application
 when they fit, and otherwise from projectors onto the propagator's idle state.
 """
@@ -367,106 +222,95 @@ function iterativestep!(
     isinf(alg.zeta) || throw(
         ArgumentError("damping is not implemented for a long-range layer; use `zeta = Inf`"),
     )
-    settings = alg.iterative
+    (; maxiter, tol, mu) = alg.iterative
+    iszero(mu) || sectortype(state[1, 1]) == Trivial ||
+        throw(ArgumentError("the soft cut (`mu > 0`) needs spaces without symmetry"))
     Nr, Nc, = size(state)
-    G = layer.propagator
     ρ = [state[r, c] for r in 1:Nr, c in 1:Nc]
-    S = [G[mod1(r, size(G, 1)), mod1(c, size(G, 2)), 1] for r in 1:Nr, c in 1:Nc]
+    S = [layer.propagator[r, c, 1] for r in 1:Nr, c in 1:Nc]
     F = map(_fusers, ρ, S)
     bonds = CartesianIndices((2, Nr, Nc))
     truncs = map(bonds) do I
-        isnothing(alg.trunc) || return alg.trunc
-        V = space(weights[Tuple(I)...], 1)
-        return truncspace(isdual(V) ? flip(V) : V)
+        trunc = if isnothing(alg.trunc)
+            V = space(weights[Tuple(I)...], 1)
+            truncspace(isdual(V) ? flip(V) : V)
+        else
+            alg.trunc
+        end
+        # dropping vanishing directions keeps the bond at the rank of the cut when that is below D
+        return trunc & trunctol(; rtol = 1e-14)
     end
 
-    λ = map(bonds) do I
-        s = _weightvalues(weights[Tuple(I)...])
-        return s ./ maximum(s)
-    end
-    Pxs, Pys = _projectorsfit(layer.projectors, F, λ) ? layer.projectors : _idleprojectors(ρ, S)
-
-    msgs = layer.messages
-    cuts = nothing
-    for _ in 1:settings.maxiter
-        P = [PEPSKit._site_projectors(Pxs, Pys, r, c) for r in 1:Nr, c in 1:Nc]
-        sP = [_weighted(P[r, c], _siteweights(λ, r, c)) for r in 1:Nr, c in 1:Nc]
-        q = nothing
-        if settings.protect !== :none
-            traced = map(Iterators.product(1:Nr, 1:Nc)) do (r, c)
-                Threads.@spawn begin
-                    A = convert(Array, _composite(ρ[r, c], S[r, c], P[r, c]...))
-                    sum(A[i, i, :, :, :, :] for i in 1:min(size(A, 1), size(A, 2)))
-                end
-            end
-            msgs = _tracemessages(fetch.(traced); init = msgs)
-            # the iterate's legs carry √λ, so the messages are divided by it to contract the bare
-            # tensors; a direction with zero weight is absent from the state and is dropped
-            q = map(CartesianIndices(msgs)) do I
-                d, r, c = Tuple(I)
-                w = sqrt.(_siteweights(λ, r, c)[d])
-                return [abs(b) > 1e-14 ? a / b : zero(a) for (a, b) in zip(msgs[I], w)]
-            end
-        end
-        tasks = map(bonds) do I
-            Threads.@spawn _iterativecut(I, ρ, S, F, sP, q, truncs[I], settings)
-        end
-        cuts = fetch.(tasks)
-
-        δ = maximum(bonds) do I
-            s = _weightvalues(cuts[I][2])
-            s ./= maximum(s)
-            length(s) == length(λ[I]) || return Inf
-            return maximum(abs.(sort(s) .- sort(λ[I])))
-        end
+    start = _idleprojectors(ρ, S)
+    Pxs, Pys = _samespaces(layer.projectors, start) ? layer.projectors : start
+    λ, msgs, cuts = weights, layer.messages, nothing
+    for _ in 1:maxiter
+        cuts, msgs = _iterativeround(ρ, S, F, _siteprojectors(Pxs, Pys), λ, msgs, truncs, mu)
         for I in bonds
             d, r, c = Tuple(I)
             (d == 1 ? Pxs : Pys)[r, c] = cuts[I][1]
-            s = _weightvalues(cuts[I][2])
-            λ[I] = s ./ maximum(s)
         end
-        δ < settings.tol && break
+        λ′ = SUWeight(map(cut -> normalize(cut[2], Inf), cuts))
+        converged = PEPSKit.compare_weights(λ′, λ) < tol
+        λ = λ′
+        converged && break
     end
 
-    P = [PEPSKit._site_projectors(Pxs, Pys, r, c) for r in 1:Nr, c in 1:Nc]
+    P = _siteprojectors(Pxs, Pys)
+    As = PEPSKit.dtmap(I -> normalize!(_composite(ρ[I], S[I], P[I]), Inf), CartesianIndices(P))
     for r in 1:Nr, c in 1:Nc
-        state[r, c] = normalize!(_composite(ρ[r, c], S[r, c], P[r, c]...), Inf)
+        state[r, c] = As[r, c]
     end
     for I in bonds
-        weights[Tuple(I)...] = normalize!(cuts[I][2], Inf)
+        weights[Tuple(I)...] = λ[Tuple(I)...]
     end
     layer.projectors = (Pxs, Pys)
     layer.messages = msgs
-    return maximum(I -> cuts[I][3], bonds)
+    return maximum(cut -> cut[3], cuts)
+end
+
+function _siteprojectors(Pxs, Pys)
+    return [PEPSKit._site_projectors(Pxs, Pys, Tuple(I)...) for I in CartesianIndices(Pxs)]
+end
+
+# One round: the traced-network messages when `mu > 0`, then every bond cut against projectors `P`.
+function _iterativeround(ρ, S, F, P, λ, msgs, truncs, mu)
+    m = if iszero(mu)
+        msgs
+    else
+        traced = PEPSKit.dtmap(CartesianIndices(P)) do I
+            A = convert(Array, _composite(ρ[I], S[I], P[I]))
+            return sum(A[i, i, :, :, :, :] for i in axes(A, 1))
+        end
+        _tracemessages(traced; init = msgs)
+    end
+    cuts = PEPSKit.dtmap(CartesianIndices(truncs)) do I
+        return _iterativecut(I, ρ, S, F, P, λ, m, truncs[I], mu)
+    end
+    return cuts, m
 end
 
 # One bond of a round: `I = (1, r, c)` joins (r, c) to (r, c + 1), `I = (2, r, c)` joins (r, c) to
 # (r - 1, c). Returns the bond's two projectors, its weight and its truncation error.
-function _iterativecut(I, ρ, S, F, sP, q, trunc, settings::IterativeSU)
+function _iterativecut(I, ρ, S, F, P, λ, msgs, trunc, mu)
     Nr, Nc = size(ρ)
     d, r, c = Tuple(I)
-    if d == 1
-        r2, c2 = r, mod1(c + 1, Nc)
-        Pn, _, Ps, Pw = sP[r, c]
-        tX = Threads.@spawn _composite(ρ[r, c], S[r, c], Pn, F[r, c].Fe, Ps, Pw; last = :e)
-        Pn, Pe, Ps, _ = sP[r2, c2]
-        Y = _composite(ρ[r2, c2], S[r2, c2], Pn, Pe, Ps, F[r2, c2].Fw; last = :w)
-        X = fetch(tX)
-        kx, ky, open1, open2 = 2, 4, F[r, c].Fe, F[r2, c2].Fw
-    else
-        r2, c2 = mod1(r - 1, Nr), c
-        _, Pe, Ps, Pw = sP[r, c]
-        tX = Threads.@spawn _composite(ρ[r, c], S[r, c], F[r, c].Fn, Pe, Ps, Pw; last = :n)
-        Pn, Pe, _, Pw = sP[r2, c2]
-        Y = _composite(ρ[r2, c2], S[r2, c2], Pn, Pe, F[r2, c2].Fs, Pw; last = :s)
-        X = fetch(tX)
-        kx, ky, open1, open2 = 1, 3, F[r, c].Fn, F[r2, c2].Fs
+    # the legs facing each other across the bond, and the sites they belong to
+    kx, ky = d == 1 ? (EAST, WEST) : (NORTH, SOUTH)
+    x, y = (r, c), d == 1 ? (r, mod1(c + 1, Nc)) : (mod1(r - 1, Nr), c)
+    X, Y = PEPSKit.dtmap([(x, kx), (y, ky)]) do (site, k)
+        maps = ntuple(j -> j == k ? F[site...][k] : P[site...][j], 4)
+        return _composite(ρ[site...], S[site...], maps; big = k)
     end
+    closed(k) = Tuple(filter(!=(k), 1:4))
+    R1, R2 = _bondfactors(
+        absorb_weight(X, λ, x..., closed(kx)), kx, absorb_weight(Y, λ, y..., closed(ky)), ky
+    )
     wL = wR = nothing
-    if settings.protect !== :none
-        wL = _protected(X, kx, Tuple(q[k, r, c] for k in 1:4), settings.protect)
-        wR = permutedims(_protected(Y, ky, Tuple(q[k, r2, c2] for k in 1:4), settings.protect))
+    if !iszero(mu)
+        wL = _protected(X, kx, msgs[:, x...])
+        wR = permute(_protected(Y, ky, msgs[:, y...]), ((3,), (1, 2)))
     end
-    P1, P2, s, ϵ = _cutbond(X, kx, Y, ky, wL, wR, trunc, settings)
-    return (open1 * P1, P2 * open2), s, ϵ
+    Pa, s, Pb, ϵ = _cutbond(R1, R2, wL, wR; trunc, mu)
+    return (F[x...][kx] * Pa, Pb * F[y...][ky]), s, ϵ
 end

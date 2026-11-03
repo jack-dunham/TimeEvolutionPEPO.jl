@@ -48,7 +48,6 @@ end
 end # IterativeSetup
 
 @testitem "IterativeSU settings" setup = [IterativeSetup] begin
-    @test_throws ArgumentError IterativeSU(; protect = :all)
     @test_throws ArgumentError IterativeSU(; mu = -1.0)
     @test_throws ArgumentError IterativeSU(; maxiter = 0)
     @test DampedUpdate().iterative == IterativeSU()
@@ -90,31 +89,30 @@ end
     G = (dt / length(model)) * dense_liouvillian(-PAULI[1], [LADDER[1]])
     M = I + G + G^2 / 2
     expected = reshape(M^(length(model) * numsteps) * vec(ComplexF64[0 0; 0 1]), 2, 2)
-    # the cut's factors come from square roots of eigenvalues, so they resolve singular values only to
-    # about √eps of the largest, and the cut keeps a second direction of that size
-    @test occupation(quantumstate(sim)) ≈ real(expected[1, 1]) atol = 1e-8
+    @test occupation(quantumstate(sim)) ≈ real(expected[1, 1]) atol = 1e-12
+    @test all(w -> dim(space(w, 1)) == 1, bondweights(sim))
     # and it is within the expansion's error of the exact exponential
     exact = reshape(exp(numsteps * length(model) * G) * vec(ComplexF64[0 0; 0 1]), 2, 2)
     @test occupation(quantumstate(sim)) ≈ real(exact[1, 1]) atol = 1e-5
 end
 
 @testitem "Iterative simple update against the pre-port implementation" setup = [IterativeSetup] begin
-    # Reference: `dev/fig9/core.jl` (`itrsu` and `itrsu_trace`, 1×1 cell) from the ground state,
-    # D = 3, 16 steps of Δt = 0.0125 with weights converged to 1e-10.
+    # Reference: `dev/fig9/core.jl` (`itrsu`, and `itrsu_trace` with μ = 10, 1×1 cell) from the ground
+    # state, D = 3, 16 steps of Δt = 0.0125 with weights converged to 1e-10.
     REF = (
         none = (
             λx = [1.0, 0.0016721985591049264, 0.0016643909008889654],
             λy = [1.0, 0.0016646406240010785, 0.0016561694993428668],
             n = 0.03481878346482034,
         ),
-        twosite = (
+        soft = (
             λx = [1.0, 0.001666415255514956, 0.0016588961273208472],
             λy = [1.0, 0.0016780121049346603, 0.0016697554727823434],
             n = 0.03481734382415401,
         ),
     )
-    for (protect, ref) in pairs(REF)
-        iterative = IterativeSU(; tol = 1e-10, maxiter = 200, protect, mu = 10.0)
+    for (mu, ref) in ((0.0, REF.none), (10.0, REF.soft))
+        iterative = IterativeSU(; tol = 1e-10, maxiter = 200, mu)
         sim = Simulation(
             productpepo(ComplexF64[0 0; 0 1], 1), figmodel(1.5); timestep = 1.25e-2,
             alg = DampedUpdate(; trunc = truncrank(3), iterative)
@@ -128,9 +126,9 @@ end
 end
 
 @testitem "Uniform model on a 2×2 cell" setup = [IterativeSetup] begin
-    # two of the ten layers; the :twosite cut also runs the traced-network BP over the cell
+    # two of the ten layers; the soft cut also runs the traced-network BP over the cell
     model = Model(figmodel(1.5).layers[1:2])
-    iterative = IterativeSU(; tol = 1e-10, maxiter = 200, protect = :twosite, mu = 10.0)
+    iterative = IterativeSU(; tol = 1e-10, maxiter = 200, mu = 10.0)
     alg = DampedUpdate(; trunc = truncrank(3), iterative)
     sims = map(((1, 1), (2, 2))) do cell
         state = productpepo(fill((0.0, 0.0, -1.0), cell...), 1)
@@ -149,41 +147,39 @@ end
     end
 end
 
-@testitem "Protected and soft cuts" setup = [IterativeSetup] begin
+@testitem "Soft cut" setup = [IterativeSetup] begin
     using Random
     Random.seed!(7)
     d, D, k = 12, 5, 4
     V = ComplexSpace(d)
-    R1 = TensorMap(randn(ComplexF64, d, d), V ← V)
-    R2 = TensorMap(randn(ComplexF64, d, d), V ← V)
-    wL, wR = randn(ComplexF64, k, d), randn(ComplexF64, d, k)
-    R1a, R2a = TEP._matrix(R1), TEP._matrix(R2)
-    M = R1a * R2a
+    R1, R2 = randn(ComplexF64, V ← V), randn(ComplexF64, V ← V)
+    wL, wR = randn(ComplexF64, ComplexSpace(k) ← V), randn(ComplexF64, V ← ComplexSpace(k))
+    M = R1 * R2
+    trunc = truncrank(D)
 
-    # The cut is M̃ = R1 Π R2 with Π = P1 P2; `change` is the relative change of wL M wR it causes.
-    Π(cut) = TEP._matrix(cut[1]) * TEP._matrix(cut[2])
+    # The cut is M̃ = R1 Π R2 with Π = Pa Pb; `change` is the relative change of wL M wR it causes.
+    Π(cut) = cut[1] * cut[3]
     change(cut) = norm(wL * Π(cut) * wR - wL * wR) / norm(wL * wR)
-    # The weights are the cut bond's own: R1 P1 is an isometry times √s, and so is (P2 R2)'.
+    # The weights are the cut bond's own: R1 Pa is an isometry times √s, and so is (Pb R2)'.
     function consistent(cut)
-        s = weightvalues(cut[3])
-        L, R = R1a * TEP._matrix(cut[1]), TEP._matrix(cut[2]) * R2a
-        return max(norm(L' * L - Diagonal(s)), norm(R * R' - Diagonal(s))) / norm(s) < 1e-10
+        s = TensorMap(cut[2])
+        L, R = R1 * cut[1], cut[3] * R2
+        return max(norm(L' * L - s), norm(R * R' - s)) / norm(s) < 1e-10
     end
 
-    plain = TEP._svdcut(R1, R2; trunc = truncrank(D))
-    exact = TEP._protectedcut(R1, R2, wL, wR; D)
-    @test change(exact) < 1e-10
-    @test consistent(plain) && consistent(exact)
+    plain = TEP._cutbond(R1, R2, nothing, nothing; trunc, mu = 0.0)
+    @test consistent(plain)
     @test change(plain) > 1e-3
 
-    @test Π(TEP._softcut(R1, R2, wL, wR; D, mu = 0.0)) ≈ Π(plain)
-    changes = [change(TEP._softcut(R1, R2, wL, wR; D, mu)) for mu in (1.0, 1e2, 1e4, 1e6)]
+    @test Π(TEP._softcut(R1, R2, wL, wR; trunc, mu = 0.0)) ≈ Π(plain)
+    changes = [change(TEP._softcut(R1, R2, wL, wR; trunc, mu)) for mu in (1.0, 1e2, 1e4, 1e6)]
     @test issorted(changes; rev = true)
     @test last(changes) < 1e-4
-    @test all(mu -> consistent(TEP._softcut(R1, R2, wL, wR; D, mu)), (1.0, 1e4))
+    @test all(mu -> consistent(TEP._softcut(R1, R2, wL, wR; trunc, mu)), (1.0, 1e4))
 
     # the truncation error is that of the cut actually made, the SVD's being the smallest
-    @test plain[4] ≈ norm(M - R1a * Π(plain) * R2a) / norm(M)
-    @test exact[4] ≈ norm(M - R1a * Π(exact) * R2a) / norm(M)
-    @test exact[4] > plain[4]
+    soft = TEP._softcut(R1, R2, wL, wR; trunc, mu = 1e4)
+    @test plain[4] ≈ norm(M - R1 * Π(plain) * R2) / norm(M)
+    @test soft[4] ≈ norm(M - R1 * Π(soft) * R2) / norm(M)
+    @test soft[4] > plain[4]
 end
