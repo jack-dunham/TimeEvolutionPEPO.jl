@@ -12,8 +12,9 @@ CurrentModule = TimeEvolutionPEPO
 timestep!(state, weights, decomposition; trunc, truncalg, envalg)
 ```
 
-where `decomposition` is the vector of `(propagators, axis)` pairs [`trotterise`](@ref) produced. That
-sweeps each pair in turn,
+where `decomposition` is the vector [`trotterise`](@ref) produced: `(propagators, axis)` pairs for
+nearest-neighbour layers, and a [`PEPSOLayer`](@ref) for each long-range one (see below). That sweeps
+each pair in turn,
 
 ```julia
 axissweep!(state, weights, propagators, axis; trunc, truncalg, env)
@@ -69,6 +70,38 @@ compounds over the sweep and feeds back through every later truncation.
 ```julia
 simulate!(sim; numsteps = 20, trunc = truncrank(9), zeta = 100.0)
 ```
+
+## Long-range layers
+
+A layer holding a long-range term is not split into bonds. [`trotterise`](@ref) builds the whole
+layer as one propagator with [`fsmpepso`](@ref), whose virtual bond dimension is the number of
+finite-state-machine states, and wraps it in a [`PEPSOLayer`](@ref). `timestep!` applies it with
+
+```julia
+iterativestep!(state, weights, layer, alg)
+```
+
+the iterative simple update of the FCLS manuscript (Appendix D). The propagator is contracted onto
+every site, and each bond is cut against the projectors chosen for the other legs of its two sites,
+those legs weighted by their bond weights; the cuts are repeated, all bonds at once, until no weight
+changes by more than `tol`. The layer keeps its final projectors, and the next application starts
+from them.
+
+The settings are an [`IterativeSU`](@ref), passed as the `iterative` keyword of `simulate!` or field of
+[`DampedUpdate`](@ref); `trunc` sets the bond dimension as for simple update.
+
+```julia
+simulate!(sim; numsteps = 400, trunc = truncrank(9),
+    iterative = IterativeSU(; protect = :twosite, mu = 10.0))
+```
+
+`protect` chooses what each cut keeps besides its top singular directions. With `:twosite` the
+nearest-neighbour two-site density matrix across the bond, as belief propagation on the traced
+network sees it, is kept unchanged; with `:trace` only the trace is. `mu = Inf` imposes this exactly,
+which involves inverting an ill-conditioned block; a finite `mu` instead adds the relative change to
+the error the cut minimises, which stays well conditioned. `mu = 0` is the plain cut.
+
+A long-range layer takes no `truncalg` and no finite `zeta`; both raise an `ArgumentError`.
 
 ## Adding a truncation scheme
 
