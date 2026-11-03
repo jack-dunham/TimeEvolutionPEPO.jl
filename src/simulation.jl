@@ -36,7 +36,9 @@ function Simulation(
     decomposition = trotterise(model, P, timestep)
 
     Nr, Nc, = size(state)
-    for (propagators, _) in decomposition
+    for entry in decomposition
+        entry isa PEPSOLayer && continue
+        propagators = first(entry)
         size(propagators) == (1, 1) || size(propagators) == (Nr, Nc) || throw(
             DimensionMismatch(
                 "a model layer of size $(size(propagators)) cannot be applied to a " *
@@ -125,8 +127,9 @@ and how often the gauge is re-fixed. Omitting `alg` builds one from the keywords
 - `maxtime::Float64 = Inf`: stop once this much wall-clock time has elapsed
 - `breaktol::Float64 = 0.0`: stop once the change in bond weights per unit time falls below this
 - `verbose::Bool = true`: log progress at `@info`
-- `trunc`, `truncalg`, `envalg`, `zeta`, `gaugeevery`: fields of [`DampedUpdate`](@ref), each
-  defaulting to the simulation's own `alg`, so a call may override one field without restating the rest
+- `trunc`, `truncalg`, `envalg`, `zeta`, `gaugeevery`, `iterative`: fields of [`DampedUpdate`](@ref),
+  each defaulting to the simulation's own `alg`, so a call may override one field without restating
+  the rest
 
 A sweep leaves the Vidal gauge only approximately, and imaginary-time evolution amplifies the drift
 until the bond spectrum collapses. Setting `gaugeevery` prevents that, and restores a state in which
@@ -137,9 +140,10 @@ simulate!(sim::Simulation, args...; kwargs...) = simulate!(identity, sim, args..
 
 function simulate!(
         callback, sim::Simulation; trunc = sim.alg.trunc, truncalg = sim.alg.truncalg,
-        envalg = sim.alg.envalg, zeta = sim.alg.zeta, gaugeevery = sim.alg.gaugeevery, kwargs...
+        envalg = sim.alg.envalg, zeta = sim.alg.zeta, gaugeevery = sim.alg.gaugeevery,
+        iterative = sim.alg.iterative, kwargs...
     )
-    alg = DampedUpdate(; trunc, truncalg, envalg, zeta, gaugeevery)
+    alg = DampedUpdate(; trunc, truncalg, envalg, zeta, gaugeevery, iterative)
     return simulate!(callback, sim, alg; kwargs...)
 end
 

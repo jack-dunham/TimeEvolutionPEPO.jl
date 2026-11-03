@@ -1,924 +1,472 @@
-@kwdef mutable struct IterativeSU <: AbstractTruncationScheme
-    maxiter::Int = 50
-    tol::Float64 = 1e-8
-    sequential::Bool = false
-    recycle::Bool = true
-    gauge::Int = 0
-    zeta::Float64 = Inf
-end
-@kwdef mutable struct IterativeSUTest <: AbstractTruncationScheme
-    maxiter::Int = 50
-    tol::Float64 = 1e-8
-    sequential::Bool = false
-    recycle::Bool = true
-    gauge::Int = 0
-    zeta::Float64 = Inf
-end
+# Iterative simple update (FCLS manuscript, Appendix D) for a long-range propagator: the
+# `InfinitePEPSO` is contracted onto the state, and every bond is cut against the current projectors
+# of the bonds around it, repeating until the bond weights stop changing.
 
-struct Isometries{G,N,U<:AbsTen{N},V<:TenAbs{N}}
-    e::UnitCell{G,U,Matrix{U}}
-    s::UnitCell{G,U,Matrix{U}}
-    w::UnitCell{G,V,Matrix{V}}
-    n::UnitCell{G,V,Matrix{V}}
-end
+"""
+$(TYPEDEF)
 
-Base.length(iso::Isometries) = length(iso.e)
+How [`iterativestep!`](@ref) cuts the bonds when it applies a long-range propagator.
 
-function getmessages(iso::Isometries, bond; axis=bondaxis(bond))
-    (e1, s1, w1, n1), (e2, s2, w2, n2) = iso[bond]
-    if axis == 1
-        return e1, w2
-    elseif axis == 2
-        return s1, n2
-    end
-end
-function Base.iterate(iso::Isometries, state=1)
-    i = state
+# Constructors
 
-    if state > length(iso)
-        return nothing
-    else
-        return (iso.e[i], iso.s[i], iso.w[i], iso.n[i]), state + 1
+    IterativeSU(; maxiter = 20, tol = 1e-6, protect = :none, mu = Inf)
+
+- `maxiter`, `tol`: repeat the cuts until no bond weight changes by more than `tol`, at most
+  `maxiter` times
+- `protect`: `:none` keeps each bond's top singular directions. `:trace` also keeps the trace of the
+  state, and `:twosite` the two-site density matrix across the bond, both as belief propagation on
+  the traced network sees them through that bond
+- `mu`: `Inf` keeps the `protect` quantities exactly; a finite value instead adds their relative
+  change, weighted by `mu`, to the error the cut minimises
+"""
+struct IterativeSU
+    maxiter::Int
+    tol::Float64
+    protect::Symbol
+    mu::Float64
+
+    function IterativeSU(maxiter, tol, protect, mu)
+        maxiter >= 1 || throw(ArgumentError("`maxiter` must be at least 1, got $maxiter"))
+        protect in (:none, :trace, :twosite) ||
+            throw(ArgumentError("`protect` must be :none, :trace or :twosite, got $protect"))
+        mu >= 0 || throw(ArgumentError("the penalty weight `mu` must be non-negative, got $mu"))
+        return new(maxiter, tol, protect, mu)
     end
 end
 
-function Base.similar(isoms::Isometries)
-    e, s, w, n = map(similar, unpack(isoms))
-    return Isometries(e, s, w, n)
+function IterativeSU(; maxiter = 20, tol = 1e-6, protect = :none, mu = Inf)
+    return IterativeSU(maxiter, tol, protect, mu)
 end
 
-function newisometries(buffer, stepper)
-    isomsinit = broadcast(buffer, stepper) do dst, src
-        return stepstitchisometries(storagetype(dst), domain(dst), domain(src))
-    end
-    return Isometries(isomsinit)
+"""
+$(TYPEDEF)
+
+A long-range propagator as one entry of a Trotter decomposition (see [`trotterise`](@ref)). It also
+holds the projectors and traced-network messages its last application ended with, which the next
+application starts from, so [`timestep!`](@ref) mutates it.
+
+The propagator's first virtual state on every leg must be the idle state of its finite-state machine,
+the one no interaction path occupies, as [`fsmpepso`](@ref) builds it.
+
+# Constructors
+
+    PEPSOLayer(propagator::InfinitePEPSO)
+"""
+# `S` is left unbounded: the registry PEPSKit the documentation builds against has no `InfinitePEPSO`,
+# so naming the type at load time would stop the package loading there.
+mutable struct PEPSOLayer{S}
+    propagator::S
+    projectors::Any
+    messages::Any
 end
 
-function newsplitisometries(buffer, stepper)
-    isomsinit = broadcast(buffer, getaxis(stepper)) do dst, src
-        return stitchisometries(storagetype(dst), domain(dst), domain(src))
-    end
-    return Isometries(isomsinit)
-end
+PEPSOLayer(propagator) = PEPSOLayer(propagator, nothing, nothing)
 
-function new_bp_isometries(buffer, stepper)
-    isomsinit = broadcast(buffer, getaxis(stepper)) do dst, src
-        return bpisometries(storagetype(dst), domain(dst), domain(src))
-    end
-    return Isometries(isomsinit)
-end
+Base.show(io::IO, layer::PEPSOLayer) = print(io, "PEPSOLayer(", size(layer.propagator), ")")
 
-function elcopy!(dst::Isometries, src::Isometries)
-    foreach(unpack(dst), unpack(src)) do d, s
-        elcopy!(d, s)
-    end
-    return dst
-end
-
-unpack(isoms::Isometries) = (isoms.e, isoms.s, isoms.w, isoms.n)
-
-function Isometries(data::AbstractMatrix{Tuple{U,U,V,V}}) where {U,V}
-    datal = UnitCell(data)
-
-    E = similar(data, U)
-    S = similar(data, U)
-    W = similar(data, V)
-    N = similar(data, V)
-
-    for I in eachindex(datal)
-        e, s, w, n = datal[I]
-
-        E[I] = e
-        S[I] = s
-        W[I] = w
-        N[I] = n
-    end
-
-    return Isometries(E, S, W, N)
-end
-
-function Base.setindex!(isoms::Isometries, val::Union{Pair,NTuple{2}}, bond::Bond)
-    axis = bondaxis(bond)
-
-    i1, i2 = bond
-    u, v = val
-
-    if axis == 1
-        isoms.e[i1] = u
-        isoms.w[i2] = v
-    elseif axis == 2
-        isoms.s[i1] = u
-        isoms.n[i2] = v
-    else
-        throw(ErrorException(""))
-    end
-
-    return isoms
-end
-
-Base.getindex(isoms::Isometries, I...) = map(uv -> getindex(uv, I...), unpack(isoms))
-Base.getindex(isoms::Isometries, bond::Bond) = isoms[first(bond)] => isoms[last(bond)]
-
-# stripped down version
-function iterative_simple_update!(pepo!::PEPO, isometries!, stepper, truncalg::IterativeSU)
-    oldweights = deepcopy(bondweights(pepo!))
-
-    i = 0
-
-    while i < truncalg.maxiter
-        for bond in eachbond(pepo!)
-            trunc = truncspace(bondspace(pepo!, bond))
-
-            evolvedpepo = evolve(pepo!, stepper, isometries!, bond)
-
-            pair = evolvedpepo[bond]
-
-            newiso, newweight = simpleupdate(pair, bondweights(pepo!), bond; trunc=trunc)
-
-            isometries[bond] = newiso
-            setweight!(pepo!, newweight, bond; copy=false)
-        end
-
-        # Check convergence of singular values 
-        conv = tolerance!(oldweights, bondweights(pepo!))
-
-        conv < truncalg.tol && break
-    end
-
-    truncate!(pepo!, stepper, isometries!)
-
-    quicknormalize!(pepo!)
-    hermitianize!(pepo!)
-
-    return pepo!
-end
-
-function truncate!(pepo, stepper, isometries)
-    buff = currentbuffer(pepo)
-
-    for I in eachindex(buff)
-        dst = buff[I]
-        op = getaxis(stepper)[I]
-        e, s, w, n = isometries[I]
-
-        truncateto!(dst, copy(dst), op, e, s, w, n)
-
-        # mergeinto!(dst, spten)
-    end
-
-    return pepo
-end
-
-#
-# function timestep!(
-#     pepo!::AxialPEPO, truncator!::Tuple, stepper, truncalg::IterativeSU
-# )
-#     if pepo.currentaxis != stepper.axis
-#         setaxis!(pepo, stepper.axis)
-#     end
-#
-#     axis = pepo!.currentaxis
-#
-#     iterative_simple_update!(
-#         pepo!,
-#         truncator![axis],
-#         stepper;
-#         maxiter=truncalg.maxiter,
-#         tol=truncalg.tol,
-#         recycle=truncalg.recycle,
-#         sequential=truncalg.sequential,
-#     )
-#
-#     return pepo!
-# end
-function timestep!(pepo!::AbstractPEPO, truncator!::Isometries, sequence, truncalg::NTU)
-    iterative_neighbourhood_update!(pepo!, truncator!, sequence;)
-
-    return pepo!
-end
-
-function iterative_simple_update_step(pepo, stepper, isometries, bond; kwargs...)
-    pair = pepo[bond]
-
-    reducedpair = evolve(pair, stepper, isometries, bond)
-
-    foreach(normalize!, reducedpair)
-
-    D = bondspace(pepo, bond)
-
-    (u, v), s, infid = simpleupdate(
-        reducedpair, bondweights(pepo), bond; trunc=truncspace(D), kwargs...
+# Maps between each leg pair of the two-layer network at a site and one fused leg: `Fn` and `Fe` fuse
+# the north and east pairs, `Fs` and `Fw` split the south and west legs back into pairs.
+function _fusers(ρ::AbstractTensorMap, S::AbstractTensorMap)
+    Nr, Er, Sr, Wr = domain(ρ)
+    Ns, Es, Ss, Ws = domain(S)
+    return (;
+        Fn = isomorphism(Nr ⊗ Ns, fuse(Nr ⊗ Ns)),
+        Fe = isomorphism(Er ⊗ Es, fuse(Er ⊗ Es)),
+        Fs = isomorphism(fuse(Sr' ⊗ Ss'), Sr' ⊗ Ss'),
+        Fw = isomorphism(fuse(Wr' ⊗ Ws'), Wr' ⊗ Ws'),
     )
-
-    return (u, v), s, infid
 end
 
-function newtruncators(pepo, stepper, ::Union{IterativeSU,IterativeSUTest})
-    return newisometries(pepo, stepper)
+"""
+    $(TYPEDSIGNATURES)
+
+The site tensor `ρ` with the propagator `S` applied and each pair of virtual legs mapped to one leg by
+`Pn`, `Pe`, `Ps`, `Pw` (laid out as PEPSKit's `compress` projectors), shaped as a `PEPOTensor`.
+`last` names the leg contracted at the end; passing the leg that carries a fuser rather than a
+projector, the largest of the four, keeps the intermediates small.
+"""
+function _composite(ρ, S, Pn, Pe, Ps, Pw; last::Symbol = :w)
+    alloc = TensorOperations.ManualAllocator()
+    if last === :w
+        @tensor allocator = alloc order = (e2, n2, s1, q1, q2, n1, e1, s2, w1, w2) A[p1 p2; n e sd w] :=
+            ρ[q1 q2; n1 e1 s1 w1] * S[p1 p2 q1 q2; n2 e2 s2 w2] *
+            Pn[n1 n2; n] * Pe[e1 e2; e] * Ps[sd; s1 s2] * Pw[w; w1 w2]
+    elseif last === :e
+        @tensor allocator = alloc order = (w2, n2, s1, q1, q2, n1, w1, s2, e1, e2) A[p1 p2; n e sd w] :=
+            ρ[q1 q2; n1 e1 s1 w1] * S[p1 p2 q1 q2; n2 e2 s2 w2] *
+            Pn[n1 n2; n] * Pe[e1 e2; e] * Ps[sd; s1 s2] * Pw[w; w1 w2]
+    elseif last === :n
+        @tensor allocator = alloc order = (w2, e2, s1, q1, q2, e1, w1, s2, n1, n2) A[p1 p2; n e sd w] :=
+            ρ[q1 q2; n1 e1 s1 w1] * S[p1 p2 q1 q2; n2 e2 s2 w2] *
+            Pn[n1 n2; n] * Pe[e1 e2; e] * Ps[sd; s1 s2] * Pw[w; w1 w2]
+    elseif last === :s
+        @tensor allocator = alloc order = (w2, e2, n1, q1, q2, e1, w1, n2, s1, s2) A[p1 p2; n e sd w] :=
+            ρ[q1 q2; n1 e1 s1 w1] * S[p1 p2 q1 q2; n2 e2 s2 w2] *
+            Pn[n1 n2; n] * Pe[e1 e2; e] * Ps[sd; s1 s2] * Pw[w; w1 w2]
+    else
+        throw(ArgumentError("`last` must be :n, :e, :s or :w, got $last"))
+    end
+    return A
 end
 
-function iterative_simple_update_prototype!(
-    pepo!,
-    truncator!,
-    stepper;
-    maxiter,
-    tol,
-    sequential,
-    recycle,
-    gauge,
-    zeta,
-    check_fidelity=false,
-)
-    mode = :none
-
-    isunit = axis -> any(D -> dim(D) == 1, bondspace.(Ref(pepo!), bonds(pepo!, axis)))
-
-    if mode === :quick || isunit(1) || isunit(2)
-        newpepo = evolve(pepo!, stepper)
-
-        simple_update_gauge_parallel!(newpepo)
-
-        truncate_bond_matrices!(pepo!, newpepo, truncator!)
-
-        quicknormalize!(pepo!)
-        hermitianize!(pepo!)
-
-        return pepo!
-    end
-
-    if mode === :bp
-        buff = currentbuffer(pepo!)
-        messages = sqrtbeliefpropagation(buff, stepper)
-        isoms = newsplitisometries(buff, stepper)
-
-        for bond in eachbond(buff)
-            D = bondspace(buff, bond)
-
-            (u, v), s = vidalisometries(messages, bond; trunc=truncspace(D))
-            setindex!(isoms, u => v, bond)
-        end
-        for I in eachindex(buff)
-            dst = buff[I]
-            op = getaxis(stepper)[I]
-            e, s, w, n = isoms[I]
-
-            truncateto!(dst, dst, op, e, s, w, n)
-
-            # mergeinto!(dst, spten)
-        end
-
-        quicknormalize!(pepo!)
-        hermitianize!(pepo!)
-
-        return pepo!
-    end
-
-    infidelity = 0
-
-    isoms = recycle ? truncator! : newisometries(pepo!, stepper)
-
-    # Buffers 
-    newisoms = similar(isoms)
-    newweights = deepcopy(bondweights(pepo!))
-
-    S0 = bondentropy(newweights)
-
-    println("Original bond entropy $S0")
-
-    conv = Inf
-
-    bisol = false
-    bisoldone = false
-    skipnext = false
-
-    i = 0
-
-    local ent0
-
-    while i < 1 * maxiter
-        i += 1
-
-        bonds = eachbond(pepo!)
-
-        if sequential
-            itr = iseven(i) ? Iterators.reverse(bonds) : bonds
-
-            for bond in itr
-                (u, v), s, _ = iterative_simple_update_step(
-                    pepo!, stepper, isoms, bond; zeta=Inf
-                )
-
-                setindex!(isoms, u => v, bond)
-                setweight!(pepo!, s, bond; copy=false)
-            end
-
-            new = newweights
-            old = bondweights(pepo!)
-
-        else
-            Threads.@threads for bond in collect(bonds)
-                if check_fidelity && bond == Bond((1, 1), (1, 2))
-                    evolvedpepo = evolve(deepcopy(pepo!), stepper)
-
-                    copybuff = deepcopy.(buff)
-
-                    let
-                        foreach(eachindex(buff)) do I
-                            dst = copybuff[I]
-                            op = stepper[I]
-                            e, s, w, n = isoms[I]
-
-                            truncateto!(dst, copy(dst), op, e, s, w, n)
-
-                            # mergeinto!(dst, spten)
-                        end
-                    end
-
-                    evbuff = evolvedpepo
-
-                    alg = VUMPS(; bonddim=16, tol=1e-10, maxiter=20, verbose=false)
-
-                    overlap = UnitCell(
-                        map(copybuff, evbuff) do c, e
-                            return CompositeTensor(c, e')
-                        end,
-                    )
-
-                    vumps = TRGroups.Renormalization(overlap, alg)
-
-                    TRGroups.renormalize!(vumps)
-
-                    vumps = vumps.runtime
-
-                    mps = vumps.mps
-
-                    AC = TRGroups.getcentral(mps)
-
-                    FL = vumps.fixedpoints.left
-                    FR = vumps.fixedpoints.right
-
-                    rv = tracecontract_two_layer(
-                        FL[1, 1], FR[1, 1], AC[1, 1], AC[1, 2], copybuff[1, 1], evbuff[1, 1]
-                    )
-
-                    overlap = UnitCell(
-                        map(copybuff, copybuff) do c, e
-                            return CompositeTensor(c, e')
-                        end,
-                    )
-
-                    vumps = TRGroups.Renormalization(overlap, alg)
-                    TRGroups.renormalize!(vumps)
-
-                    vumps = vumps.runtime
-
-                    mps = vumps.mps
-
-                    AC = TRGroups.getcentral(mps)
-
-                    FL = vumps.fixedpoints.left
-                    FR = vumps.fixedpoints.right
-
-                    rvnorm1 = tracecontract_two_layer(
-                        FL[1, 1],
-                        FR[1, 1],
-                        AC[1, 1],
-                        AC[1, 2],
-                        copybuff[1, 1],
-                        copybuff[1, 1],
-                    )
-
-                    overlap = UnitCell(
-                        map(evbuff, evbuff) do c, e
-                            return CompositeTensor(c, e')
-                        end,
-                    )
-
-                    vumps = TRGroups.Renormalization(overlap, alg)
-                    TRGroups.renormalize!(vumps)
-
-                    vumps = vumps.runtime
-
-                    mps = vumps.mps
-
-                    AC = TRGroups.getcentral(mps)
-
-                    FL = vumps.fixedpoints.left
-                    FR = vumps.fixedpoints.right
-
-                    rvnorm2 = tracecontract_two_layer(
-                        FL[1, 1],
-                        FR[1, 1],
-                        AC[1, 1],
-                        AC[1, 2],
-                        currentbuffer(evolvedpepo)[1, 1],
-                        currentbuffer(evolvedpepo)[1, 1],
-                    )
-
-                    @warn "overlap:  " 1 - rv / sqrt(rvnorm1 * rvnorm2)
-                    @warn "overlap:  " rv / sqrt(rvnorm1)
-                end
-                (u, v), s, _ = iterative_simple_update_step(
-                    pepo!, stepper, isoms, bond; zeta=Inf
-                )
-
-                setindex!(newisoms, u => v, bond)
-                newweights[bond] = s
-            end
-
-            new = bondweights(pepo!)
-            old = newweights
-
-            elcopy!(isoms, newisoms)
-        end
-
-        if skipnext
-            @warn "skipping bad solution"
-            skipnext = false
-            continue
-        end
-
-        # comment out this
-        # skipnext = true
-
-        oldconv = conv
-        conv = tolerance!(new, old, 1.0)
-
-        diff = abs(oldconv - conv) / max(oldconv, conv)
-
-        @warn "Got $conv after $i; diff = $(diff)"
-
-        S = bondentropy(new)
-        println(S)
-
-        if conv < tol || i > maxiter
-            break
-        end
-
-        if bisol
-            if !bisoldone
-                ent1 = 0
-                broadcast(S, S0) do ss, ss0
-                    ent1 += abs(ss - ss0)
-                end
-
-                if ent1 < ent0
-                    bisoldone = true
-                    skipnext = true
-                else
-                    ent0 = ent1
-                end
-            else
-                skipnext = true
-            end
-            @warn "Trying every other solution..."
-        else
-            if Inf * diff < conv
-                ent0 = 0
-                broadcast(S, S0) do ss, ss0
-                    ent0 += abs(ss - ss0)
-                end
-
-                bisol = true
-            end
-        end
-
-        gauge < 2 && continue
-
-        # wtgisometries!(isoms, pepo!, stepper)
-        #
-        # continue
-
-        temppepo = deepcopy(pepo!)
-
-        for I in eachindex(pepo!)
-            dst = temppepo[I]
-            op = stepper[I]
-            e, s, w, n = isoms[I]
-
-            truncateto!(dst, deepcopy(dst), op, e, s, w, n)
-
-            # mergeinto!(dst, spten)
-        end
-
-        gauge1, gauge2, info = simple_update_gauge_isometries!(
-            temppepo; tol=1e-6, verbose=false
-        )
-        @info "Gauged to $(info[1]) after $(info[2]) iterations"
-
-        ge = broadcast(first, gauge1)
-        gw = broadcast(last, circshift(gauge1, (1, 0)))
-        #
-        gs = broadcast(first, permutedims(gauge2))
-        gn = broadcast(last, permutedims(circshift(gauge2, (1, 0))))
-
-        gisoms = UnitCell(broadcast(tuple, ge, gs, gw, gn))
-
-        isoms = broadcast(eachindex(pepo!)) do I
-            e1, s1, w1, n1 = isoms[I]
-            e2, s2, w2, n2 = gisoms[I]
-
-            e = e1 * e2
-            s = s1 * s2
-
-            w = w2 * w1
-            n = n2 * n1
-
-            return (e, s, w, n)
-        end
-
-        isoms = Isometries(UnitCell(isoms))
-
-        foreach(eachbond(pepo!)) do bond
-            s = bondweights(temppepo)[bond]
-            setweight!(pepo!, s, bond; copy=true)
-        end
-    end
-
-    # broadcast(
-    #     buff, tensors(stepper), isoe, isos, isow, ison
-    # ) do dst, op, e, s, w, n
-    #     spten = truncateto(dst, dst, op, e, s, w, n)
-    #     mergeinto!(dst, spten)
-    # end
-
-    # @info "gauging..."
-    # simple_update_gauge!(pepo!; maxiter=200, tol=1e-10, verbose=false, reset=false)
-    #=
-    for numiter in 1:1
-        conv = 0
-
-        temppepo = deepcopy(pepo!)
-
-        # Formulate the hypthoetical state using isometries isoms
-        for I in eachindex(buff)
-            dst = tensors(temppepo)[I]
-            op = tensors(stepper)[I]
-            let (e, s, w, n) = isoms[I]
-                truncateto!(dst, deepcopy(dst), op, e, s, w, n)
-            end
-        end
-
-        for (i, bond) in enumerate(eachbond(pepo!))
-
-            # Compute the environment
-            env = weightenvironment(temppepo[bond], weights(pepo!), bond)
-
-            if bondaxis(bond) == 1
-                (u, _, _, _), (_, _, v, _) = isoms[bond]
-            elseif bondaxis(bond) == 2
-                (_, u, _, _), (_, _, _, v) = isoms[bond]
-            end
-
-            s = weights(temppepo)[bond]
-            oldS = bondentropy(weights(pepo!))[i][bondaxis(bond)]
-            barewtg!(u, s, v, env)
-
-            newconv = abs(bondentropy(weights(pepo!))[i][bondaxis(bond)] - oldS)
-
-            newconv > conv && (conv = newconv)
-        end
-
-        tolerance!(weights(pepo!), weights(temppepo), 1.0)
-
-        println(conv)
-        if conv < 1e-8
-            break
-        end
-    end
-    =#
-
-    for I in eachindex(pepo!)
-        dst = pepo![I]
-        op = stepper[I]
-        let (e, s, w, n) = isoms[I]
-            if zeta < Inf
-                @info "rescaling " xi
-                e = e * sqrt(rescale!(id(domain(e)), id(domain(e)), zeta))
-                s = s * sqrt(rescale!(id(domain(s)), id(domain(s)), zeta))
-                w = sqrt(rescale!(id(codomain(w)), id(codomain(w)), zeta)) * w
-                n = sqrt(rescale!(id(codomain(n)), id(codomain(n)), zeta)) * n
-            end
-
-            truncateto!(dst, copy(dst), op, e, s, w, n)
-        end
-
-        # mergeinto!(dst, spten)
-    end
-
-    # xi < Inf && simple_update_gauge_parallel!(pepo!; tol=1e-10)
-
-    # for (i, p) in enumerate(tensors(pepo!))
-    #     # copy!(p, 0.5 * (p + permutedom(p, (2,1,4,3))))
-    #     w = weights(pepo!)[i]
-    #     wnew = 0.5 * (w[1] + w[2])
-    #     maxnormalize!(wnew)
-    #     copy!(w[1], wnew)
-    #     copy!(w[2], wnew)
-    # end
-
-    if gauge == 1
-        distance = gaugedistance(pepo!)
-        if distance > 1e-6
-            @info "Gauge fixing $distance"
-            # size(buff) == (1, 1) &&
-            #     simple_update_gauge!(pepo!; maxiter=200, tol=1e-10, verbose=false, reset=false)
-            size(pepo!) == (1, 1) &&
-                simple_update_gauge_parallel!(pepo!; tol=1e-6, maxiter=200, reset=false)
-            size(pepo!) != (1, 1) && simple_update_gauge!(pepo!; maxiter=100, reset=false)
-        end
-    elseif gauge == -1
-        size(pepo!) == (1, 1) && minimalcanonicalform!(pepo!; tol=1e-8, maxiter=10000)
-    end
-
-    @info "Vidal distance after" gaugedistance(pepo!)
-
-    # minimalcanonicalform!(pepo!)
-
-    quicknormalize!(pepo!)
-    hermitianize!(pepo!)
-
-    return pepo!, infidelity
+# Multiply leg `i` of `t` (codomain legs first) elementwise by `v`, acting on the dense data.
+function _scaleleg(t::AbstractTensorMap, i::Int, v::AbstractVector)
+    t2 = copy(t)
+    a = reshape(t2.data, dims(codomain(t))..., dims(domain(t))...)
+    a .*= reshape(v, ntuple(j -> j == i ? length(v) : 1, ndims(a)))
+    return t2
 end
 
-# function gaugedistance(pepo)
-#     weights = bondweights(pepo)
-#     h, v = only(weights)
-#
-#     p = only(pepo)
-#
-#     T = scalartype(pepo)
-#
-#     ide = similar(h, T)
-#     ids = similar(h, T)
-#     idw = similar(v, T)
-#     idn = similar(v, T)
-#
-#     @tensoropt ide[e2; e1] =
-#         p[k b; e1 s1 w1 n1] * (p')[e2 s2 w2 n2; k b] * v[s1; s2] * h[w2; w1] * v[n2; n1]
-#     @tensoropt ids[s2; s1] =
-#         p[k b; e1 s1 w1 n1] * (p')[e2 s2 w2 n2; k b] * v[e1; e2] * h[w2; w1] * v[n2; n1]
-#     @tensoropt idw[w1; w2] =
-#         p[k b; e1 s1 w1 n1] * (p')[e2 s2 w2 n2; k b] * v[s1; s2] * h[e1; e2] * v[n2; n1]
-#     @tensoropt idn[n1; n2] =
-#         p[k b; e1 s1 w1 n1] * (p')[e2 s2 w2 n2; k b] * v[s1; s2] * h[e1; e2] * h[w2; w1]
-#
-#     return sum((ide, ids, idw, idn)) do t
-#         rv = norm(normalize(t) - one(t))
-#         return rv
-#     end
-# end
+_matrix(t::AbstractTensorMap) = reshape(convert(Array, t), dim(codomain(t)), dim(domain(t)))
 
-function gaugedistance(pepo)
-    T = scalartype(pepo)
+_orthcols(A; rtol = 1e-10) = (F = svd(A); F.U[:, F.S .> rtol * max(F.S[1], eps())])
 
-    weights = bondweights(pepo)
+_normmax(v) = v / v[argmax(abs.(v))]
 
-    cumsum = 0
+_weightvalues(w::AbstractTensorMap) = real.(diag(convert(Array, w)))
 
-    for bond in eachbond(pepo)
-        P, Q = absorb_adjacent_weights(pepo[bond], weights, bond)
-        axis = bondaxis(bond)
-
-        w = weights[bond]
-
-        idu = similar(w, T)
-        idv = similar(w, T)
-
-        if axis == 1
-            @tensoropt idu[e2; e1] = P[k b; e1 s w n] * (P')[e2 s w n; k b]
-            @tensoropt idv[w1; w2] = Q[k b; e s w1 n] * (Q')[e s w2 n; k b]
-        elseif axis == 2
-            @tensoropt idu[s2; s1] = P[k b; e s1 w n] * (P')[e s2 w n; k b]
-            @tensoropt idv[n1; n2] = Q[k b; e s w n1] * (Q')[e s w n2; k b]
-        end
-
-        try
-            wi = inv(sqrt(w))
-
-            idu = wi * idu * wi
-            idv = wi * idv * wi
-
-            # @tensoropt ide[e2; e1] =
-            #     p[k b; e1 s1 w1 n1] * (p')[e2 s2 w2 n2; k b] * v[s1; s2] * h[w2; w1] * v[n2; n1]
-            # @tensoropt ids[s2; s1] =
-            #     p[k b; e1 s1 w1 n1] * (p')[e2 s2 w2 n2; k b] * v[e1; e2] * h[w2; w1] * v[n2; n1]
-            # @tensoropt idw[w1; w2] =
-            #     p[k b; e1 s1 w1 n1] * (p')[e2 s2 w2 n2; k b] * v[s1; s2] * h[e1; e2] * v[n2; n1]
-            # @tensoropt idn[n1; n2] =
-            #     p[k b; e1 s1 w1 n1] * (p')[e2 s2 w2 n2; k b] * v[s1; s2] * h[e1; e2] * h[w2; w1]
-
-            disu = norm(normalize(idu) - normalize(one(idu)))
-            disv = norm(normalize(idv) - normalize(one(idv)))
-
-            cumsum += disu
-            cumsum += disv
-        catch _
-            return Inf
-        end
-    end
-    return cumsum / (4 * length(pepo))
+# R1, R2 with X = Q1 R1 and Y = R2 Q2 across the bond joining domain leg `kx` of `X` to `ky` of `Y`.
+function _bondfactors(X, kx, Y, ky)
+    nx, ny = numout(X), numout(Y)
+    Xp = permute(X, (Tuple(setdiff(1:(nx + 4), nx + kx)), (nx + kx,)))
+    Yp = permute(Y, ((ny + ky,), Tuple(setdiff(1:(ny + 4), ny + ky))))
+    D1, V1 = eigh_full(Xp' * Xp)
+    D1.data .= sqrt.(max.(real.(D1.data), 0))
+    D2, V2 = eigh_full(Yp * Yp')
+    D2.data .= sqrt.(max.(real.(D2.data), 0))
+    return D1 * V1', V2 * D2
 end
 
-function iterative_neighbourhood_update!(pepo, truncator, stepper)
-    evolvedpepo = evolve(pepo, stepper)
+# Top singular directions of M = R1 R2, as projectors P1 = R2 V S^-½ and P2 = S^-½ U' R1.
+function _svdcut(R1, R2; trunc)
+    M = R1 * R2
+    u, s, vh = svd_trunc!(copy(M); trunc)
+    # The largest entry of each singular vector is made real and positive, so the bond basis changes
+    # smoothly between steps and the stored projectors remain a good start for the next one.
+    ua = convert(Array, u)
+    ph = [ua[argmax(abs.(ua[:, j])), j] for j in axes(ua, 2)]
+    Φ = TensorMap(Matrix(Diagonal(conj.(ph) ./ abs.(ph))), domain(u) ← domain(u))
+    u, vh = u * Φ, Φ' * vh
+    isq = PEPSKit.sdiag_pow(s, -0.5)
+    ϵ = sqrt(max(norm(M)^2 - norm(s)^2, 0)) / norm(M)
+    return R2 * vh' * isq, isq * u' * R1, s, ϵ
+end
 
-    # simple_update_gauge!(pepo; maxiter=100)
+# Projectors with weights taken from the cut's own singular value decomposition; `A` and `B` hold the
+# left and right bases of the cut M̃ = A Σ B' on the two sides of the bond, neither of them isometric.
+function _cutprojectors(R1, R2, Wl, Wr, D)
+    K = ComplexSpace(D)
+    P1 = R2 * TensorMap(Wl, domain(R2) ← K)
+    P2 = TensorMap(Wr, K ← codomain(R1)) * R1
+    return P1, P2, K
+end
 
-    # truncate_bond_matrices!(pepo)
+# Diagonal phases making the largest entry of each column of `U` real and positive.
+_phasefix(U) = Diagonal([(p = U[argmax(abs.(U[:, j])), j]; conj(p) / abs(p)) for j in axes(U, 2)])
 
-    # quicknormalize!(pepo.parent)
-    # hermitianize!(pepo.parent)
+# As `_svdcut` with D directions, but the cut Π = P1 P2 also satisfies wL Π = wL and Π wR = wR for the
+# rows of `wL` and columns of `wR`; the remaining directions are the top ones of what is left.
+function _protectedcut(R1, R2, wL, wR; D)
+    R1a, R2a = _matrix(R1), _matrix(R2)
+    M = R1a * R2a
+    Uk = _orthcols(pinv(R1a; rtol = 1e-12)' * wL')
+    Vk = _orthcols(pinv(R2a; rtol = 1e-12) * wR)
+    k = min(size(Uk, 2), size(Vk, 2), D)
+    k == 0 && return nothing
+    Uk, Vk = Uk[:, 1:k], Vk[:, 1:k]
+    C = Uk' * M * Vk
+    Fr = svd(M - M * Vk * (C \ (Uk' * M)))
+    Ut = Matrix(qr([Uk Fr.U[:, 1:(D - k)]]).Q)[:, 1:D]
+    Vt = Matrix(qr([Vk Fr.V[:, 1:(D - k)]]).Q)[:, 1:D]
+    # the bond weight is the SVD of the cut M̃ = (M Vt) Ct⁻¹ (Ut' M), not of Ct = Ut' M Vt
+    Ct = Ut' * M * Vt
+    Qa, Qb = qr(M * Vt), qr(M' * Ut)
+    Fc = svd(Qa.R * (Ct \ Qb.R'))
+    Φ = _phasefix(Matrix(Qa.Q)[:, 1:D] * Fc.U)
+    u, v, s = Fc.U * Φ, Fc.V * Φ, Fc.S
+    rs = Diagonal(sqrt.(s))
+    P1, P2, K = _cutprojectors(R1, R2, Vt * (Qa.R \ (u * rs)), (rs * v') * (Qb.R' \ Ut'), D)
+    ϵ = norm(M - M * Vt * (Ct \ (Ut' * M))) / norm(M)
+    return P1, P2, DiagonalTensorMap(s, K), ϵ
+end
 
-    # return pepo
+# Penalty form of `_protectedcut`: with wL = Y R1 and wR = R2 Z, the cut M̃ minimises ‖L (M - M̃) R‖ for
+# L² = 1 + μ Ŷ'Ŷ and R² = 1 + μ ẐẐ', where Ŷ, Ẑ are scaled so that μ weighs relative changes of wL M, M wR.
+function _softcut(R1, R2, wL, wR; D, mu)
+    R1a, R2a = _matrix(R1), _matrix(R2)
+    M = R1a * R2a
+    Yc = wL * pinv(R1a; rtol = 1e-12)
+    Zc = pinv(R2a; rtol = 1e-12) * wR
+    Yh, Zh = Yc * (norm(M) / norm(Yc * M)), Zc * (norm(M) / norm(M * Zc))
+    function weight(G)
+        F = eigen(Hermitian(G))
+        w = sqrt.(1 .+ mu .* max.(F.values, 0))
+        return F.vectors * Diagonal(w) * F.vectors', F.vectors * Diagonal(1 ./ w) * F.vectors'
+    end
+    (L, Li), (R, Ri) = weight(Yh' * Yh), weight(Zh * Zh')
+    F = svd(L * M * R)
+    U, S, V = F.U[:, 1:D], F.S[1:D], F.V[:, 1:D]
+    # M̃ = (L⁻¹U) S (R⁻¹V)' has non-isometric bases, so the bond weight comes from its own SVD, not S
+    Qa, Qb = qr(Li * U), qr(Ri * V)
+    Fk = svd(Qa.R * Diagonal(S) * Qb.R')
+    Φ = _phasefix(Matrix(Qa.Q)[:, 1:D] * Fk.U)
+    u, v, s = Fk.U * Φ, Fk.V * Φ, Fk.S
+    rs = Diagonal(sqrt.(s))
+    Wl = R * V * Diagonal(1 ./ S) * (Qa.R \ (u * rs))
+    Wr = (rs * v') * (Qb.R' \ (Diagonal(1 ./ S) * U' * L))
+    P1, P2, K = _cutprojectors(R1, R2, Wl, Wr, D)
+    ϵ = norm(M - Li * U * Diagonal(S) * V' * Ri) / norm(M)
+    return P1, P2, DiagonalTensorMap(s, K), ϵ
+end
 
-    # zeta = 500.0
-    zeta = Inf
-    # truncalg = NTU(; zeta=zeta, rankreduce=false, optalg=EVB(; gauge=NoGauge()))
-    truncalg = NTU(; zeta=zeta, rankreduce=false, optalg=EVB(; maxiter=100))
-    # truncalg = FET(; alg=VUMPS(bonddim=16, tol=1e-8), zeta=zeta, rankreduce=false, optalg=EVB())
-    # truncalg = NTU(; zeta=zeta, rankreduce=true, optalg=DZM(EAT=false,gauge=NoGauge()))
-    # truncalg = NTU(; zeta=zeta, rankreduce=true, optalg=DZM())
-    # truncalg = SimpleUpdate()
+# Cut the bond between X (open domain leg `kx`) and Y (`ky`), both already weighted, keeping the
+# `protect` quantities of `alg` carried by the protected vectors `wL`, `wR`.
+function _cutbond(X, kx, Y, ky, wL, wR, trunc, alg::IterativeSU)
+    R1, R2 = _bondfactors(X, kx, Y, ky)
+    # dropping exactly vanishing directions keeps S^-½ finite when the bond has rank below D
+    cut = _svdcut(R1, R2; trunc = trunc & trunctol(; rtol = 1e-14))
+    alg.protect === :none && return cut
+    D = dim(space(cut[3], 1))
+    M = _matrix(R1) * _matrix(R2)
+    count(>(1e-14 * opnorm(M)), svdvals(M)) <= D && return cut
+    protected = if isinf(alg.mu)
+        _protectedcut(R1, R2, wL, wR; D)
+    else
+        _softcut(R1, R2, wL, wR; D, mu = alg.mu)
+    end
+    return something(protected, cut)
+end
 
-    # println("xi = $(zeta)")
+# Periodic access to a 2 × Nr × Nc array of per-bond values, laid out as `SUWeight`.
+_bondat(λ, d, r, c) = λ[d, mod1(r, size(λ, 2)), mod1(c, size(λ, 3))]
 
-    # evx = evolvedtensors(pepox)[1]
-    # evy = evolvedtensors(pepoy)[1]
-    #
+# The weights on the north, east, south and west legs of site (r, c).
+function _siteweights(λ, r, c)
+    return (
+        _bondat(λ, 2, r, c), _bondat(λ, 1, r, c), _bondat(λ, 2, r + 1, c), _bondat(λ, 1, r, c - 1),
+    )
+end
 
-    infidelity = 0
+# Site projectors (Pn, Pe, Ps, Pw) with their new legs weighted by √λ of the site's four bonds.
+function _weighted(P, λs)
+    Pn, Pe, Ps, Pw = P
+    return (
+        _scaleleg(Pn, 3, sqrt.(λs[1])), _scaleleg(Pe, 3, sqrt.(λs[2])),
+        _scaleleg(Ps, 1, sqrt.(λs[3])), _scaleleg(Pw, 1, sqrt.(λs[4])),
+    )
+end
 
-    buff = currentbuffer(evolvedpepo)
-    ybuff = permutetranspose(buff)
+"""
+    $(TYPEDSIGNATURES)
 
-    # truncx = newtruncators(buff, truncalg)
-    # renormalize!(truncx)
-    #
-    # truncy = newtruncators(ybuff, truncalg)
-    # renormalize!(truncy)
-
-    reducedbuffer = currentbuffer(pepo)
-    # reducedbuffer = broadcast(baretruncation!, similar.(tensors(pepo)), buff)
-
-    # xisoms = Isometries(stitchisometries.(tensors(pepo), buff))
-    # yisoms = stitchisometries.(permutetranspose(tensors(pepo)), ybuff)
-
-    xisoms = truncator
-    ep, sp, wp, np = map(permutedims, unpack(xisoms))
-    yisoms = Isometries(sp, ep, np, wp)
-
-    weightsbuff = deepcopy(bondweights(pepo))
-
-    tol = Inf
-
-    maxiter = 1
-
-    for numiter in 1:maxiter
-        normalize!.(reducedbuffer)
-
-        yreducedbuffer = permutetranspose(reducedbuffer)
-
-        # truncx = newtruncators(reducedbuffer, truncalg)
-        # renormalize!(truncx)
-        # truncx = reducedbuffer
-        # truncx = SimpleUpdateState()
-        local isomh
-
-        for i in 1:1
-            isomh = broadcast(bonds(buff, 1)) do bond
-                # reducedpair = parallel2sequential(buff, xisoms, bond)
-                # truncx = ntu_total(reducedpair, reducedbuffer, bond)
-                #
-                # foreach(normalize!, reducedpair)
-
-                reducedpair = buff[bond]
-                truncx = reducedpair -> ntu_total_low(reducedpair, buff, bond)
-                # truncx = buff
-
-                # truncx = ntu_total_low(reducedpair, reducedbuffer, bond)
-
-                (u, v), s, _ = parallelisometries(
-                    reducedpair, truncx, bond, truncalg; D=bondspace(pepo, bond)
-                )
-
-                # D = bondspace(pepo, bond)
-                # (u, v), s, _ = simpleupdate(reducedpair, weights(pepo), bond; trunc=truncspace(D))
-
-                setindex!(xisoms, u => v, bond)
-                # setindex!(yisoms, u => v, transpose(bond))
-
-                maxnormalize!(s)
-
-                setweight!(pepo, s, bond; copy=true)
-
-                return (u, v)
-            end
+Belief-propagation messages of a traced network, `t[r, c]` being site (r, c) as an n-e-s-w array:
+`m[d, r, c]` arrives at site (r, c) on leg `d` (north, east, south, west), scaled to unit largest
+entry. Starts from `init` when its lengths fit.
+"""
+function _tracemessages(t::AbstractMatrix; init = nothing, tol = 1e-10, maxiter = 500)
+    Nr, Nc = size(t)
+    at(r, c) = t[mod1(r, Nr), mod1(c, Nc)]
+    fits = !isnothing(init) && size(init) == (4, Nr, Nc) &&
+        all(I -> length(init[I]) == size(t[I[2], I[3]], I[1]), CartesianIndices(init))
+    m = fits ? copy(init) : [ones(ComplexF64, size(t[r, c], d)) for d in 1:4, r in 1:Nr, c in 1:Nc]
+    msg(d, r, c) = m[d, mod1(r, Nr), mod1(c, Nc)]
+    for _ in 1:maxiter
+        new = similar(m)
+        for r in 1:Nr, c in 1:Nc
+            # each message leaves a neighbour through the leg facing (r, c)
+            a = at(r - 1, c)
+            mn, me, mw = msg(1, r - 1, c), msg(2, r - 1, c), msg(4, r - 1, c)
+            @tensor vn[s] := a[n e s w] * mn[n] * me[e] * mw[w]
+            a = at(r, c + 1)
+            mn, me, ms = msg(1, r, c + 1), msg(2, r, c + 1), msg(3, r, c + 1)
+            @tensor ve[w] := a[n e s w] * mn[n] * me[e] * ms[s]
+            a = at(r + 1, c)
+            me, ms, mw = msg(2, r + 1, c), msg(3, r + 1, c), msg(4, r + 1, c)
+            @tensor vs[n] := a[n e s w] * me[e] * ms[s] * mw[w]
+            a = at(r, c - 1)
+            mn, ms, mw = msg(1, r, c - 1), msg(3, r, c - 1), msg(4, r, c - 1)
+            @tensor vw[e] := a[n e s w] * mn[n] * ms[s] * mw[w]
+            new[1, r, c], new[2, r, c], new[3, r, c], new[4, r, c] = _normmax.((vn, ve, vs, vw))
         end
+        δ = maximum(norm.(new .- m))
+        m = new
+        δ < tol && break
+    end
+    return m
+end
 
-        # truncy = newtruncators(yreducedbuffer, truncalg)
-        # renormalize!(truncy)
-        # truncy = yreducedbuffer
-        # truncy = SimpleUpdateState()
+# Protected bond vectors of the open leg of a composite `X`, from the messages `q` on its other three
+# legs: rows of ⟨q, X⟩ for each physical pair (`:twosite`) or their trace (`:trace`).
+function _protected(X, open::Int, q, protect::Symbol)
+    a = convert(Array, X)
+    d1, d2 = size(a, 1), size(a, 2)
+    others = filter(!=(open), 1:4)
+    b = reshape(permutedims(a, ((2 .+ others)..., 1, 2, 2 + open)), :, d1 * d2 * size(a, 2 + open))
+    # `kron` runs its last factor fastest, matching the first of `others` in the column-major `b`
+    env = kron(reverse([q[k] for k in others])...)
+    v = reshape(transpose(env) * b, d1 * d2, :)
+    protect === :twosite && return v
+    return reshape(sum(v[(i - 1) * d1 + i, :] for i in 1:min(d1, d2)), 1, :)
+end
 
-        local isomv
+# Projectors onto the state's bond times the propagator's idle state: the exact cut of the composite
+# before any path runs. The machine's other states have entries that continue or turn a path whether
+# or not one was started, so a cut ranking them by norm alone would keep directions no path reaches.
+function _idleprojectors(ρ, S)
+    Nr, Nc = size(ρ)
+    function idle(V, W)
+        a = zeros(ComplexF64, dim(V), dim(W), dim(V))
+        foreach(i -> a[i, 1, i] = 1, 1:dim(V))
+        return a
+    end
+    into(k, r, c) = (V = domain(ρ[r, c])[k]; W = domain(S[r, c])[k]; TensorMap(idle(V, W), V ⊗ W ← V))
+    function outof(k, r, c)
+        V, W = domain(ρ[r, c])[k]', domain(S[r, c])[k]'
+        return TensorMap(permutedims(idle(V, W), (3, 1, 2)), V ← V ⊗ W)
+    end
+    Pxs = Any[(into(2, r, c), outof(4, r, mod1(c + 1, Nc))) for r in 1:Nr, c in 1:Nc]
+    Pys = Any[(into(1, r, c), outof(3, mod1(r - 1, Nr), c)) for r in 1:Nr, c in 1:Nc]
+    return Pxs, Pys
+end
 
-        for i in 1:1
-            isomv = broadcast(bonds(ybuff, 1)) do fictbond
-                # reducedpair = parallel2sequential(ybuff, yisoms, fictbond)
-                # truncy = ntu_total(reducedpair, yreducedbuffer, fictbond)
-                #
-                # foreach(normalize!, reducedpair)
+function _projectorsfit(stored, F, λ)
+    isnothing(stored) && return false
+    Pxs, Pys = stored
+    size(Pxs) == size(F) || return false
+    Nr, Nc = size(F)
+    return all(Iterators.product(1:Nr, 1:Nc)) do (r, c)
+        Pe, Pw = Pxs[r, c]
+        Pn, Ps = Pys[r, c]
+        codomain(Pe) == codomain(F[r, c].Fe) && domain(Pw) == domain(F[r, mod1(c + 1, Nc)].Fw) &&
+            codomain(Pn) == codomain(F[r, c].Fn) && domain(Ps) == domain(F[mod1(r - 1, Nr), c].Fs) &&
+            dim(domain(Pe)) == length(λ[1, r, c]) && dim(domain(Pn)) == length(λ[2, r, c])
+    end
+end
 
-                reducedpair = ybuff[fictbond]
-                truncy = reducedpair -> ntu_total_low(reducedpair, ybuff, fictbond)
-                # truncy = ybuff
-                # ql0, qr0 = parallel2sequential(ybuff, yisoms, fictbond)
-                #
-                # ql = permutedom(ql0, (2,1,4,3))
-                # qr = permutedom(qr0, (2,1,4,3))
+"""
+    $(TYPEDSIGNATURES)
 
-                # truncy = ntu_total_low(reducedpair,yreducedbuffer, fictbond)
+Apply the long-range propagator of `layer` to `state` by iterative simple update, updating `state`,
+`weights` and the projectors `layer` keeps for the next step. Returns the largest relative
+truncation error of the last round of cuts.
 
-                realbond = transpose(fictbond)
-
-                (u, v), s, _ = parallelisometries(
-                    reducedpair, truncy, fictbond, truncalg; D=bondspace(pepo, realbond)
-                )
-
-                setindex!(xisoms, u => v, realbond)
-                setindex!(yisoms, u => v, fictbond)
-
-                # D = bondspace(pepo, realbond)
-                # (u, v), s, _ = simpleupdate(ql => qr, weights(pepo), realbond; trunc=truncspace(D))
-
-                setweight!(pepo, s, realbond; copy=true)
-
-                return (u, v)
-            end
-        end
-
-        isoe = broadcast(first, isomh)
-        isow = broadcast(last, circshift(isomh, (1, 0)))
-
-        isos = broadcast(first, isomv)
-        ison = broadcast(last, circshift(isomv, (1, 0)))
-
-        xisoms = Isometries(
-            SquareLattice(
-                broadcast(tuple, isoe, permutedims(isos), isow, permutedims(ison))
-            ),
-        )
-        yisoms = Isometries(
-            SquareLattice(
-                broadcast(tuple, isos, permutedims(isoe), ison, permutedims(isow))
-            ),
-        )
-
-        tol = tolerance!(weightsbuff, bondweights(pepo), 1.0)
-        @warn "isometries converged to $tol after $numiter"
-
-        # if numiter == maxiter && tol > 1e-10
-        #     xisoms = stitchisometries.(tensors(pepo), buff)
-        #     yisoms = stitchisometries.(permutetranspose(tensors(pepo)), ybuff)
-        # end
-
-        foreach(
-            reducedbuffer, buff, isoe, permutedims(isos), isow, permutedims(ison)
-        ) do dst, src, e, s, w, n
-            truncateto!(dst, src, e, s, w, n)
-        end
-
-        #
-        if tol < 1e-6
-            @warn "isometries converged to $tol after $numiter"
-            break
-        end
-        #
-        #
-        # simple_update_gauge!(PEPO(reducedbuffer, weights(pepo)); maxiter=100)
-
+Every bond is cut against the projectors the previous round chose for the other legs of its two
+sites, those legs weighted by their bond weights as in simple update, and the rounds repeat until no
+weight changes by more than `alg.iterative.tol`. The bond dimension comes from `alg.trunc`, or is
+kept when that is `nothing`. A round starts from the projectors of the layer's last application
+when they fit, and otherwise from projectors onto the propagator's idle state.
+"""
+function iterativestep!(
+        state::InfinitePEPO, weights::SUWeight, layer::PEPSOLayer, alg::DampedUpdate
+    )
+    isnothing(alg.truncalg) || throw(
+        ArgumentError(
+            "a long-range layer is cut by iterative simple update and takes no `truncalg`"
+        ),
+    )
+    isinf(alg.zeta) || throw(
+        ArgumentError("damping is not implemented for a long-range layer; use `zeta = Inf`"),
+    )
+    settings = alg.iterative
+    Nr, Nc, = size(state)
+    G = layer.propagator
+    ρ = [state[r, c] for r in 1:Nr, c in 1:Nc]
+    S = [G[mod1(r, size(G, 1)), mod1(c, size(G, 2)), 1] for r in 1:Nr, c in 1:Nc]
+    F = map(_fusers, ρ, S)
+    bonds = CartesianIndices((2, Nr, Nc))
+    truncs = map(bonds) do I
+        isnothing(alg.trunc) || return alg.trunc
+        V = space(weights[Tuple(I)...], 1)
+        return truncspace(isdual(V) ? flip(V) : V)
     end
 
-    @warn "isometries converged to $tol after"
+    λ = map(bonds) do I
+        s = _weightvalues(weights[Tuple(I)...])
+        return s ./ maximum(s)
+    end
+    Pxs, Pys = _projectorsfit(layer.projectors, F, λ) ? layer.projectors : _idleprojectors(ρ, S)
 
-    copy!.(getaxis(pepo), reducedbuffer)
+    msgs = layer.messages
+    cuts = nothing
+    for _ in 1:settings.maxiter
+        P = [PEPSKit._site_projectors(Pxs, Pys, r, c) for r in 1:Nr, c in 1:Nc]
+        sP = [_weighted(P[r, c], _siteweights(λ, r, c)) for r in 1:Nr, c in 1:Nc]
+        q = nothing
+        if settings.protect !== :none
+            traced = map(Iterators.product(1:Nr, 1:Nc)) do (r, c)
+                Threads.@spawn begin
+                    A = convert(Array, _composite(ρ[r, c], S[r, c], P[r, c]...))
+                    sum(A[i, i, :, :, :, :] for i in 1:min(size(A, 1), size(A, 2)))
+                end
+            end
+            msgs = _tracemessages(fetch.(traced); init = msgs)
+            # the iterate's legs carry √λ, so the messages are divided by it to contract the bare
+            # tensors; a direction with zero weight is absent from the state and is dropped
+            q = map(CartesianIndices(msgs)) do I
+                d, r, c = Tuple(I)
+                w = sqrt.(_siteweights(λ, r, c)[d])
+                return [abs(b) > 1e-14 ? a / b : zero(a) for (a, b) in zip(msgs[I], w)]
+            end
+        end
+        tasks = map(bonds) do I
+            Threads.@spawn _iterativecut(I, ρ, S, F, sP, q, truncs[I], settings)
+        end
+        cuts = fetch.(tasks)
 
-    # foreach(
-    #     tensors(pepo), buff, isoe, permutedims(isos), isow, permutedims(ison)
-    # ) do dst, src, e, s, w, n
-    #     truncateto!(dst, src, e, s, w, n)
-    # end
+        δ = maximum(bonds) do I
+            s = _weightvalues(cuts[I][2])
+            s ./= maximum(s)
+            length(s) == length(λ[I]) || return Inf
+            return maximum(abs.(sort(s) .- sort(λ[I])))
+        end
+        for I in bonds
+            d, r, c = Tuple(I)
+            (d == 1 ? Pxs : Pys)[r, c] = cuts[I][1]
+            s = _weightvalues(cuts[I][2])
+            λ[I] = s ./ maximum(s)
+        end
+        δ < settings.tol && break
+    end
 
-    # simple_update_gauge!(pepo; maxiter=100, reset=true)
-    # foreach(tup -> map(normalize!, tup), xisoms)
-    # minimalcanonicalform!(tensors(pepo))
+    P = [PEPSKit._site_projectors(Pxs, Pys, r, c) for r in 1:Nr, c in 1:Nc]
+    for r in 1:Nr, c in 1:Nc
+        state[r, c] = normalize!(_composite(ρ[r, c], S[r, c], P[r, c]...), Inf)
+    end
+    for I in bonds
+        weights[Tuple(I)...] = normalize!(cuts[I][2], Inf)
+    end
+    layer.projectors = (Pxs, Pys)
+    layer.messages = msgs
+    return maximum(I -> cuts[I][3], bonds)
+end
 
-    # simple_update_gauge!(pepo); maxiter=100)
-    elcopy!(truncator, xisoms)
-
-    quicknormalize!(pepo)
-    hermitianize!(pepo)
-
-    return pepo, infidelity
+# One bond of a round: `I = (1, r, c)` joins (r, c) to (r, c + 1), `I = (2, r, c)` joins (r, c) to
+# (r - 1, c). Returns the bond's two projectors, its weight and its truncation error.
+function _iterativecut(I, ρ, S, F, sP, q, trunc, settings::IterativeSU)
+    Nr, Nc = size(ρ)
+    d, r, c = Tuple(I)
+    if d == 1
+        r2, c2 = r, mod1(c + 1, Nc)
+        Pn, _, Ps, Pw = sP[r, c]
+        tX = Threads.@spawn _composite(ρ[r, c], S[r, c], Pn, F[r, c].Fe, Ps, Pw; last = :e)
+        Pn, Pe, Ps, _ = sP[r2, c2]
+        Y = _composite(ρ[r2, c2], S[r2, c2], Pn, Pe, Ps, F[r2, c2].Fw; last = :w)
+        X = fetch(tX)
+        kx, ky, open1, open2 = 2, 4, F[r, c].Fe, F[r2, c2].Fw
+    else
+        r2, c2 = mod1(r - 1, Nr), c
+        _, Pe, Ps, Pw = sP[r, c]
+        tX = Threads.@spawn _composite(ρ[r, c], S[r, c], F[r, c].Fn, Pe, Ps, Pw; last = :n)
+        Pn, Pe, _, Pw = sP[r2, c2]
+        Y = _composite(ρ[r2, c2], S[r2, c2], Pn, Pe, F[r2, c2].Fs, Pw; last = :s)
+        X = fetch(tX)
+        kx, ky, open1, open2 = 1, 3, F[r, c].Fn, F[r2, c2].Fs
+    end
+    wL = wR = nothing
+    if settings.protect !== :none
+        wL = _protected(X, kx, Tuple(q[k, r, c] for k in 1:4), settings.protect)
+        wR = permutedims(_protected(Y, ky, Tuple(q[k, r2, c2] for k in 1:4), settings.protect))
+    end
+    P1, P2, s, ϵ = _cutbond(X, kx, Y, ky, wL, wR, trunc, settings)
+    return (open1 * P1, P2 * open2), s, ϵ
 end

@@ -11,37 +11,42 @@ How a sweep updates each bond and maintains the state between steps. PEPSKit exp
 
 # Constructors
 
-    DampedUpdate(; trunc, truncalg, envalg, zeta, gaugeevery)
+    DampedUpdate(; trunc, truncalg, envalg, zeta, gaugeevery, iterative)
 
 - `trunc`: a TensorKit `TruncationStrategy`; `nothing` keeps each bond at the space it already has
 - `truncalg`: a `FullEnvTruncation` or `ALSTruncation`, optimising against a bond environment
 - `envalg`: a [`BondEnvironment`](@ref) for the CTMRG boundary `truncalg` needs
 - `zeta`: the damping parameter of [`dampweight`](@ref); `Inf` leaves the spectrum alone
 - `gaugeevery`: re-fix the gauge every this many steps, and once more at the end; `0` never
+- `iterative`: an [`IterativeSU`](@ref), how a long-range layer ([`PEPSOLayer`](@ref)) is applied
 
 `truncalg` and `envalg` are given together or not at all.
 """
-struct DampedUpdate{T, A, E}
+struct DampedUpdate{T, A, E, I}
     trunc::T
     truncalg::A
     envalg::E
     zeta::Float64
     gaugeevery::Int
+    iterative::I
 
-    function DampedUpdate(trunc::T, truncalg::A, envalg::E, zeta, gaugeevery) where {T, A, E}
+    function DampedUpdate(
+            trunc::T, truncalg::A, envalg::E, zeta, gaugeevery, iterative::I
+        ) where {T, A, E, I}
         isnothing(truncalg) == isnothing(envalg) ||
             throw(ArgumentError("environment-based truncation needs both `truncalg` and `envalg`"))
         zeta >= 0 || throw(ArgumentError("the damping parameter must be non-negative, got $zeta"))
         gaugeevery >= 0 ||
             throw(ArgumentError("`gaugeevery` counts steps and cannot be negative, got $gaugeevery"))
-        return new{T, A, E}(trunc, truncalg, envalg, zeta, gaugeevery)
+        return new{T, A, E, I}(trunc, truncalg, envalg, zeta, gaugeevery, iterative)
     end
 end
 
 function DampedUpdate(;
-        trunc = nothing, truncalg = nothing, envalg = nothing, zeta = Inf, gaugeevery = 0
+        trunc = nothing, truncalg = nothing, envalg = nothing, zeta = Inf, gaugeevery = 0,
+        iterative = IterativeSU()
     )
-    return DampedUpdate(trunc, truncalg, envalg, zeta, gaugeevery)
+    return DampedUpdate(trunc, truncalg, envalg, zeta, gaugeevery, iterative)
 end
 
 """
@@ -169,7 +174,7 @@ end
 # Keyword forms. `alg` is the primary interface; these build one for a call site that names fields.
 # Keywords do not take part in dispatch, so each entry point needs its own method rather than a
 # default argument.
-const _ALGKW = (:trunc, :truncalg, :envalg, :zeta, :gaugeevery)
+const _ALGKW = (:trunc, :truncalg, :envalg, :zeta, :gaugeevery, :iterative)
 
 function bondstep!(
         state::InfinitePEPO, weights::SUWeight, propagator::AbstractTensorMap,
@@ -222,8 +227,8 @@ _swapsites(propagator::AbstractTensorMap) = permute(propagator, ((3, 4, 1, 2), (
 """
     $(TYPEDSIGNATURES)
 
-One time step: sweep each `(propagators, axis)` of a Trotter decomposition in turn, returning the
-largest truncation error.
+One time step: sweep each `(propagators, axis)` of a Trotter decomposition in turn, and apply each
+[`PEPSOLayer`](@ref) by [`iterativestep!`](@ref), returning the largest truncation error.
 
 `truncalg` selects environment-based truncation and needs `envalg`, a [`BondEnvironment`](@ref) or
 the boundary bond dimension. One CTMRG boundary is solved for per axis sweep.
@@ -237,7 +242,12 @@ function timestep!(
     )
     ϵ = 0.0
     env = nothing
-    for (propagators, axis) in decomposition
+    for entry in decomposition
+        if entry isa PEPSOLayer
+            ϵ = max(ϵ, iterativestep!(state, weights, entry, alg))
+            continue
+        end
+        propagators, axis = entry
         isnothing(alg.truncalg) || ((env, _) = bondenvironment(state, alg.envalg; env₀ = env))
         ϵ = max(ϵ, axissweep!(state, weights, propagators, axis, alg; env))
     end
